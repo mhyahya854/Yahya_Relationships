@@ -1,0 +1,22 @@
+{
+  "name": "people-relationships",
+  "private": true,
+  "version": "1.0.0",
+  "description": "People Relationships — local-first relationship brain",
+  "scripts": {
+    "dev": "node Scripts/dev.mjs",
+    "dev:web": "npm --prefix App/Frontend run dev",
+    "dev:desktop": "tauri dev --config Desktop/Tauri/tauri.conf.json",
+    "backend": "node Scripts/run-py.mjs -m app.backend.main",
+    "build": "npm --prefix App/Frontend run build",
+    "typecheck": "npm --prefix App/Frontend run typecheck",
+    "test": "node Scripts/run-py.mjs -m pytest Tests/Backend -q",
+    "test:ui": "node Tests/UI/smoke.mjs",
+    "tauri": "tauri --config Desktop/Tauri/tauri.conf.json",
+    "tauri:build": "tauri build --config Desktop/Tauri/tauri.conf.json",
+    "legacy:check": "node Scripts/run-py.mjs Scripts/build_family.py --check"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

@@ -1,0 +1,27 @@
+# Dependencies and environment
+**/node_modules/
+**/.venv/
+
+# Build outputs and caches
+**/dist/
+**/build/
+**/target/
+**/gen/
+**/shots/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+
+# Logs and environment
+*.log
+.env
+.env.*
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Scratch
+_scratch/

@@ -1,0 +1,521 @@
+{
+  "metadata": {
+    "title": "Family Relationships / خاندانی رشتے",
+    "focus_person": "mohammad_yahya_hussain",
+    "revision": 5,
+    "updated": "2026-09-03",
+    "source_batches": [
+      "sources/001-initial-family-notes.md",
+      "sources/002-review-responses.md",
+      "sources/003-layout-preference.md",
+      "sources/004-couple-layout-and-colors.md",
+      "sources/005-direct-secondary-relationship-lines.md",
+      "sources/006-current-master-left-right-layout.md",
+      "sources/007-person-square-semantic-endpoints.md",
+      "sources/008-current-family-verification.md"
+    ],
+    "layout": "Each married couple is one compact horizontal unit with a direct marriage line; child routing uses a separate layout-only family junction; maternal couple units use pale pink shades and paternal couple units use pale blue shades; Irsa Naz + Mansoor Hussain keep both sides visible.",
+    "policy": "Record explicit statements; do not silently infer uncertain parentage, marriage, gender, or birth order. An explicit statement that a person or couple 'has children / have children / their children are ...' means biological parent-child by default unless an alternative status is explicitly stated. 'No children' is recorded only when explicitly stated; unknown child status is not 'no children'. Deferred and on-hold items stay deferred and are not failures.",
+    "derived_policy": "Derived cousin relationships (first cousin, second cousin, first/second cousin once removed, and multiple simultaneous paths) are calculated by build_family.py from the explicit biological parent-child graph and full-sibling facts. They are never written into family.json as user-stated facts."
+  },
+  "people": [
+    {
+      "id": "mohammad_yahya_hussain",
+      "name": "Mohammad Yahya Hussain",
+      "birth_year": 2004,
+      "gender": "male",
+      "branch": "core",
+      "relation_en": "Self",
+      "relation_ur": "خود"
+    },
+    {
+      "id": "maham_mansoor",
+      "name": "Maham Mansoor",
+      "birth_year": 2006,
+      "gender": "female",
+      "branch": "core",
+      "relation_en": "Sister",
+      "relation_ur": "بہن"
+    },
+    {
+      "id": "irsa_naz",
+      "name": "Irsa Naz",
+      "gender": "female",
+      "branch": "core",
+      "relation_en": "Mother",
+      "relation_ur": "والدہ"
+    },
+    {
+      "id": "mansoor_hussain",
+      "name": "Mansoor Hussain",
+      "gender": "male",
+      "branch": "core",
+      "relation_en": "Father",
+      "relation_ur": "والد"
+    },
+    {
+      "id": "shahnaz_israr",
+      "name": "Shahnaz Israr",
+      "gender": "female",
+      "branch": "maternal",
+      "relation_en": "Maternal grandmother",
+      "relation_ur": "نانی"
+    },
+    {
+      "id": "israr_hussain",
+      "name": "Israr Hussain",
+      "gender": "male",
+      "branch": "maternal",
+      "relation_en": "Maternal grandfather",
+      "relation_ur": "نانا"
+    },
+    {
+      "id": "sohaib_hussain",
+      "name": "Sohaib Hussain",
+      "gender": "male",
+      "branch": "maternal",
+      "relation_en": "Maternal uncle",
+      "relation_ur": "ماموں"
+    },
+    {
+      "id": "rubinna",
+      "name": "Rubinna",
+      "gender": "female",
+      "branch": "maternal",
+      "relation_en": "Maternal uncle's wife",
+      "relation_ur": "ممانی"
+    },
+    {
+      "id": "sadia_asif",
+      "name": "Sadia Asif",
+      "gender": "female",
+      "branch": "maternal",
+      "relation_en": "Maternal aunt",
+      "relation_ur": "خالہ"
+    },
+    {
+      "id": "asif_qamar",
+      "name": "Asif Qamar",
+      "gender": "male",
+      "branch": "maternal",
+      "relation_en": "Maternal aunt's husband",
+      "relation_ur": "خالو"
+    },
+    {
+      "id": "ezan_asif",
+      "name": "Ezan Asif",
+      "birth_year": 2003,
+      "gender": "male",
+      "branch": "maternal",
+      "relation_en": "Maternal cousin",
+      "relation_ur": "خالہ زاد بھائی"
+    },
+    {
+      "id": "fakhir_asif",
+      "name": "Fakhir Asif",
+      "birth_year": 2007,
+      "gender": "male",
+      "branch": "maternal",
+      "relation_en": "Maternal cousin",
+      "relation_ur": "خالہ زاد بھائی"
+    },
+    {
+      "id": "arsalan_israr",
+      "name": "Arsalan Israr",
+      "gender": "male",
+      "branch": "maternal",
+      "relation_en": "Maternal uncle",
+      "relation_ur": "ماموں"
+    },
+    {
+      "id": "falak_naz",
+      "name": "Falak Naz",
+      "gender": "female",
+      "branch": "maternal",
+      "relation_en": "Maternal uncle's wife",
+      "relation_ur": "ممانی"
+    },
+    {
+      "id": "ayesha_naeem",
+      "name": "Ayesha Naeem",
+      "gender": "female",
+      "branch": "maternal",
+      "relation_en": "Maternal aunt",
+      "relation_ur": "خالہ",
+      "note_en": "Given to another family after birth (exact arrangement not yet specified)",
+      "note_ur": "پیدائش کے بعد دوسری فیملی کو دی گئیں (تفصیل ابھی غیر واضح ہے)"
+    },
+    {
+      "id": "wahaj",
+      "name": "Wahaj",
+      "gender": "male",
+      "branch": "maternal",
+      "relation_en": "Maternal aunt's husband",
+      "relation_ur": "خالو"
+    },
+    {
+      "id": "abrar_hussain",
+      "name": "Abrar Hussain",
+      "gender": "male",
+      "branch": "paternal",
+      "relation_en": "Paternal grandfather",
+      "relation_ur": "دادا"
+    },
+    {
+      "id": "shaheen_abrar",
+      "name": "Shaheen Abrar",
+      "gender": "female",
+      "branch": "paternal",
+      "relation_en": "Paternal grandmother",
+      "relation_ur": "دادی"
+    },
+    {
+      "id": "hina",
+      "name": "Hina",
+      "gender": "female",
+      "branch": "paternal",
+      "relation_en": "Paternal aunt",
+      "relation_ur": "پھوپھی"
+    },
+    {
+      "id": "zubair",
+      "name": "Zubair",
+      "gender": "male",
+      "branch": "paternal",
+      "relation_en": "Paternal aunt's husband",
+      "relation_ur": "پھوپھا"
+    },
+    {
+      "id": "aresha_zubair",
+      "name": "Aresha Zubair",
+      "gender": "female",
+      "branch": "paternal",
+      "relation_en": "Paternal cousin",
+      "relation_ur": "پھوپھی زاد"
+    },
+    {
+      "id": "owais",
+      "name": "Owais",
+      "gender": "male",
+      "branch": "paternal",
+      "relation_en": "Paternal cousin's husband",
+      "relation_ur": "پھوپھی زاد کے شوہر"
+    },
+    {
+      "id": "aresha_owais_daughter_a",
+      "name": "Unnamed daughter A",
+      "gender": "female",
+      "branch": "paternal",
+      "relation_en": "Cousin's daughter",
+      "relation_ur": "کزن کی بیٹی",
+      "note_en": "A is an identifier, not a birth-order claim",
+      "note_ur": "A صرف شناخت ہے، پیدائشی ترتیب نہیں"
+    },
+    {
+      "id": "aresha_owais_daughter_b",
+      "name": "Unnamed daughter B",
+      "gender": "female",
+      "branch": "paternal",
+      "relation_en": "Cousin's daughter",
+      "relation_ur": "کزن کی بیٹی",
+      "note_en": "B is an identifier, not a birth-order claim",
+      "note_ur": "B صرف شناخت ہے، پیدائشی ترتیب نہیں"
+    },
+    {
+      "id": "fizza_zubair",
+      "name": "Fizza Zubair",
+      "gender": "female",
+      "branch": "paternal",
+      "relation_en": "Paternal cousin",
+      "relation_ur": "پھوپھی زاد"
+    },
+    {
+      "id": "moiz",
+      "name": "Moiz",
+      "gender": "male",
+      "branch": "paternal",
+      "relation_en": "Paternal cousin's husband",
+      "relation_ur": "پھوپھی زاد کے شوہر"
+    },
+    {
+      "id": "abdul_rafey",
+      "name": "Abdul Rafey",
+      "birth_year": 2003,
+      "gender": "male",
+      "marital_status": "single",
+      "branch": "paternal",
+      "relation_en": "Paternal cousin",
+      "relation_ur": "پھوپھی زاد بھائی"
+    },
+    {
+      "id": "sana",
+      "name": "Sana",
+      "gender": "female",
+      "branch": "paternal",
+      "relation_en": "Paternal aunt",
+      "relation_ur": "پھوپھی"
+    },
+    {
+      "id": "sajjad",
+      "name": "Sajjad",
+      "gender": "male",
+      "branch": "paternal",
+      "relation_en": "Paternal aunt's husband",
+      "relation_ur": "پھوپھا"
+    },
+    {
+      "id": "muaaz",
+      "name": "Muaaz",
+      "aliases": [
+        "Maaz"
+      ],
+      "birth_year": 2010,
+      "gender": "male",
+      "branch": "paternal",
+      "relation_en": "Paternal cousin",
+      "relation_ur": "پھوپھی زاد بھائی"
+    },
+    {
+      "id": "barirah",
+      "name": "Barirah",
+      "birth_year": 2015,
+      "gender": "female",
+      "branch": "paternal",
+      "relation_en": "Paternal cousin",
+      "relation_ur": "پھوپھی زاد بہن"
+    },
+    {
+      "id": "afshan",
+      "name": "Afshan",
+      "gender": "female",
+      "branch": "paternal",
+      "relation_en": "Paternal aunt",
+      "relation_ur": "پھوپھی"
+    },
+    {
+      "id": "adeel_ahmad",
+      "name": "Adeel Ahmad",
+      "gender": "male",
+      "branch": "paternal",
+      "relation_en": "Paternal aunt's husband",
+      "relation_ur": "پھوپھا"
+    },
+    {
+      "id": "musabiha",
+      "name": "Musabiha",
+      "gender": "female",
+      "branch": "paternal",
+      "relation_en": "Paternal cousin",
+      "relation_ur": "پھوپھی زاد بہن"
+    },
+    {
+      "id": "musa",
+      "name": "Musa",
+      "gender": "male",
+      "branch": "paternal",
+      "relation_en": "Paternal cousin",
+      "relation_ur": "پھوپھی زاد بھائی"
+    }
+  ],
+  "parent_child": [
+    {"parent": "irsa_naz", "child": "mohammad_yahya_hussain", "role": "mother", "kind": "biological"},
+    {"parent": "mansoor_hussain", "child": "mohammad_yahya_hussain", "role": "father", "kind": "biological"},
+    {"parent": "irsa_naz", "child": "maham_mansoor", "role": "mother", "kind": "biological"},
+    {"parent": "mansoor_hussain", "child": "maham_mansoor", "role": "father", "kind": "biological"},
+    {"parent": "shahnaz_israr", "child": "sohaib_hussain", "role": "mother", "kind": "biological"},
+    {"parent": "israr_hussain", "child": "sohaib_hussain", "role": "father", "kind": "biological"},
+    {"parent": "shahnaz_israr", "child": "sadia_asif", "role": "mother", "kind": "biological"},
+    {"parent": "israr_hussain", "child": "sadia_asif", "role": "father", "kind": "biological"},
+    {"parent": "shahnaz_israr", "child": "irsa_naz", "role": "mother", "kind": "biological"},
+    {"parent": "israr_hussain", "child": "irsa_naz", "role": "father", "kind": "biological"},
+    {"parent": "shahnaz_israr", "child": "arsalan_israr", "role": "mother", "kind": "biological"},
+    {"parent": "israr_hussain", "child": "arsalan_israr", "role": "father", "kind": "biological"},
+    {"parent": "shahnaz_israr", "child": "ayesha_naeem", "role": "mother", "kind": "biological"},
+    {"parent": "israr_hussain", "child": "ayesha_naeem", "role": "father", "kind": "biological"},
+    {"parent": "abrar_hussain", "child": "mansoor_hussain", "role": "father", "kind": "biological"},
+    {"parent": "shaheen_abrar", "child": "mansoor_hussain", "role": "mother", "kind": "biological"},
+    {"parent": "abrar_hussain", "child": "hina", "role": "father", "kind": "biological"},
+    {"parent": "shaheen_abrar", "child": "hina", "role": "mother", "kind": "biological"},
+    {"parent": "abrar_hussain", "child": "sana", "role": "father", "kind": "biological"},
+    {"parent": "shaheen_abrar", "child": "sana", "role": "mother", "kind": "biological"},
+    {"parent": "abrar_hussain", "child": "afshan", "role": "father", "kind": "biological"},
+    {"parent": "shaheen_abrar", "child": "afshan", "role": "mother", "kind": "biological"},
+    {"parent": "sadia_asif", "child": "ezan_asif", "role": "parent", "kind": "biological"},
+    {"parent": "asif_qamar", "child": "ezan_asif", "role": "parent", "kind": "biological"},
+    {"parent": "sadia_asif", "child": "fakhir_asif", "role": "parent", "kind": "biological"},
+    {"parent": "asif_qamar", "child": "fakhir_asif", "role": "parent", "kind": "biological"},
+    {"parent": "hina", "child": "aresha_zubair", "role": "parent", "kind": "biological"},
+    {"parent": "zubair", "child": "aresha_zubair", "role": "parent", "kind": "biological"},
+    {"parent": "hina", "child": "fizza_zubair", "role": "parent", "kind": "biological"},
+    {"parent": "zubair", "child": "fizza_zubair", "role": "parent", "kind": "biological"},
+    {"parent": "hina", "child": "abdul_rafey", "role": "parent", "kind": "biological"},
+    {"parent": "zubair", "child": "abdul_rafey", "role": "parent", "kind": "biological"},
+    {"parent": "aresha_zubair", "child": "aresha_owais_daughter_a", "role": "parent", "kind": "biological"},
+    {"parent": "owais", "child": "aresha_owais_daughter_a", "role": "parent", "kind": "biological"},
+    {"parent": "aresha_zubair", "child": "aresha_owais_daughter_b", "role": "parent", "kind": "biological"},
+    {"parent": "owais", "child": "aresha_owais_daughter_b", "role": "parent", "kind": "biological"},
+    {"parent": "sana", "child": "muaaz", "role": "parent", "kind": "biological"},
+    {"parent": "sajjad", "child": "muaaz", "role": "parent", "kind": "biological"},
+    {"parent": "sana", "child": "barirah", "role": "parent", "kind": "biological"},
+    {"parent": "sajjad", "child": "barirah", "role": "parent", "kind": "biological"},
+    {"parent": "afshan", "child": "musabiha", "role": "parent", "kind": "biological"},
+    {"parent": "adeel_ahmad", "child": "musabiha", "role": "parent", "kind": "biological"},
+    {"parent": "afshan", "child": "musa", "role": "parent", "kind": "biological"},
+    {"parent": "adeel_ahmad", "child": "musa", "role": "parent", "kind": "biological"}
+  ],
+  "marriages": [
+    {"person1": "irsa_naz", "person2": "mansoor_hussain", "status": "married", "year": 2003},
+    {"person1": "shahnaz_israr", "person2": "israr_hussain", "status": "married"},
+    {"person1": "shaheen_abrar", "person2": "abrar_hussain", "status": "married"},
+    {"person1": "sohaib_hussain", "person2": "rubinna", "status": "married", "children_status": "no_children"},
+    {"person1": "sadia_asif", "person2": "asif_qamar", "status": "married"},
+    {"person1": "arsalan_israr", "person2": "falak_naz", "status": "married", "children_status": "no_children"},
+    {"person1": "ayesha_naeem", "person2": "wahaj", "status": "married", "children_status": "no_children"},
+    {"person1": "hina", "person2": "zubair", "status": "married"},
+    {"person1": "aresha_zubair", "person2": "owais", "status": "married"},
+    {"person1": "fizza_zubair", "person2": "moiz", "status": "married", "children_status": "no_children"},
+    {"person1": "sana", "person2": "sajjad", "status": "married"},
+    {"person1": "afshan", "person2": "adeel_ahmad", "status": "married"}
+  ],
+  "sibling_groups": [
+    {
+      "id": "mohammad_maham",
+      "members": ["mohammad_yahya_hussain", "maham_mansoor"],
+      "ordered": true,
+      "label_en": "siblings",
+      "label_ur": "بہن بھائی"
+    },
+    {
+      "id": "maternal_siblings",
+      "members": ["sohaib_hussain", "sadia_asif", "irsa_naz", "arsalan_israr", "ayesha_naeem"],
+      "ordered": true,
+      "label_en": "oldest to youngest",
+      "label_ur": "بڑے سے چھوٹے"
+    },
+    {
+      "id": "ezan_fakhir",
+      "members": ["ezan_asif", "fakhir_asif"],
+      "ordered": true,
+      "label_en": "oldest to youngest",
+      "label_ur": "بڑے سے چھوٹے"
+    },
+    {
+      "id": "rubinna_falak",
+      "members": ["rubinna", "falak_naz"],
+      "ordered": false,
+      "type": "full",
+      "label_en": "full sisters",
+      "label_ur": "سگی بہنیں"
+    },
+    {
+      "id": "abrar_israr",
+      "members": ["abrar_hussain", "israr_hussain"],
+      "ordered": false,
+      "type": "full",
+      "label_en": "full brothers",
+      "label_ur": "سگے بھائی"
+    },
+    {
+      "id": "paternal_siblings",
+      "members": ["mansoor_hussain", "hina", "sana", "afshan"],
+      "ordered": true,
+      "label_en": "oldest to youngest",
+      "label_ur": "بڑے سے چھوٹے"
+    },
+    {
+      "id": "hina_children",
+      "members": ["aresha_zubair", "fizza_zubair", "abdul_rafey"],
+      "ordered": true,
+      "label_en": "oldest to youngest",
+      "label_ur": "بڑے سے چھوٹے"
+    },
+    {
+      "id": "sana_children",
+      "members": ["muaaz", "barirah"],
+      "ordered": true,
+      "label_en": "older to younger",
+      "label_ur": "بڑے سے چھوٹے"
+    },
+    {
+      "id": "afshan_children",
+      "members": ["musabiha", "musa"],
+      "ordered": true,
+      "label_en": "oldest to youngest",
+      "label_ur": "بڑے سے چھوٹے"
+    },
+    {
+      "id": "aresha_children",
+      "members": ["aresha_owais_daughter_a", "aresha_owais_daughter_b"],
+      "ordered": false,
+      "label_en": "sisters; order not stated",
+      "label_ur": "بہنیں؛ ترتیب نامعلوم"
+    }
+  ],
+  "review_notes": [
+    {
+      "id": "R1",
+      "status": "resolved",
+      "text": "Confirmed: Irsa Naz and Mansoor Hussain are the biological parents of Mohammad and Maham."
+    },
+    {
+      "id": "R2",
+      "status": "resolved",
+      "text": "Confirmed: Shahnaz Israr and Israr Hussain are married and are the biological parents of Sohaib, Sadia, Irsa, Arsalan, and Ayesha."
+    },
+    {
+      "id": "R3",
+      "status": "resolved",
+      "text": "Confirmed: Abrar Hussain and Shaheen Abrar are the parents of Mansoor, Hina, Sana, and Afshan."
+    },
+    {
+      "id": "R4",
+      "status": "resolved",
+      "text": "Confirmed: Musabiha is the older daughter and Musa is the younger son; birth years are unknown."
+    },
+    {
+      "id": "R5",
+      "status": "placeholder",
+      "text": "Aresha and Owais's two daughters remain Unnamed daughter A and B until their names and birth order are provided. A/B do not assert birth order."
+    },
+    {
+      "id": "R6",
+      "status": "placeholder",
+      "text": "Ayesha's arrangement with the other family remains an unspecified placeholder. No legal status is inferred."
+    },
+    {
+      "id": "R7",
+      "status": "resolved",
+      "text": "Confirmed: preserve Rubinna; use Muaaz with Maaz as an alias."
+    },
+    {
+      "id": "R8",
+      "status": "resolved",
+      "text": "Confirmed: Mansoor Hussain and Irsa Naz married in 2003 and are Mohammad's biological parents. Shahnaz Israr and Israr Hussain are married. Shaheen Abrar and Abrar Hussain are married."
+    },
+    {
+      "id": "R9",
+      "status": "deferred",
+      "text": "Whether Shahnaz Israr and Shaheen Abrar have any relationship to each other is ON HOLD. No relationship is inferred, neither person is removed, and this is not asked again during the current revision."
+    },
+    {
+      "id": "R10",
+      "status": "resolved",
+      "text": "Abrar Hussain and Israr Hussain are FULL brothers (سگے بھائی). Rubinna and Falak Naz are FULL sisters (سگی بہنیں). Their parents will be added in a later expansion phase."
+    },
+    {
+      "id": "R11",
+      "status": "resolved",
+      "text": "Birth order recorded: [1] Mohammad Yahya Hussain, [2] Maham Mansoor; and [1] Ezan Asif, [2] Fakhir Asif."
+    },
+    {
+      "id": "R12",
+      "status": "resolved",
+      "text": "Explicitly no children: Sohaib Hussain + Rubinna, Arsalan Israr + Falak Naz, Ayesha Naeem + Wahaj, and Fizza Zubair + Moiz. Abdul Rafey is single. Unknown child status remains distinct from no children."
+    },
+    {
+      "id": "R13",
+      "status": "resolved",
+      "text": "Aresha Zubair and Fizza Zubair are female. Existing has-children parent-child records for Abrar+Shaheen, Sadia+Asif, Hina+Zubair, Aresha+Owais, Sana+Sajjad, and Afshan+Adeel Ahmad are normalized to biological under the default policy; roles stay as recorded."
+    }
+  ]
+}

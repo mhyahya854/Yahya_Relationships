@@ -1,0 +1,303 @@
+# People Relationships
+
+> A private, single-user, local-first relationship brain.
+
+**People Relationships** answers one question from **any selected person's
+perspective**: *who is connected to whom, how are they related, and what does
+that relationship look like from this person's side?*
+
+The application is built around the pre-existing **Family Relationships**
+SQLite + Python kinship engine (35 people, 44 parent-child facts, 12
+marriages in the current data). That engine is preserved and remains the only
+place where genealogy is calculated. React only displays; FastAPI + Python
+understand relationships; SQLite stores structured facts; Markdown stores
+journal prose; Hermes calls tiny deterministic tools.
+
+---
+
+## What changed (migration summary)
+
+- `family.db` remains the single structured store at the repository root.
+  A pre-migration snapshot exists under `backups/2026-09-04T130821/` with a
+  SHA-256 manifest, and the pre-change baseline is archived at
+  `archive/pre-people-relationships-2026-09-04/baseline-before-people-relationships.md`.
+- Schema version 1 (`PRAGMA user_version`, `metadata.app_schema_version`)
+  was applied transactionally. New tables only add capabilities:
+  - `groups`, `person_groups` — organisational metadata (never relationship truth)
+  - `general_relationships` — friends/colleagues/mentors and other explicit,
+    non-family relationships (symmetric or directional, no transitive inference)
+  - `metadata` rows for `app_name`, `app_version`, `app_schema_version`
+- Existing tables (`people`, `parent_child`, `marriages`, `sibling_groups`,
+  `aliases`, `sources`, `fact_sources`, `review_notes`, `metadata`) are
+  untouched. Running `python build_family.py` after migration reproduced
+  byte-identical `family.md`/`family.html` outputs.
+- The legacy builder still works: `python build_family.py --check` runs the
+  full semantic-render, derived-kinship and arbitrary-perspective audits.
+- Fourth-pass upgrade snapshot (Data Safety & Restore upgrade):
+  `backups/pre-safety-upgrade-2026-09-04T210155/` (database + journals + manifest).
+
+## Data Safety & Portability (Pass 4 Upgrades)
+
+- **Canonical Data Root**: Centralized path resolution via `DataRootManager`. Resolves database (`data/family.db` or root `family.db`), `people/`, `backups/`, `config/`, and `exports/`.
+- **Filesystem-Aware Undo**: Single-step Undo tracks structured DB changes AND filesystem actions (folder creations/moves). Protects externally modified journals via structured `UNDO_FILESYSTEM_CONFLICT` error.
+- **Guided Backup Restore**: Full human-facing restore flow with pre-restore SHA-256 and SQLite integrity verification, mandatory automated pre-restore safety backups (`pre-restore-<timestamp>`), staged atomic execution, and automatic rollback on failure.
+- **Data Root Health Audit**: Deterministic, non-destructive audit (`audit_data_root()`) checking SQLite integrity and filesystem alignment (detects missing folders, missing journals, orphan folders, and archived-active mismatches). Includes `safe_repair_data_root()` for safe repairs.
+- **Data Root Relocation & Switching**: Supports moving the active data root across drives with copy-verify-switch staging, or switching to an existing valid data root.
+- **Disconnected Media Recovery**: If active data root is missing or disconnected on launch, shows a recovery screen offering retry, alternate root selection, or backup restore. Empty databases are never created silently.
+
+## Architecture
+
+```text
+Tauri Desktop shell (src-tauri)
+        |
+        v
+React + TypeScript + Vite (app/frontend)
+        |
+        v  http://127.0.0.1:8765
+FastAPI local backend (app/backend)
+        |
+        +---- Python relationship engine (existing build_family.py, reused)
+        +---- SQLite family.db (structured facts + app tables)
+        +---- people/<group>/<person-id>/journal.md (Markdown prose)
+```
+
+Repository layout (the repo root is also the personal-data root):
+
+```text
+Family Relationships/
+  family.db              canonical SQLite store (unchanged schema core)
+  build_family.py        legacy builder/kinship engine (canonical)
+  family.html / family.md legacy generated exports (still generated)
+  people/<Group>/<id>/journal.md
+  config/state.json      UI perspective state
+  backups/<timestamp>/   full snapshots + manifest.json
+  app/backend/           FastAPI + services + Hermes tools
+    domain/family/       canonical engine-aligned path extraction
+    domain/relationships/ path service + graph neighbour model
+  app/frontend/          React UI
+    features/relationships/ diagram-first React Flow feature
+  src-tauri/             Tauri 2 desktop shell
+  tests/                 pytest suite (69 tests)
+  scripts/               dev / verify helpers
+```
+
+## Relationships is diagram-first (React Flow)
+
+Opening **Relationships** shows a relationship diagram immediately, with a
+side panel beside it. The diagram is rendered with **@xyflow/react** and a
+deterministic **dagre** hierarchical layout — no physics-based jitter — and
+starts with the perspective person plus their parents, siblings, spouses and
+general neighbours.
+
+- Click a node to select; double-click (or *View from this person*) to change
+  the global perspective. **Return to My Perspective** stays prominent.
+- The bottom bar expands/collapses **Parents · Children · Siblings · Spouses
+  · General** for the selected person. Nodes shared with other visible
+  branches are never removed when collapsing.
+- Edges are semantic: strong line = parent/child (biological), dashed amber =
+  non-biological parent/child kind, medium violet = marriage, dotted = sibling,
+  dashed teal = general relationship. A small legend is always visible.
+- The **Family** screen remains the existing Mermaid genealogy renderer;
+  Relationships (exploratory, arbitrary perspective) and Family (traditional
+  tree) solve different problems on purpose.
+
+### Show why and relationship paths
+
+Every Primary/Additional relationship in the side panel has a **Show why**
+button. It asks the backend for the exact objective graph path(s), enters
+path-focus mode, highlights the path nodes and edges, dims everything else,
+adds missing intermediate (including virtual shared-ancestor) nodes, fits the
+path into view, and shows side/degree/removal/common-ancestor facts plus a
+template-generated explanation. **Esc** or *Exit path* restores the previous
+graph. Multiple valid paths for one label (for example a nephew via the
+maternal grandmother vs. the maternal grandfather) can be switched inside
+the path panel.
+
+Paths are bounded and validated: `max_depth` default 10 (range 1–30) and
+`max_paths` default 10 (range 1–50). Errors are structured
+(`NO_RELATIONSHIP_PATH`, `INVALID_MAX_DEPTH`, `INVALID_MAX_PATHS`). Paths are
+derived data — never stored, never authoritative. See
+[docs/architecture/relationship-paths.md](docs/architecture/relationship-paths.md).
+
+### Keyboard navigation
+
+| Key | Action |
+| --- | --- |
+| Ctrl/Cmd+K | Focus person search |
+| V | View from selected person |
+| C | Compare selected person |
+| P | Show primary relationship path |
+| H | Return to owner perspective |
+| Esc | Exit path focus / close overlay |
+
+Shortcuts never fire while typing in inputs, textareas or editors.
+
+## Family engine preservation
+
+The existing engine in `build_family.py` is **not** reimplemented. The new
+backend imports the same functions the legacy export uses:
+
+- `read_sqlite_model` / model loading
+- `validate` (duplicates, self-parent, ancestry cycles, kinds, statuses)
+- `_pair_path_records` (every distinct lineage path)
+- `_kinship_terms`, `_pair_relationship_entries` (maternal/paternal sides,
+  cousin degree/removal, multiple simultaneous paths)
+- `_audit_derived` and `_kinship_regression_audit` (build-time regression
+  audits)
+- `build_mermaid`, `audit_render_mapping` (family diagram generation)
+
+`app/backend/kinship/` is a thin facade over the builder plus a
+display-language layer that attaches stable semantic type keys (for example
+`maternal_cousin_degree_1`) and English/Urdu labels without changing kinship
+logic. The UI never computes family relationships itself.
+
+## Perspective switching
+
+The whole UI is interpreted from a `perspective_person_id`:
+
+1. Default = the configured owner/focus person from `family.db`
+   (`mohammad_yahya_hussain`).
+2. The top bar always shows **Viewing relationships from: [Person]** and a
+   **Return to My Perspective** action when a different person is selected.
+3. Every person card/modal offers **View from this person**.
+4. Perspective is UI/session state stored in `config/state.json`; it never
+   rewrites family facts.
+5. Double-clicking a card in the Family diagram or the network view also
+   switches perspective.
+
+Relationships are directional. `get_relationship(A, B)` differs from
+`get_relationship(B, A)` wherever terminology is directional (Uncle vs
+Nephew, etc.). Multiple valid paths are first-class: direct relationships
+appear under *Primary*, additional cousin paths under *Additional paths*.
+
+## Generic (non-family) relationships
+
+Stored in `general_relationships` with `person_a`, `person_b`, `type`,
+`directionality`, `label_a_to_b`, `label_b_to_a` and notes. Symmetric types
+(friend, close_friend, colleague, neighbour, acquaintance…) receive one
+label; directional relationships (mentor → mentee) keep distinct labels and
+the original direction. No friendship is ever inferred transitively.
+Relationships are independent of groups — a person can simultaneously be
+family, friend and colleague while remaining one canonical record with one
+folder.
+
+## Per-person Markdown journals
+
+- Every person has exactly one folder: `people/<primary-group>/<id>/journal.md`
+- `journal.md` is the authoritative prose source (UTF-8, any language).
+- The app reads the file on open and offers **Reload from disk**, so edits in
+  VS Code / Obsidian / Notepad appear without a restart.
+- Writes are atomic (temp file + `fsync` + rename). If the file changed on
+  disk since it was read, the app refuses to overwrite it (`JOURNAL_CONFLICT`)
+  and reloads the external version for manual merge.
+- Search reads the journals directly; no competing authoritative copy.
+
+## Hermes tool layer
+
+`GET /api/hermes/tools` exposes a small stable catalog; `POST
+/api/hermes/run` executes one tool. Hermes decides intent; the backend
+performs the operation — including genealogy. Tools include:
+
+```text
+search_people        get_person            list_people
+get_relationship     compare_people        list_relationships_from
+set_perspective      add_person            update_person
+add_family_fact      add_general_relationship  remove_general_relationship
+read_journal         append_journal        search_journals
+create_backup        list_backups          resolve_person
+get_relationship_paths                    get_neighbors
+```
+
+Every tool returns `{"ok": true, ...}` or a machine-readable error
+`{"ok": false, "error": {"code": ..., "message": ...}}`. Ambiguous names
+return `PERSON_AMBIGUOUS` with candidate matches rather than silent guesses.
+Hermes-created writes carry provenance `source_type=user_via_hermes`.
+No tool exposes SQL, internal paths, or the repository structure.
+
+## Backups
+
+`Create Backup` in the Backups screen (or the `create_backup` Hermes tool)
+snapshots the whole state into `backups/<UTC-timestamp>/`:
+
+- `data/family.db` (SQLite copy)
+- `people/` (every journal folder, UTF-8)
+- `config/`
+- `manifest.json` — app/schema version, file list with sizes and SHA-256
+
+Snapshots can be verified against the manifest and restored by copying files
+back (the database file is a plain SQLite file; journals are plain Markdown).
+
+## Development
+
+Prerequisites: Python 3.11+, Node 20+, Rust stable + MSVC (for the desktop
+shell), and a local copy of `vendor/mermaid.min.js` already present.
+
+```powershell
+# Python environment
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r app\backend\requirements.txt
+
+# Frontend dependencies
+npm install
+npm --prefix app/frontend install
+
+# Everything (FastAPI + Vite), open http://localhost:1420
+npm run dev
+
+# Desktop shell (starts Vite, compiles and opens the Tauri app)
+npm run dev:desktop
+
+# Production web build (also used by Tauri)
+npm run build
+
+# Tests
+npm test              # Python/pytest suite
+npm run legacy:check  # legacy builder audits against family.db
+```
+
+The backend binds to `127.0.0.1:8765` by default
+(`PR_BACKEND_PORT` overrides; Vite proxies `/api` in development). The Tauri
+shell starts the backend automatically when launched from a source checkout
+(uses `.venv/Scripts/python.exe` when present). For a fully standalone
+packaged build, bundle the backend with PyInstaller and point
+`PR_BACKEND_EXE` at it — the desktop shell treats that environment variable
+as the backend command. No cloud service is used anywhere.
+
+## Data-integrity rules carried over
+
+- Stable person IDs; one real person = one record = one folder.
+- Parent-child kinds are validated (`biological`, `adopted`, `step`,
+  `foster`, `guardian`, `unknown`, `unspecified`); ancestry cycles,
+  duplicates and self-marriages are rejected.
+- No-children, single-status and sibling-group rules match the legacy
+  `validate()` implementation.
+- Family writes re-run the legacy derived-kinship and arbitrary-perspective
+  audits after every successful mutation.
+- Deletions are refused while the person is part of the family graph; strong
+  confirmation is required in the UI.
+
+## Tests
+
+`tests/` (69 tests) cover data integrity, kinship regressions, perspective
+reversal, multiple simultaneous paths, compare, generic relationships and
+no-transitive-inference, journals (append, UTF-8, external-edit detection),
+backups, Hermes JSON tools, relationship paths (endpoints, bounds, dedupe,
+reversal, coverage) and the FastAPI endpoints. Tests always run against a
+fresh copy of `family.db` in a temporary root; the real database is never
+mutated by tests. A headless Edge UI smoke test (`tests/ui/smoke.mjs`) drives
+the diagram-first acceptance flow end-to-end against the running dev stack
+(see `tests/ui/README.md`). Verified screenshots live in
+`docs/ui-screenshots/`.
+
+## Known limitations
+
+- The desktop shell launches the Python backend from the source tree in
+  development. Distributing one double-clickable `.exe` that embeds Python
+  requires a PyInstaller sidecar step (`PR_BACKEND_EXE`), which is
+  intentional: bundling the interpreter into this repository would turn the
+  personal-data folder into a build artifact.
+- Restore is file-level (copy the snapshot back) rather than a guided wizard;
+  the manifest makes verification deterministic.
+- The legacy generated `family.html` remains a static snapshot export; the
+  React Family screen renders the same Mermaid string live with perspective
+  labels.

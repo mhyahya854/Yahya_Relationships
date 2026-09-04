@@ -1,0 +1,18 @@
+[package]
+name = "people-relationships"
+version = "1.0.0"
+description = "Local-first personal relationship brain"
+authors = ["People Relationships"]
+edition = "2021"
+
+[lib]
+name = "people_relationships_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
