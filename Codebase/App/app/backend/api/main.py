@@ -16,10 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from .. import config, db  # noqa: E402
-from ..hermes import tools as hermes_tools  # noqa: E402
+from .. import config, db
+from ..hermes import tools as hermes_tools
 from ..model import (  # noqa: E402
     family_snapshot,
     load_model,
@@ -52,8 +50,13 @@ from ..data_root.errors import DataRootError
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    config.ensure_root_dirs()
-    db.migrate()
+    from ..data_root.manager import DataRootManager
+
+    active_root = DataRootManager.resolve_active_root()
+    db_path = DataRootManager.get_database_path(active_root)
+    if active_root.exists() and db_path.exists():
+        config.ensure_root_dirs()
+        db.migrate()
     yield
 
 
@@ -98,6 +101,20 @@ app.include_router(backups_router.router)
 
 @app.get("/api/health")
 def health() -> dict:
+    from ..data_root.manager import DataRootManager
+
+    active_root = DataRootManager.resolve_active_root()
+    db_path = DataRootManager.get_database_path(active_root)
+    if not active_root.exists() or not db_path.exists():
+        return {
+            "ok": False,
+            "status": "DATA_ROOT_NOT_FOUND",
+            "error": f"Data root or database not found at '{active_root}'",
+            "data_root": str(active_root),
+            "database_path": str(db_path),
+            "app": config.APP_NAME,
+            "version": config.APP_VERSION,
+        }
     connection = db.get_connection()
     try:
         info = db.schema_info(connection)
@@ -571,7 +588,7 @@ def api_family_facts() -> dict:
 
 @app.get("/api/family/diagram")
 def api_family_diagram(perspective_id: str | None = None) -> dict:
-    import build_family
+    from ..domain.family import engine as build_family
 
     model = load_model()
     focus = perspective_id or model["metadata"].get("focus_person")
@@ -590,7 +607,7 @@ def api_family_diagram(perspective_id: str | None = None) -> dict:
 def _diagram_model(model: dict, focus_id: str) -> dict:
     """Copy of the model whose person labels describe relationship to the
     requested perspective (rendering only; nothing is written back)."""
-    from build_family import _viewer_pair
+    from ..domain.family.engine import _viewer_pair
 
     adjusted = copy.deepcopy(model)
     adjusted["metadata"] = dict(adjusted.get("metadata", {}))

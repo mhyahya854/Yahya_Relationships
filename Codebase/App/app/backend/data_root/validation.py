@@ -49,7 +49,16 @@ def audit_data_root(root: Optional[Path] = None) -> DataRootHealth:
         )
 
     db_path = DataRootManager.get_database_path(active_root)
-    layout_mode = "portable" if (active_root / "data" / "family.db").exists() else "legacy_repo_root"
+    if (active_root / "Database" / "Main" / "family.db").exists():
+        layout_mode = "canonical"
+    elif (active_root / "data" / "family.db").exists():
+        # Portable snapshot layout (used inside backup archives).
+        layout_mode = "portable"
+    elif (active_root / "family.db").exists():
+        layout_mode = "legacy_repo_root"
+    else:
+        # New roots are created with the canonical structure (Database/Main).
+        layout_mode = "canonical"
 
     db_health: Optional[DatabaseHealth] = None
     fs_health = FilesystemHealth()

@@ -6,18 +6,26 @@ from collections import defaultdict
 from pathlib import Path
 
 
-SCRIPTS_DIR = Path(__file__).resolve().parent
-CODEBASE_DIR = SCRIPTS_DIR.parent
-REPO_ROOT = CODEBASE_DIR.parent
+from ...config import (
+    CODEBASE_ROOT as CODEBASE_DIR,
+    DOCUMENTATION_ROOT,
+    PROJECT_ROOT as REPO_ROOT,
+    SCRIPTS_DIR,
+    VENDOR_DIR,
+)
+from ...data_root import DataRootManager
 
-DATA_PATH = REPO_ROOT / "Database" / "Main" / "family.json"
-DB_PATH = REPO_ROOT / "Database" / "Main" / "family.db"
-ARCHIVE_DIR = REPO_ROOT / "Documentation" / "Archive"
+# Paths anchored at the ACTIVE data root (single canonical source of truth)
+# and at the central project config. ROOT is kept for the legacy source
+# registration below.
+ROOT = DataRootManager.resolve_active_root()
+DB_PATH = DataRootManager.get_database_path(ROOT)
+DATA_PATH = ROOT / "Database" / "Main" / "family.json"
+ARCHIVE_DIR = DOCUMENTATION_ROOT / "Archive"
 ARCHIVE_JSON_PATH = ARCHIVE_DIR / "family-revision-5-pre-sqlite.json"
-VENDOR_DIR = CODEBASE_DIR / "Resources" / "Vendor"
 MERMAID_LIB_PATH = VENDOR_DIR / "mermaid.min.js"
-OUTPUT_MD_PATH = REPO_ROOT / "Database" / "Exports" / "Family" / "family.md"
-OUTPUT_HTML_PATH = REPO_ROOT / "Database" / "Exports" / "Family" / "family.html"
+OUTPUT_MD_PATH = DataRootManager.get_exports_dir(ROOT) / "Family" / "family.md"
+OUTPUT_HTML_PATH = DataRootManager.get_exports_dir(ROOT) / "Family" / "family.html"
 
 ALLOWED_PARENT_KINDS = {
     "biological",

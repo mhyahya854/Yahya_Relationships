@@ -30,7 +30,7 @@ def test_legacy_check_passes():
 
 
 def test_model_loader_parity_with_builder():
-    import build_family
+    from app.backend.domain.family import engine as build_family
 
     from app.backend.model import load_model
 
@@ -41,7 +41,7 @@ def test_model_loader_parity_with_builder():
 
 def test_engine_pair_matches_legacy_viewer_labels():
     """Refactored grouping must never drop an engine label."""
-    import build_family
+    from app.backend.domain.family import engine as build_family
 
     from app.backend.services.relationship import get_relationship
 

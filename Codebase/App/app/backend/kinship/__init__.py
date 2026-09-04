@@ -4,7 +4,7 @@ Everything here delegates to the existing builder so there is exactly one
 kinship implementation across the legacy export, the API, Hermes and the UI.
 """
 
-from build_family import (  # noqa: F401
+from ..domain.family.engine import (  # noqa: F401
     MAX_KINSHIP_DEPTH,
     _ancestor_chains,
     _audit_derived,

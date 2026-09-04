@@ -8,6 +8,7 @@
 **/target/
 **/gen/
 **/shots/
+**/*.egg-info/
 **/__pycache__/
 **/*.pyc
 **/.pytest_cache/
@@ -16,6 +17,7 @@
 *.log
 .env
 .env.*
+!.env.example
 
 # Editors / OS
 .DS_Store

@@ -8,7 +8,7 @@ inference.
 
 import sqlite3
 
-import build_family
+from ..domain.family import engine as build_family
 
 from .. import db
 from ..kinship import labels

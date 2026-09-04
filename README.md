@@ -17,10 +17,11 @@ journal prose; Hermes calls tiny deterministic tools.
 
 ## What changed (migration summary)
 
-- `family.db` remains the single structured store at the repository root.
-  A pre-migration snapshot exists under `backups/2026-09-04T130821/` with a
-  SHA-256 manifest, and the pre-change baseline is archived at
-  `archive/pre-people-relationships-2026-09-04/baseline-before-people-relationships.md`.
+- `family.db` remains the single structured store, now at
+  `Database/Main/family.db`. A pre-migration snapshot exists under
+  `Backups/Safety/Pre-Upgrade/2026-09-04T130821/` with a SHA-256 manifest,
+  and the pre-change baseline is archived at
+  `Documentation/Archive/pre-people-relationships-2026-09-04/baseline-before-people-relationships.md`.
 - Schema version 1 (`PRAGMA user_version`, `metadata.app_schema_version`)
   was applied transactionally. New tables only add capabilities:
   - `groups`, `person_groups` — organisational metadata (never relationship truth)
@@ -29,16 +30,17 @@ journal prose; Hermes calls tiny deterministic tools.
   - `metadata` rows for `app_name`, `app_version`, `app_schema_version`
 - Existing tables (`people`, `parent_child`, `marriages`, `sibling_groups`,
   `aliases`, `sources`, `fact_sources`, `review_notes`, `metadata`) are
-  untouched. Running `python build_family.py` after migration reproduced
-  byte-identical `family.md`/`family.html` outputs.
-- The legacy builder still works: `python build_family.py --check` runs the
+  untouched. Running the legacy builder (`Codebase/Scripts/build_family.py`)
+  after migration reproduced byte-identical `family.md`/`family.html` outputs.
+- The legacy builder still works: `npm run legacy:check` from `Codebase/`
+  (which runs `Codebase/Scripts/build_family.py --check`) runs the
   full semantic-render, derived-kinship and arbitrary-perspective audits.
 - Fourth-pass upgrade snapshot (Data Safety & Restore upgrade):
-  `backups/pre-safety-upgrade-2026-09-04T210155/` (database + journals + manifest).
+  `Backups/Safety/Pre-Upgrade/pre-safety-upgrade-2026-09-04T210155/` (database + journals + manifest).
 
 ## Data Safety & Portability (Pass 4 Upgrades)
 
-- **Canonical Data Root**: Centralized path resolution via `DataRootManager`. Resolves database (`data/family.db` or root `family.db`), `people/`, `backups/`, `config/`, and `exports/`.
+- **Canonical Data Root**: Centralized path resolution via `DataRootManager`. Resolves database (`Database/Main/family.db`), `Database/People/`, `Backups/`, `Database/Config/`, and `Database/Exports/` (legacy layouts — `data/family.db`, root `family.db`, `people/`, `backups/`, `config/`, `exports/` — are still recognized as fallbacks).
 - **Filesystem-Aware Undo**: Single-step Undo tracks structured DB changes AND filesystem actions (folder creations/moves). Protects externally modified journals via structured `UNDO_FILESYSTEM_CONFLICT` error.
 - **Guided Backup Restore**: Full human-facing restore flow with pre-restore SHA-256 and SQLite integrity verification, mandatory automated pre-restore safety backups (`pre-restore-<timestamp>`), staged atomic execution, and automatic rollback on failure.
 - **Data Root Health Audit**: Deterministic, non-destructive audit (`audit_data_root()`) checking SQLite integrity and filesystem alignment (detects missing folders, missing journals, orphan folders, and archived-active mismatches). Includes `safe_repair_data_root()` for safe repairs.
@@ -48,37 +50,42 @@ journal prose; Hermes calls tiny deterministic tools.
 ## Architecture
 
 ```text
-Tauri Desktop shell (src-tauri)
+Tauri Desktop shell (Codebase/Desktop/Tauri)
         |
         v
-React + TypeScript + Vite (app/frontend)
+React + TypeScript + Vite (Codebase/App/Frontend)
         |
         v  http://127.0.0.1:8765
-FastAPI local backend (app/backend)
+FastAPI local backend (Codebase/App/app/backend)
         |
-        +---- Python relationship engine (existing build_family.py, reused)
-        +---- SQLite family.db (structured facts + app tables)
-        +---- people/<group>/<person-id>/journal.md (Markdown prose)
+        +---- Python relationship engine (canonical domain/family/engine.py, reused)
+        +---- SQLite Database/Main/family.db (structured facts + app tables)
+        +---- Database/People/<group>/<person-id>/journal.md (Markdown prose)
 ```
 
 Repository layout (the repo root is also the personal-data root):
 
 ```text
 Family Relationships/
-  family.db              canonical SQLite store (unchanged schema core)
-  build_family.py        legacy builder/kinship engine (canonical)
-  family.html / family.md legacy generated exports (still generated)
-  people/<Group>/<id>/journal.md
-  config/state.json      UI perspective state
-  backups/<timestamp>/   full snapshots + manifest.json
-  app/backend/           FastAPI + services + Hermes tools
-    domain/family/       canonical engine-aligned path extraction
-    domain/relationships/ path service + graph neighbour model
-  app/frontend/          React UI
-    features/relationships/ diagram-first React Flow feature
-  src-tauri/             Tauri 2 desktop shell
-  tests/                 pytest suite (69 tests)
-  scripts/               dev / verify helpers
+  Codebase/              application source, tests, scripts and packaging
+    App/app/backend/     FastAPI + services + Hermes tools
+      domain/family/     canonical engine + engine-aligned path extraction
+      domain/relationships/ path service + graph neighbour model
+    App/Frontend/        React UI
+      src/features/relationships/ diagram-first React Flow feature
+    Desktop/Tauri/       Tauri 2 desktop shell
+    Scripts/             dev / verify helpers + build_family.py CLI wrapper
+    Tests/Backend/       pytest suite (93 tests)
+    Tests/UI/            headless Edge smoke test
+    Resources/Vendor/    bundled third-party assets (mermaid.min.js)
+  Database/
+    Main/family.db       canonical SQLite store (unchanged schema core)
+    People/<Group>/<id>/journal.md
+    Config/state.json    UI perspective state
+    Sources/             provenance source batches
+    Exports/Family/      family.html / family.md (still generated)
+  Backups/<Category>/<timestamp>/  full snapshots + manifest.json
+  Documentation/         architecture, API, database, testing docs + archive
 ```
 
 ## Relationships is diagram-first (React Flow)
@@ -117,7 +124,7 @@ Paths are bounded and validated: `max_depth` default 10 (range 1–30) and
 `max_paths` default 10 (range 1–50). Errors are structured
 (`NO_RELATIONSHIP_PATH`, `INVALID_MAX_DEPTH`, `INVALID_MAX_PATHS`). Paths are
 derived data — never stored, never authoritative. See
-[docs/architecture/relationship-paths.md](docs/architecture/relationship-paths.md).
+[Documentation/Architecture/relationship-paths.md](Documentation/Architecture/relationship-paths.md).
 
 ### Keyboard navigation
 
@@ -134,8 +141,10 @@ Shortcuts never fire while typing in inputs, textareas or editors.
 
 ## Family engine preservation
 
-The existing engine in `build_family.py` is **not** reimplemented. The new
-backend imports the same functions the legacy export uses:
+The existing engine (canonical at `Codebase/App/app/backend/domain/family/engine.py`,
+with `Codebase/Scripts/build_family.py` as a thin CLI wrapper) is **not**
+reimplemented. The new backend imports the same functions the legacy export
+uses:
 
 - `read_sqlite_model` / model loading
 - `validate` (duplicates, self-parent, ancestry cycles, kinds, statuses)
@@ -146,7 +155,7 @@ backend imports the same functions the legacy export uses:
   audits)
 - `build_mermaid`, `audit_render_mapping` (family diagram generation)
 
-`app/backend/kinship/` is a thin facade over the builder plus a
+`Codebase/App/app/backend/kinship/` is a thin facade over the builder plus a
 display-language layer that attaches stable semantic type keys (for example
 `maternal_cousin_degree_1`) and English/Urdu labels without changing kinship
 logic. The UI never computes family relationships itself.
@@ -155,13 +164,13 @@ logic. The UI never computes family relationships itself.
 
 The whole UI is interpreted from a `perspective_person_id`:
 
-1. Default = the configured owner/focus person from `family.db`
+1. Default = the configured owner/focus person from `Database/Main/family.db`
    (`mohammad_yahya_hussain`).
 2. The top bar always shows **Viewing relationships from: [Person]** and a
    **Return to My Perspective** action when a different person is selected.
 3. Every person card/modal offers **View from this person**.
-4. Perspective is UI/session state stored in `config/state.json`; it never
-   rewrites family facts.
+4. Perspective is UI/session state stored in `Database/Config/state.json`; it
+   never rewrites family facts.
 5. Double-clicking a card in the Family diagram or the network view also
    switches perspective.
 
@@ -183,7 +192,7 @@ folder.
 
 ## Per-person Markdown journals
 
-- Every person has exactly one folder: `people/<primary-group>/<id>/journal.md`
+- Every person has exactly one folder: `Database/People/<primary-group>/<id>/journal.md`
 - `journal.md` is the authoritative prose source (UTF-8, any language).
 - The app reads the file on open and offers **Reload from disk**, so edits in
   VS Code / Obsidian / Notepad appear without a restart.
@@ -217,7 +226,9 @@ No tool exposes SQL, internal paths, or the repository structure.
 ## Backups
 
 `Create Backup` in the Backups screen (or the `create_backup` Hermes tool)
-snapshots the whole state into `backups/<UTC-timestamp>/`:
+snapshots the whole state into `Backups/` (categorized under `Manual/`,
+`Automatic/` or `Safety/…`; each snapshot folder is named
+`backup-<UTC-timestamp>-<label>`):
 
 - `data/family.db` (SQLite copy)
 - `people/` (every journal folder, UTF-8)
@@ -230,16 +241,20 @@ back (the database file is a plain SQLite file; journals are plain Markdown).
 ## Development
 
 Prerequisites: Python 3.11+, Node 20+, Rust stable + MSVC (for the desktop
-shell), and a local copy of `vendor/mermaid.min.js` already present.
+shell), and a local copy of `Codebase/Resources/Vendor/mermaid.min.js`
+already present.
+
+All development commands run from `Codebase/`:
 
 ```powershell
-# Python environment
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r app\backend\requirements.txt
+# Unified one-command setup (creates .venv, installs editable backend, installs npm dependencies)
+npm run setup
 
-# Frontend dependencies
+# Or manual setup:
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e App
 npm install
-npm --prefix app/frontend install
+npm --prefix App/Frontend install
 
 # Everything (FastAPI + Vite), open http://localhost:1420
 npm run dev
@@ -251,14 +266,14 @@ npm run dev:desktop
 npm run build
 
 # Tests
-npm test              # Python/pytest suite
-npm run legacy:check  # legacy builder audits against family.db
+npm test              # Python/pytest suite (93 tests)
+npm run legacy:check  # legacy builder audits against Database/Main/family.db
 ```
 
 The backend binds to `127.0.0.1:8765` by default
 (`PR_BACKEND_PORT` overrides; Vite proxies `/api` in development). The Tauri
 shell starts the backend automatically when launched from a source checkout
-(uses `.venv/Scripts/python.exe` when present). For a fully standalone
+(uses `Codebase/.venv/Scripts/python.exe` when present). For a fully standalone
 packaged build, bundle the backend with PyInstaller and point
 `PR_BACKEND_EXE` at it — the desktop shell treats that environment variable
 as the backend command. No cloud service is used anywhere.
@@ -278,16 +293,17 @@ as the backend command. No cloud service is used anywhere.
 
 ## Tests
 
-`tests/` (69 tests) cover data integrity, kinship regressions, perspective
-reversal, multiple simultaneous paths, compare, generic relationships and
-no-transitive-inference, journals (append, UTF-8, external-edit detection),
-backups, Hermes JSON tools, relationship paths (endpoints, bounds, dedupe,
-reversal, coverage) and the FastAPI endpoints. Tests always run against a
-fresh copy of `family.db` in a temporary root; the real database is never
-mutated by tests. A headless Edge UI smoke test (`tests/ui/smoke.mjs`) drives
-the diagram-first acceptance flow end-to-end against the running dev stack
-(see `tests/ui/README.md`). Verified screenshots live in
-`docs/ui-screenshots/`.
+`Codebase/Tests/Backend/` (93 tests) cover data integrity, kinship
+regressions, perspective reversal, multiple simultaneous paths, compare,
+generic relationships and no-transitive-inference, journals (append, UTF-8,
+external-edit detection), backups, Hermes JSON tools, relationship paths
+(endpoints, bounds, dedupe, reversal, coverage), data root safety resolution,
+and the FastAPI endpoints.
+Tests always run against a fresh copy of `family.db` in a temporary root;
+the real database is never mutated by tests. A headless Edge UI smoke test
+(`Codebase/Tests/UI/smoke.mjs`) drives the diagram-first acceptance flow
+end-to-end against the running dev stack (see `Codebase/Tests/UI/README.md`).
+Verified screenshots live in `Documentation/UI-Screenshots/`.
 
 ## Known limitations
 
@@ -296,8 +312,6 @@ the diagram-first acceptance flow end-to-end against the running dev stack
   requires a PyInstaller sidecar step (`PR_BACKEND_EXE`), which is
   intentional: bundling the interpreter into this repository would turn the
   personal-data folder into a build artifact.
-- Restore is file-level (copy the snapshot back) rather than a guided wizard;
-  the manifest makes verification deterministic.
 - The legacy generated `family.html` remains a static snapshot export; the
   React Family screen renders the same Mermaid string live with perspective
   labels.

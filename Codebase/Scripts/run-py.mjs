@@ -16,9 +16,16 @@ const python = candidates.find((candidate) =>
   candidate.includes(resolve(root)) ? existsSync(candidate) : true,
 );
 
+const appDir = resolve(root, "App");
+const scriptsDir = resolve(root, "Scripts");
+const existingPythonPath = process.env.PYTHONPATH || "";
+const pythonPathParts = [appDir, scriptsDir, root];
+if (existingPythonPath) pythonPathParts.push(existingPythonPath);
+const pythonPath = pythonPathParts.join(process.platform === "win32" ? ";" : ":");
+
 const result = spawnSync(python, process.argv.slice(2), {
   cwd: root,
   stdio: "inherit",
-  env: { ...process.env, PYTHONUTF8: "1" },
+  env: { ...process.env, PYTHONUTF8: "1", PYTHONPATH: pythonPath },
 });
 process.exit(result.status ?? 1);

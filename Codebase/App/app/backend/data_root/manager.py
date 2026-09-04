@@ -24,12 +24,21 @@ from .errors import (
 
 
 def _repo_root() -> Path:
-    """Repository root: Codebase/App/Backend/data_root/manager.py -> parents[4]."""
-    return Path(__file__).resolve().parents[4]
+    """Project root: Codebase/App/app/backend/data_root/manager.py -> parents[5]."""
+    return Path(__file__).resolve().parents[5]
 
 
 def _user_bootstrap_config_path() -> Path:
-    """OS-specific bootstrap pointer file pointing to active Data Root."""
+    """OS-specific bootstrap pointer file pointing to active Data Root.
+
+    ``PEOPLE_RELATIONSHIPS_BOOTSTRAP`` overrides the location entirely (used
+    by the test suite so the real user-level config is never touched).
+    """
+    override = os.environ.get("PEOPLE_RELATIONSHIPS_BOOTSTRAP")
+    if override:
+        bootstrap_file = Path(override).expanduser().resolve()
+        bootstrap_file.parent.mkdir(parents=True, exist_ok=True)
+        return bootstrap_file
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming")))
     elif sys.platform == "darwin":
@@ -68,13 +77,11 @@ class DataRootManager:
             try:
                 data = json.loads(bootstrap_file.read_text(encoding="utf-8"))
                 if isinstance(data, dict) and "active_root" in data:
-                    candidate = Path(data["active_root"]).resolve()
-                    if candidate.exists():
-                        return candidate
+                    return Path(data["active_root"]).resolve()
             except Exception:
                 pass
 
-        # 3. Fallback to repository root
+        # 3. Default to repository root in source-development mode (when no explicit configuration exists)
         return _repo_root()
 
     @classmethod
@@ -166,9 +173,20 @@ class DataRootManager:
             return True
 
     @classmethod
-    def ensure_structure(cls, root: Path | None = None) -> None:
+    def is_active_root_available(cls) -> bool:
+        r = cls.resolve_active_root()
+        return r.exists() and cls.get_database_path(r).exists()
+
+    @classmethod
+    def ensure_structure(cls, root: Path | None = None, *, create: bool = False) -> None:
         r = root.resolve() if root else cls.resolve_active_root()
-        r.mkdir(parents=True, exist_ok=True)
+        if not r.exists():
+            if not create:
+                raise DataRootNotFoundError(
+                    f"Data Root directory does not exist at '{r}'. Refusing to create directories silently.",
+                    detail={"code": "DATA_ROOT_NOT_FOUND", "path": str(r)},
+                )
+            r.mkdir(parents=True, exist_ok=True)
         (r / "Database" / "Main").mkdir(parents=True, exist_ok=True)
         (r / "Database" / "People").mkdir(parents=True, exist_ok=True)
         (r / "Database" / "Config").mkdir(parents=True, exist_ok=True)

@@ -1,7 +1,7 @@
 # Mutation & Filesystem Consistency Architecture
 
 ## Overview
-Every state mutation (person creation, person deletion, group relocation) updates structured SQLite data AND filesystem-backed person directories (`people/`) within a unified snapshot manifest.
+Every state mutation (person creation, person deletion, group relocation) updates structured SQLite data AND filesystem-backed person directories (`Database/People/`) within a unified snapshot manifest.
 
 ## Filesystem-Aware Undo History
 Reversible mutations track:

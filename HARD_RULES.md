@@ -1,7 +1,7 @@
 # Family Relationships — Project Hard Rules
 
 This is the current project constitution (not a historical raw source
-batch). Historical evidence stays in `sources/`.
+batch). Historical evidence stays in `Database/Sources/`.
 
 ## 1. Data authority
 

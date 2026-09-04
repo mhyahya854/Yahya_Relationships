@@ -20,16 +20,16 @@ The **Family Relationships** repository was restructured to establish four clear
 | Original Path | Target Path | Purpose | Compatibility Notes |
 | :--- | :--- | :--- | :--- |
 | `app/` | `Codebase/App/` | Backend (FastAPI) and Frontend (React/Vite) application code | Python import namespace `app.backend` preserved via sys.path / package mappings |
-| `app/backend/` | `Codebase/App/Backend/` | FastAPI backend, services, relationship engine, data root manager | Resolved via `Codebase/App/Backend` |
+| `app/backend/` | `Codebase/App/app/backend/` | FastAPI backend, services, relationship engine, data root manager | Resolved via `Codebase/App/app/backend` |
 | `app/frontend/` | `Codebase/App/Frontend/` | React + TypeScript + Vite frontend | Development and build scripts updated to point to `App/Frontend` |
 | `src-tauri/` | `Codebase/Desktop/Tauri/` | Tauri 2 desktop shell | `tauri.conf.json` updated with `--prefix ../../App/Frontend` |
 | `tests/` | `Codebase/Tests/` | Unit, API, relationship path, and UI end-to-end tests | `Tests/Backend` for pytest; `Tests/UI` for Puppeteer smoke test |
 | `scripts/` | `Codebase/Scripts/` | Development launchers, test runners, and verification scripts | `dev.mjs`, `run-py.mjs`, `verify_all.ps1` updated |
-| `build_family.py` | `Codebase/Scripts/build_family.py` & `Codebase/App/Backend/domain/family/engine.py` | Authoritative kinship calculation engine and CLI exporter | `engine.py` serves as module import; `build_family.py` serves CLI `--check` |
+| `build_family.py` | `Codebase/Scripts/build_family.py` & `Codebase/App/app/backend/domain/family/engine.py` | Authoritative kinship calculation engine and CLI exporter | `engine.py` serves as module import; `build_family.py` serves CLI `--check` |
 | `vendor/` | `Codebase/Resources/Vendor/` | Bundled third-party assets (`mermaid.min.js`) | Referenced locally |
 | `package.json` | `Codebase/package.json` | Master project package configuration | All `npm run` commands execute from `Codebase/` |
 | `package-lock.json` | `Codebase/package-lock.json` | npm lockfile | Maintained under `Codebase/` |
-| `pytest.ini` | `Codebase/pytest.ini` | pytest configuration | Configured with `pythonpath = . App/Backend Scripts` |
+| `pytest.ini` | `Codebase/pytest.ini` | pytest configuration | Configured with `pythonpath = . App Scripts` |
 | `.venv/` | `Codebase/.venv/` | Python virtual environment | Created inside `Codebase/` |
 | `node_modules/` | `Codebase/node_modules/` | Node.js dependencies | Installed under `Codebase/` |
 | `family.db` | `Database/Main/family.db` | Authoritative SQLite database | Single canonical active database |

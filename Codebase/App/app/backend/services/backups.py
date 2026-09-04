@@ -30,16 +30,19 @@ def list_backups(root: Optional[Path] = None) -> List[Dict[str, Any]]:
                         "id": item.name,
                         "name": item.name,
                         "timestamp": m.get("created_at", ""),
+                        "created": m.get("created_at", ""),
                         "label": m.get("label", "Snapshot"),
                         "app_version": m.get("app_version", "1.0.0"),
                         "schema_version": m.get("sqlite_schema_version", 1),
                         "data_root_version": m.get("data_root_format_version", 1),
                         "file_count": m.get("file_count", 0),
+                        "files": m.get("file_count", 0),
                         "total_size_bytes": m.get("total_size_bytes", 0),
                         "person_count": m.get("person_count", 0),
                         "journal_count": m.get("journal_count", 0),
                         "verified": v["ok"],
                         "integrity_status": v["status"],
+                        "has_manifest": True,
                         "path": str(item),
                     })
                 except Exception:
@@ -47,9 +50,12 @@ def list_backups(root: Optional[Path] = None) -> List[Dict[str, Any]]:
                         "id": item.name,
                         "name": item.name,
                         "timestamp": "",
+                        "created": "",
                         "label": "Corrupted Snapshot",
                         "verified": False,
                         "integrity_status": "corrupted",
+                        "has_manifest": False,
+                        "files": 0,
                         "path": str(item),
                     })
     return results

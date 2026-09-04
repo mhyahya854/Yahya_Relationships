@@ -1,23 +1,31 @@
-"""Path and configuration resolution for the People Relationships backend."""
+"""Path and configuration resolution for the People Relationships backend.
+
+This module is the single authority for project-layout paths. Importability
+of ``app`` is provided by the editable install (Codebase/App/pyproject.toml),
+by ``Codebase/pytest.ini`` under pytest, and by the entry-point bootstraps in
+``main.py`` / ``api/main.py`` — no sys.path manipulation happens here.
+"""
 
 import os
-import sys
 from pathlib import Path
 
 
 def _repo_root() -> Path:
-    """Repository root: Codebase/App/Backend/config.py -> parents[3]."""
-    return Path(__file__).resolve().parents[3]
+    """Project root: Codebase/App/app/backend/config.py -> parents[4]."""
+    return Path(__file__).resolve().parents[4]
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
-CODEBASE_DIR = BACKEND_DIR.parents[1]
-SCRIPTS_DIR = CODEBASE_DIR / "Scripts"
+PROJECT_ROOT = _repo_root()
+CODEBASE_ROOT = BACKEND_DIR.parents[2]
+APP_DIR = BACKEND_DIR.parents[1]
+SCRIPTS_DIR = CODEBASE_ROOT / "Scripts"
+RESOURCES_DIR = CODEBASE_ROOT / "Resources"
+VENDOR_DIR = RESOURCES_DIR / "Vendor"
+DOCUMENTATION_ROOT = PROJECT_ROOT / "Documentation"
 
-# Ensure Codebase and Scripts are importable
-for path in (CODEBASE_DIR, SCRIPTS_DIR, _repo_root()):
-    if str(path) not in sys.path:
-        sys.path.insert(0, str(path))
+# Backwards-compatible alias for the historical name.
+CODEBASE_DIR = CODEBASE_ROOT
 
 SCHEMA_PATH = BACKEND_DIR / "schema.sql"
 
@@ -34,15 +42,17 @@ def __getattr__(name: str):
 
     if name == "ROOT":
         return DataRootManager.resolve_active_root()
-    if name == "DB_PATH":
+    if name == "DATABASE_ROOT":
+        return DataRootManager.resolve_active_root() / "Database"
+    if name in ("DB_PATH", "DATABASE_PATH"):
         return DataRootManager.get_database_path()
-    if name == "PEOPLE_DIR":
+    if name in ("PEOPLE_DIR", "PEOPLE_ROOT"):
         return DataRootManager.get_people_dir()
     if name == "CONFIG_DIR":
         return DataRootManager.get_config_dir()
-    if name == "BACKUP_DIR":
+    if name in ("BACKUP_DIR", "BACKUPS_ROOT"):
         return DataRootManager.get_backups_dir()
-    if name == "EXPORTS_DIR":
+    if name in ("EXPORTS_DIR", "EXPORTS_ROOT"):
         return DataRootManager.get_exports_dir()
     if name == "SOURCES_DIR":
         r = DataRootManager.resolve_active_root()
@@ -55,9 +65,9 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def ensure_root_dirs() -> None:
+def ensure_root_dirs(*, create: bool = False) -> None:
     from .data_root import DataRootManager
-    DataRootManager.ensure_structure()
+    DataRootManager.ensure_structure(create=create)
 
 
 def load_state() -> dict:

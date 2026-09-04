@@ -23,8 +23,13 @@ fn spawn_backend() -> Option<Child> {
     let mut root: Option<PathBuf> = None;
     if let Ok(cwd) = std::env::current_dir() {
         for candidate in cwd.ancestors() {
-            if candidate.join("Codebase").join("App").join("Backend").join("main.py").exists()
-                || candidate.join("app").join("backend").join("main.py").exists()
+            if candidate
+                .join("Codebase")
+                .join("App")
+                .join("app")
+                .join("backend")
+                .join("main.py")
+                .exists()
             {
                 root = Some(candidate.to_path_buf());
                 break;
@@ -33,21 +38,34 @@ fn spawn_backend() -> Option<Child> {
     }
     let root = root?;
 
-    let python_commands: &[&[&str]] = &[
-        &["Codebase/.venv/Scripts/python.exe", "-m", "app.backend.main"],
-        &[".venv/Scripts/python.exe", "-m", "app.backend.main"],
-        &["python", "-m", "app.backend.main"],
-    ];
-    for command in python_commands {
-        if command[0].contains('/') || command[0].contains('\\') {
-            let full = root.join(command[0]);
-            if !full.exists() {
-                continue;
-            }
+    let venv_python = if cfg!(target_os = "windows") {
+        root.join("Codebase").join(".venv").join("Scripts").join("python.exe")
+    } else {
+        root.join("Codebase").join(".venv").join("bin").join("python")
+    };
+    let package_root = root.join("Codebase").join("App");
+
+    if venv_python.exists() {
+        if let Ok(child) = Command::new(&venv_python)
+            .args(["-m", "app.backend.main"])
+            .current_dir(&package_root)
+            .env("PYTHONPATH", &package_root)
+            .spawn()
+        {
+            return Some(child);
         }
-        if let Ok(child) = Command::new(command[0])
-            .args(&command[1..])
-            .current_dir(&root)
+    }
+
+    let fallbacks: &[&str] = if cfg!(target_os = "windows") {
+        &["python", "python3"]
+    } else {
+        &["python3", "python"]
+    };
+    for python in fallbacks {
+        if let Ok(child) = Command::new(python)
+            .args(["-m", "app.backend.main"])
+            .current_dir(&package_root)
+            .env("PYTHONPATH", &package_root)
             .spawn()
         {
             return Some(child);

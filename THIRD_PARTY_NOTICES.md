@@ -33,4 +33,4 @@ explanation) were adapted to this codebase's own architecture.
 
 Refer to each package's own license for exact terms. MIT license text for the
 frontend packages above is available in the respective package folders under
-`app/frontend/node_modules/<package>/LICENSE`.
+`Codebase/App/Frontend/node_modules/<package>/LICENSE`.

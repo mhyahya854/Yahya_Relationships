@@ -11,7 +11,7 @@ import copy
 import sqlite3
 from typing import Any
 
-import build_family
+from ..family import engine as build_family
 
 from ... import db
 from ...kinship import labels

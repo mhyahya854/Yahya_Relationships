@@ -308,6 +308,23 @@ report("change-data-location modal rendered", true);
 await clickText(".modal button", "Cancel");
 await sleep(300);
 
+// Ensure at least one backup exists for details and restore test
+await page.evaluate(async () => {
+  const res = await fetch("/api/backups").then((r) => r.json());
+  if (!res.backups || res.backups.length === 0) {
+    await fetch("/api/backups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: "verified-snapshot" }),
+    });
+  }
+});
+await clickText(".nav-item", "People");
+await sleep(400);
+await clickText(".nav-item", "Backups");
+await page.waitForSelector(".backup-row", { timeout: 10000 });
+await sleep(500);
+
 // Open Backup Details
 await clickText(".backup-row button", "View Details");
 await page.waitForSelector(".modal", { timeout: 5000 });

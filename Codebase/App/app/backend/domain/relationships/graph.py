@@ -8,7 +8,7 @@ the canonical engine.
 
 from __future__ import annotations
 
-import build_family as legacy
+from ..family import engine as legacy
 
 from ...model import load_model
 from ...services.errors import AppError

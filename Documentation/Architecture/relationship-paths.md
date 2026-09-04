@@ -9,10 +9,11 @@ screen renders that path in React Flow when you press **Show why**.
 ## Data flow
 
 ```text
-SQLite facts (family.db)
+SQLite facts (Database/Main/family.db)
     |
     v
-Canonical Python family engine (build_family.py / domain/family/paths.py)
+Canonical Python family engine (Codebase/App/app/backend/domain/family/;
+    |   CLI wrapper Codebase/Scripts/build_family.py)
     |   one implementation, used by the legacy export, API, Hermes and UI
     v
 Path extraction (domain/relationships/path_service.py)
@@ -33,12 +34,14 @@ FastAPI (GET /api/relationships/{p}/{t}/paths)
 - `parent_child` rows (with role and kind: biological, adopted, step, foster,
   guardian, unknown, unspecified), `marriages`, `sibling_groups` and
   `general_relationships` are the stored facts.
-- The canonical kinship implementation in `build_family.py` builds a
-  biological parent graph, adds calculation-only virtual ancestors for
-  full-sibling facts with unrecorded parents, and enumerates ancestor chains.
-- `app/backend/domain/family/paths.py` mirrors the engine's semantic record
-  enumeration (`_pair_path_records`) but remembers one concrete chain pair
-  per deduplicated record, so every engine label has a real node/edge path.
+- The canonical kinship implementation in `Codebase/App/app/backend/domain/family/engine.py`
+  (wrapped by `Codebase/Scripts/build_family.py`) builds a biological parent graph, adds calculation-only
+  virtual ancestors for full-sibling facts with unrecorded parents, and enumerates ancestor
+  chains.
+- `Codebase/App/app/backend/domain/family/paths.py` mirrors the engine's
+  semantic record enumeration (`_pair_path_records`) but remembers one
+  concrete chain pair per deduplicated record, so every engine label has a
+  real node/edge path.
 
 ## Path extraction rules
 
@@ -84,10 +87,13 @@ applicable, common ancestors, ordered `nodes`, typed `edges`
 
 ## Key files
 
-- `app/backend/domain/family/paths.py` — engine-aligned record/path
-  enumeration
-- `app/backend/domain/relationships/path_service.py` — explicit + derived
-  path assembly, bounds and errors
-- `app/backend/domain/relationships/graph.py` — neighbour expansion model
-- `app/frontend/src/features/relationships/` — React Flow graph feature
-- `tests/test_paths.py`, `tests/test_api_paths.py` — path guarantees
+- `Codebase/App/app/backend/domain/family/paths.py` — engine-aligned
+  record/path enumeration
+- `Codebase/App/app/backend/domain/relationships/path_service.py` — explicit
+  + derived path assembly, bounds and errors
+- `Codebase/App/app/backend/domain/relationships/graph.py` — neighbour
+  expansion model
+- `Codebase/App/Frontend/src/features/relationships/` — React Flow graph
+  feature
+- `Codebase/Tests/Backend/test_paths.py`,
+  `Codebase/Tests/Backend/test_api_paths.py` — path guarantees

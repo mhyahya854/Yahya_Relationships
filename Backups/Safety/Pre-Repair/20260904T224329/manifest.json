@@ -1,0 +1,13 @@
+{
+  "created_utc": "2026-09-04T19:43:29.564813+00:00",
+  "purpose": "Pre-repair safety snapshot before post-reorganization cleanup pass",
+  "source_root": "C:\\Users\\mhyah\\Downloads\\Family Relationships",
+  "contents": [
+    "data/family.db",
+    "people/ (full tree incl. test artifacts)",
+    "config/",
+    "sources/",
+    "exports/"
+  ],
+  "file_count": 63
+}

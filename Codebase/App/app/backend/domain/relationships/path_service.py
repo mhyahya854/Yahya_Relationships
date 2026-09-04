@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import sqlite3
 
-import build_family as legacy
+from ..family import engine as legacy
 
 from ... import db
 from ...kinship import labels

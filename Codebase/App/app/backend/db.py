@@ -27,8 +27,37 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
+class DatabaseOpenMode:
+    OPEN_EXISTING = "OPEN_EXISTING"
+    INITIALIZE_NEW = "INITIALIZE_NEW"
+
+
+def get_connection(
+    db_path: Path | None = None,
+    *,
+    mode: str = DatabaseOpenMode.OPEN_EXISTING,
+    create: bool = False,
+) -> sqlite3.Connection:
+    """Open the canonical family.db connection.
+
+    ``family.db`` is the single structured source of truth, so a missing file
+    is an error, not an invitation for sqlite3 to silently create an empty
+    database. Only explicit initialisation (mode=INITIALIZE_NEW or create=True)
+    may create the file.
+    """
     target = Path(db_path) if db_path is not None else config.DB_PATH
+    should_create = create or (mode == DatabaseOpenMode.INITIALIZE_NEW)
+    if not target.exists():
+        if not should_create:
+            from .data_root.errors import DataRootNotFoundError
+
+            raise DataRootNotFoundError(
+                f"Database file not found at '{target}'. Refusing to silently "
+                "create an empty family.db; restore from backup or run "
+                "initialize_database() to initialise it explicitly.",
+                detail={"code": "MISSING_DATABASE", "path": str(target)},
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(str(target))
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
@@ -41,18 +70,21 @@ def _apply_sql(connection: sqlite3.Connection, path: Path) -> None:
     connection.executescript(text)
 
 
-def migrate(db_path: Path | None = None) -> None:
+def migrate(
+    db_path: Path | None = None,
+    *,
+    mode: str = DatabaseOpenMode.OPEN_EXISTING,
+    create: bool = False,
+) -> None:
     """Apply legacy + application schema and seed organisational defaults.
 
-    The legacy tables are created through build_family.py's schema so the
-    builder and the application agree byte-for-byte on the core model. The
-    application tables are applied after. Seeding only assigns existing
-    people to the Family group when no group assignment exists yet; it never
-    invents people or relationship facts.
+    By default, only migrates an EXISTING database (mode=OPEN_EXISTING).
+    If the database file does not exist, refuses to create a blank database
+    unless explicit initialisation is requested (create=True or mode=INITIALIZE_NEW).
     """
     from .domain.family import engine as build_family
 
-    connection = get_connection(db_path)
+    connection = get_connection(db_path, mode=mode, create=create)
     try:
         connection.execute("BEGIN")
         build_family.create_sqlite_schema(connection)
@@ -125,6 +157,11 @@ def migrate(db_path: Path | None = None) -> None:
         raise
     finally:
         connection.close()
+
+
+def initialize_database(db_path: Path | None = None) -> None:
+    """Explicitly initialize a new database (INITIALIZE_NEW workflow)."""
+    migrate(db_path, mode=DatabaseOpenMode.INITIALIZE_NEW, create=True)
 
 
 def schema_info(connection: sqlite3.Connection) -> dict:

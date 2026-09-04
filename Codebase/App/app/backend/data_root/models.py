@@ -69,7 +69,7 @@ class FilesystemHealth:
 class DataRootHealth:
     ok: bool
     read_only: bool
-    layout_mode: str  # "portable" or "legacy_repo_root"
+    layout_mode: str  # "canonical", "portable" (backup snapshots), or "legacy_repo_root"
     root_path: str
     database: Optional[DatabaseHealth] = None
     filesystem: Optional[FilesystemHealth] = None

@@ -1,0 +1,15 @@
+{
+  "created_utc": "2026-09-04T20:31:42.817534+00:00",
+  "purpose": "Pre-final-repair safety snapshot prior to completing remaining verified issues",
+  "source_root": "C:\\Users\\mhyah\\Downloads\\Family Relationships",
+  "contents": [
+    "data/family.db",
+    "people/ (35 active real person folders)",
+    "config/",
+    "sources/",
+    "exports/",
+    "real_journal_hashes.json"
+  ],
+  "file_count": 51,
+  "active_real_people_count": 35
+}

@@ -16,6 +16,20 @@ for path in (CODEBASE, SCRIPTS, REPO):
         sys.path.insert(0, str(path))
 
 
+@pytest.fixture(autouse=True)
+def _isolated_user_bootstrap(tmp_path, monkeypatch):
+    """Redirect the user-level bootstrap pointer file to a per-test temp path.
+
+    The real ``%APPDATA%/people-relationships/bootstrap.json`` must never be
+    read or written by any test.
+    """
+    monkeypatch.setenv(
+        "PEOPLE_RELATIONSHIPS_BOOTSTRAP",
+        str(tmp_path / "user-config" / "bootstrap.json"),
+    )
+    yield
+
+
 @pytest.fixture()
 def isolated(tmp_path, monkeypatch):
     """Fresh People Relationships data root backed by a copy of family.db."""

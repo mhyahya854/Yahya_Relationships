@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const HERE = dirname(fileURLToPath(import.meta.url));
-const DOC_SHOTS = join(HERE, "../../docs/ui-screenshots");
+const DOC_SHOTS = join(HERE, "../../../Documentation/UI-Screenshots");
 mkdirSync(DOC_SHOTS, { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

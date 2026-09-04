@@ -1,17 +1,14 @@
-"""Backend entry point: python -m app.backend.main"""
+import uvicorn
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-import uvicorn  # noqa: E402
-
-from . import config  # noqa: E402
+from . import config
 
 
 def main() -> None:
-    config.ensure_root_dirs()
+    from .data_root.manager import DataRootManager
+
+    active_root = DataRootManager.resolve_active_root()
+    if active_root.exists():
+        config.ensure_root_dirs()
     uvicorn.run(
         "app.backend.api.main:app",
         host=config.DEFAULT_HOST,

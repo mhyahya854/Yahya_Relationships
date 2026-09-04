@@ -9,6 +9,7 @@ import { HermesView } from "./views/HermesView";
 import { PeopleView } from "./views/PeopleView";
 import { RelationshipsView } from "./views/RelationshipsView";
 import { SearchView } from "./views/SearchView";
+import { RootUnavailableView } from "./features/dataRoot/components/RootUnavailableView";
 
 type Screen = "people" | "relationships" | "family" | "search" | "hermes" | "backups";
 
@@ -139,6 +140,42 @@ function Shell() {
 }
 
 export function App() {
+  const [rootUnavailable, setRootUnavailable] = useState(false);
+  const [lastLocation, setLastLocation] = useState<string | undefined>(undefined);
+  const [checking, setChecking] = useState(true);
+
+  const checkRoot = async () => {
+    try {
+      const status = await api.dataRoot.status();
+      if (!status.health.ok && status.health.issues.some((i) => i.code === "DATA_ROOT_MISSING" || i.code === "DATABASE_MISSING")) {
+        setRootUnavailable(true);
+        setLastLocation(status.active_root);
+      } else {
+        setRootUnavailable(false);
+      }
+    } catch {
+      // If backend reports failure
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  useEffect(() => {
+    void checkRoot();
+  }, []);
+
+  if (!checking && rootUnavailable) {
+    return (
+      <RootUnavailableView
+        lastLocation={lastLocation}
+        onRecovered={() => {
+          setRootUnavailable(false);
+          void checkRoot();
+        }}
+      />
+    );
+  }
+
   return (
     <PerspectiveProvider>
       <Shell />
