@@ -25,5 +25,20 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Packaging binaries, sidecars, and installers
+Codebase/Desktop/Tauri/binaries/
+Codebase/Packaging/dist/
+Codebase/Packaging/build/
+Codebase/Packaging/release/*.exe
+Codebase/Packaging/release/*.msi
+Codebase/Packaging/release/*.dmg
+Codebase/Packaging/release/*.AppImage
+Codebase/Packaging/release/*.deb
+*.exe
+*.msi
+*.dmg
+*.AppImage
+*.deb
+
 # Scratch
 _scratch/

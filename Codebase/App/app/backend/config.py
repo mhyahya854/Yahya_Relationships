@@ -7,27 +7,49 @@ by ``Codebase/pytest.ini`` under pytest, and by the entry-point bootstraps in
 """
 
 import os
+import sys
 from pathlib import Path
+
+IS_FROZEN = getattr(sys, "frozen", False)
 
 
 def _repo_root() -> Path:
     """Project root: Codebase/App/app/backend/config.py -> parents[4]."""
+    if IS_FROZEN:
+        # In packaged/frozen mode, there is no source repo root
+        return Path(getattr(sys, "_MEIPASS", sys.executable)).resolve()
     return Path(__file__).resolve().parents[4]
 
 
-BACKEND_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = _repo_root()
-CODEBASE_ROOT = BACKEND_DIR.parents[2]
-APP_DIR = BACKEND_DIR.parents[1]
-SCRIPTS_DIR = CODEBASE_ROOT / "Scripts"
-RESOURCES_DIR = CODEBASE_ROOT / "Resources"
-VENDOR_DIR = RESOURCES_DIR / "Vendor"
-DOCUMENTATION_ROOT = PROJECT_ROOT / "Documentation"
+if IS_FROZEN:
+    _bundle_base = Path(getattr(sys, "_MEIPASS", sys.executable)).resolve()
+    _candidate_backend = _bundle_base / "app" / "backend"
+    BACKEND_DIR = _candidate_backend if _candidate_backend.exists() else _bundle_base
+    PROJECT_ROOT = _bundle_base
+    CODEBASE_ROOT = _bundle_base
+    APP_DIR = _bundle_base
+    SCRIPTS_DIR = _bundle_base
+    RESOURCES_DIR = _bundle_base
+    VENDOR_DIR = _bundle_base
+    DOCUMENTATION_ROOT = _bundle_base
+else:
+    BACKEND_DIR = Path(__file__).resolve().parent
+    PROJECT_ROOT = _repo_root()
+    CODEBASE_ROOT = BACKEND_DIR.parents[2]
+    APP_DIR = BACKEND_DIR.parents[1]
+    SCRIPTS_DIR = CODEBASE_ROOT / "Scripts"
+    RESOURCES_DIR = CODEBASE_ROOT / "Resources"
+    VENDOR_DIR = RESOURCES_DIR / "Vendor"
+    DOCUMENTATION_ROOT = PROJECT_ROOT / "Documentation"
 
 # Backwards-compatible alias for the historical name.
 CODEBASE_DIR = CODEBASE_ROOT
 
 SCHEMA_PATH = BACKEND_DIR / "schema.sql"
+if not SCHEMA_PATH.exists() and IS_FROZEN:
+    _alt_schema = Path(getattr(sys, "_MEIPASS", sys.executable)).resolve() / "schema.sql"
+    if _alt_schema.exists():
+        SCHEMA_PATH = _alt_schema
 
 APP_NAME = "People Relationships"
 APP_VERSION = "1.0.0"

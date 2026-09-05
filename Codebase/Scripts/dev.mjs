@@ -39,17 +39,16 @@ const vite = spawn(
 );
 
 function shutdown(signal) {
-  if (process.platform === "win32") {
-    if (backend.pid) {
-      try { execSync(`taskkill /PID ${backend.pid} /T /F`, { stdio: "ignore" }); } catch {}
+  try {
+    if (backend && !backend.killed && backend.pid) {
+      backend.kill(signal || "SIGTERM");
     }
-    if (vite.pid) {
-      try { execSync(`taskkill /PID ${vite.pid} /T /F`, { stdio: "ignore" }); } catch {}
+  } catch {}
+  try {
+    if (vite && !vite.killed && vite.pid) {
+      vite.kill(signal || "SIGTERM");
     }
-  } else {
-    if (!backend.killed) backend.kill(signal);
-    if (!vite.killed) vite.kill(signal);
-  }
+  } catch {}
   setTimeout(() => process.exit(0), 400);
 }
 

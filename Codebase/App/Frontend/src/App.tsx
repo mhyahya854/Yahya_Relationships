@@ -141,16 +141,23 @@ function Shell() {
 
 export function App() {
   const [rootUnavailable, setRootUnavailable] = useState(false);
+  const [isFirstRun, setIsFirstRun] = useState(false);
   const [lastLocation, setLastLocation] = useState<string | undefined>(undefined);
   const [checking, setChecking] = useState(true);
 
   const checkRoot = async () => {
     try {
       const status = await api.dataRoot.status();
-      if (!status.health.ok && status.health.issues.some((i) => i.code === "DATA_ROOT_MISSING" || i.code === "DATABASE_MISSING")) {
+      if (status.first_run || status.configured === false) {
+        setIsFirstRun(true);
+        setRootUnavailable(true);
+        setLastLocation(status.active_root);
+      } else if (!status.health.ok && status.health.issues.some((i) => i.code === "DATA_ROOT_MISSING" || i.code === "DATABASE_MISSING")) {
+        setIsFirstRun(false);
         setRootUnavailable(true);
         setLastLocation(status.active_root);
       } else {
+        setIsFirstRun(false);
         setRootUnavailable(false);
       }
     } catch {
@@ -167,9 +174,11 @@ export function App() {
   if (!checking && rootUnavailable) {
     return (
       <RootUnavailableView
+        firstRun={isFirstRun}
         lastLocation={lastLocation}
         onRecovered={() => {
           setRootUnavailable(false);
+          setIsFirstRun(false);
           void checkRoot();
         }}
       />

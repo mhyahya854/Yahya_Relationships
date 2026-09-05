@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .. import db
 from ..data_root import (
     DataRootManager,
     audit_data_root,
@@ -17,16 +18,22 @@ from ..data_root.errors import (
     DataRootNotFoundError,
     DataRootReadOnlyError,
 )
-from ..domain.backups import create_backup, verify_backup
+from ..domain.backups import create_backup, restore_backup, verify_backup
 from ..domain.maintenance import MaintenanceLockContext, is_maintenance_locked
 
 
 def get_data_root_status() -> Dict[str, Any]:
+    configured = DataRootManager.has_configured_root()
     active_root = DataRootManager.resolve_active_root()
     health = audit_data_root(active_root)
     locked, op_name = is_maintenance_locked()
 
+    # Distinguish first-run (never configured) from missing configured root
+    first_run = not configured
+
     return {
+        "configured": configured,
+        "first_run": first_run,
         "active_root": str(active_root),
         "database_path": str(DataRootManager.get_database_path(active_root)),
         "people_dir": str(DataRootManager.get_people_dir(active_root)),
@@ -124,3 +131,81 @@ def switch_data_root(target_path: str) -> Dict[str, Any]:
             "active_root": str(target),
             "health": target_health.to_dict(),
         }
+
+
+def initialize_new_data_root(target_path: str, owner_name: str = "Mohammad Yahya Hussain") -> Dict[str, Any]:
+    """Initialize a brand-new canonical Data Root at target_path."""
+    target = Path(target_path).resolve()
+
+    if target.exists() and any(target.iterdir()):
+        # Check if already a valid data root
+        db_file = DataRootManager.get_database_path(target)
+        if db_file.exists():
+            return switch_data_root(str(target))
+        raise DataRootDestinationConflictError(
+            f"Target directory '{target}' already exists and is not empty."
+        )
+
+    target.mkdir(parents=True, exist_ok=True)
+    DataRootManager.set_active_root_pointer(target)
+    DataRootManager.ensure_structure(target, create=True)
+
+    db_path = DataRootManager.get_database_path(target)
+    db.initialize_database(db_path)
+
+    # If owner does not exist in people, seed initial owner record
+    conn = db.get_connection(db_path)
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM people").fetchone()[0]
+        if count == 0:
+            owner_id = "mohammad_yahya_hussain"
+            conn.execute(
+                """
+                INSERT INTO people (id, name, display_order, gender)
+                VALUES (?, ?, 1, 'male')
+                """,
+                (owner_id, owner_name),
+            )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO person_groups (person_id, group_id, is_primary)
+                VALUES (?, 'family', 1)
+                """,
+                (owner_id,),
+            )
+            conn.commit()
+            db.ensure_person_folder(conn, owner_id)
+    finally:
+        conn.close()
+
+    health = audit_data_root(target)
+
+    return {
+        "ok": True,
+        "active_root": str(target),
+        "health": health.to_dict(),
+    }
+
+
+def restore_backup_to_data_root(
+    backup_path: str, target_root: Optional[str] = None
+) -> Dict[str, Any]:
+    """Restore a backup to an explicit root, setting it as active."""
+    b_path = Path(backup_path).resolve()
+    if not b_path.exists():
+        raise DataRootNotFoundError(f"Backup path '{b_path}' does not exist.")
+
+    dest = Path(target_root).resolve() if target_root else DataRootManager.resolve_active_root()
+    dest.mkdir(parents=True, exist_ok=True)
+    DataRootManager.ensure_structure(dest, create=True)
+
+    result = restore_backup(str(b_path), confirmation_token="RESTORE", root=dest)
+    DataRootManager.set_active_root_pointer(dest)
+    health = audit_data_root(dest)
+
+    return {
+        "ok": True,
+        "active_root": str(dest),
+        "restore_result": result,
+        "health": health.to_dict(),
+    }

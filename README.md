@@ -305,13 +305,140 @@ the real database is never mutated by tests. A headless Edge UI smoke test
 end-to-end against the running dev stack (see `Codebase/Tests/UI/README.md`).
 Verified screenshots live in `Documentation/UI-Screenshots/`.
 
-## Known limitations
+## Supported Platforms
 
-- The desktop shell launches the Python backend from the source tree in
-  development. Distributing one double-clickable `.exe` that embeds Python
-  requires a PyInstaller sidecar step (`PR_BACKEND_EXE`), which is
-  intentional: bundling the interpreter into this repository would turn the
-  personal-data folder into a build artifact.
-- The legacy generated `family.html` remains a static snapshot export; the
-  React Family screen renders the same Mermaid string live with perspective
-  labels.
+People Relationships is distributed as a self-contained desktop application with no requirement for end users to install Python, Node.js, or Rust:
+
+| Platform | Architecture | Distribution Package | Status |
+|---|---|---|---|
+| **Windows** | x64 (`x86_64`) | NSIS Installer (`.exe`) / MSI | Locally built and tested |
+| **macOS** | Apple Silicon (`arm64`) | `.app` bundle / DMG | Packaged via native CI runner |
+| **macOS** | Intel (`x86_64`) | `.app` bundle / DMG | Packaged via native CI runner |
+| **Linux** | x64 (`x86_64`) | AppImage / `.deb` | Packaged via native CI runner |
+
+---
+
+## Installation & Launch
+
+### Windows Installation
+1. Download the latest installer: `People-Relationships-<version>-windows-x64-setup.exe` (or from `Codebase/Packaging/release/`).
+2. Run the installer. It installs the application to your user profile (`%LOCALAPPDATA%\Programs\People Relationships`) without requiring administrator permissions.
+3. Launch **People Relationships** from the Start Menu or desktop shortcut.
+4. *SmartScreen note*: Development builds are unsigned. If Windows SmartScreen appears, click **More info** -> **Run anyway**.
+5. *Uninstall*: Removing the application via Windows Settings / Control Panel completely removes application binaries but **preserves** your relationship data root and database.
+
+### macOS Installation
+1. Download `People-Relationships-<version>-macos-arm64.dmg` (for M1/M2/M3/M4 Macs) or `People-Relationships-<version>-macos-x64.dmg` (for Intel Macs).
+2. Open the `.dmg` and drag **People Relationships** to your `/Applications` folder.
+3. Launch **People Relationships**.
+4. *Gatekeeper note*: As open-source development builds are not notarized by Apple, on first launch right-click the app in Finder and choose **Open**, or visit **System Settings -> Privacy & Security** and click **Open Anyway**.
+
+### Linux Installation
+1. Download `People-Relationships-<version>-linux-x64.AppImage` (or the `.deb` package).
+2. Make the AppImage executable: `chmod +x People-Relationships-*-linux-x64.AppImage`.
+3. Run the AppImage: `./People-Relationships-*-linux-x64.AppImage`.
+4. *Runtime libraries*: Standard Tauri Linux dependencies apply (`webkit2gtk-4.1` or `webkit2gtk-4.0`, `gtk3`). On Ubuntu/Debian: `sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0`.
+
+---
+
+## Portable Relationship Data
+
+Your family relationship brain is completely decoupled from application binaries. A Data Root created on one operating system can be transferred directly to another without modification:
+
+```text
+Family Relationships/
+├── Database/
+│   ├── Main/
+│   │   └── family.db         # Standard SQLite 3 database (PRAGMA integrity_check clean)
+│   ├── People/
+│   │   └── <Group>/<PersonID>/journal.md  # Universal UTF-8 Markdown journals
+│   ├── Config/
+│   │   └── state.json        # UI perspective state
+│   └── Exports/
+└── Backups/
+```
+
+### Moving Data Between OSes
+1. **Copy the directory**: Copy your relationship data folder (e.g. via flash drive, local network, or archive) to the destination machine.
+2. **Open People Relationships**:
+   - If this is a first run, select **[Use Existing Data Folder]** and choose the directory.
+   - If the app is already configured, switch the active data root via the UI settings or relocate dialog.
+3. **Paths and encoding**: All internal references use relative paths (`/`) and filesystem-safe person IDs. Markdown journals are strictly UTF-8 and tolerate CRLF/LF line endings interchangeably.
+
+### Bootstrap Configuration
+The pointer to the active relationship data root is stored in standard OS configuration directories:
+- **Windows**: `%APPDATA%\people-relationships\config.json`
+- **macOS**: `~/Library/Application Support/people-relationships/config.json`
+- **Linux**: `~/.config/people-relationships/config.json` (or `$XDG_CONFIG_HOME/people-relationships/config.json`)
+
+---
+
+## Security & Local Privacy
+
+- **100% Offline & Local-First**: No telemetry, analytics, or cloud connectivity.
+- **Strict Loopback Binding**: The backend binds exclusively to `127.0.0.1` on a dynamically allocated port. It is never exposed to the local network.
+- **Process Isolation**: Tauri manages the backend lifecycle directly, spawning it on launch and cleanly terminating it on shutdown.
+- **Data Safety on Uninstall**: Uninstalling the software deletes only application binaries and temporary caches. Your relationship database, journals, and backups are **never** deleted by uninstallation.
+
+---
+
+## Building Packages
+
+Packaging scripts are fully cross-platform and orchestrate frontend compilation, PyInstaller backend sidecar bundling, Tauri desktop bundling, and release manifest generation:
+
+```bash
+# In Codebase/
+
+# Package for current host OS:
+npm run package
+
+# Target-specific shortcuts:
+npm run package:windows   # Builds NSIS installer & sidecar on Windows host
+npm run package:macos     # Configured for macOS host / CI runner
+npm run package:linux     # Configured for Linux host / CI runner
+```
+
+Automated multi-platform CI workflows are defined in `.github/workflows/build-and-package.yml` for `windows-latest`, `macos-14` (Apple Silicon), `macos-13` (Intel), and `ubuntu-latest`.
+
+---
+
+## Development
+
+Prerequisites: Python 3.11+, Node 20+, Rust stable + MSVC / clang (for the desktop shell).
+
+All development commands run from `Codebase/`:
+
+```powershell
+# Unified one-command setup (creates .venv, installs editable backend, installs npm dependencies)
+npm run setup
+
+# Or manual setup:
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e App
+npm install
+npm --prefix App/Frontend install
+
+# Everything (FastAPI + Vite), open http://localhost:1420
+npm run dev
+
+# Desktop shell (starts Vite, compiles and opens the Tauri app)
+npm run dev:desktop
+
+# Production web build (also used by Tauri)
+npm run build
+
+# Tests
+npm test              # Python/pytest suite (99 tests)
+npm run legacy:check  # legacy builder audits against Database/Main/family.db
+```
+
+---
+
+## Architecture & Detailed Documentation
+
+For in-depth architectural and testing documentation, see:
+- [Cross-Platform Packaging Architecture](Documentation/Architecture/cross-platform-packaging.md)
+- [Platform Compatibility Matrix](Documentation/Testing/platform-compatibility.md)
+- [Data Root Architecture & Safety](Documentation/Architecture/data-root.md)
+- [Backup and Restore Design](Documentation/Architecture/backup-restore.md)
+- [Relationship Paths & Invariants](Documentation/Architecture/relationship-paths.md)

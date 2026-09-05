@@ -23,13 +23,11 @@ async function waitForUrl(url, timeoutMs = 25000) {
 
 function shutdown() {
   console.log("Shutting down dev process...");
-  if (process.platform === "win32") {
-    try {
-      execSync(`taskkill /PID ${devProcess.pid} /T /F`, { stdio: "ignore" });
-    } catch {}
-  } else {
-    devProcess.kill("SIGINT");
-  }
+  try {
+    if (devProcess && !devProcess.killed && devProcess.pid) {
+      devProcess.kill("SIGINT");
+    }
+  } catch {}
 }
 
 process.on("SIGINT", shutdown);

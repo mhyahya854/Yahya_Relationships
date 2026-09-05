@@ -44,7 +44,8 @@ def _user_bootstrap_config_path() -> Path:
     elif sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support"
     else:
-        base = Path.home() / ".config"
+        xdg = os.environ.get("XDG_CONFIG_HOME")
+        base = Path(xdg).expanduser() if xdg else Path.home() / ".config"
     config_dir = base / "people-relationships"
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / "bootstrap.json"
@@ -59,6 +60,28 @@ class DataRootManager:
     def set_override_root(cls, path: Path | None) -> None:
         """Override active root (useful for isolated tests)."""
         cls._override_root = path.resolve() if path else None
+
+    @classmethod
+    def has_configured_root(cls) -> bool:
+        """Check whether an explicit active data root has been configured."""
+        if cls._override_root is not None:
+            return True
+        if os.environ.get("PEOPLE_RELATIONSHIPS_ROOT"):
+            return True
+        bootstrap_file = _user_bootstrap_config_path()
+        if bootstrap_file.exists():
+            try:
+                data = json.loads(bootstrap_file.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and data.get("active_root"):
+                    return True
+            except Exception:
+                pass
+        # In non-frozen source mode, default to repo root if database exists
+        if not getattr(sys, "frozen", False):
+            repo = _repo_root()
+            if (repo / "Database" / "Main" / "family.db").exists():
+                return True
+        return False
 
     @classmethod
     def get_bootstrap_root(cls) -> Path:
@@ -76,13 +99,20 @@ class DataRootManager:
         if bootstrap_file.exists():
             try:
                 data = json.loads(bootstrap_file.read_text(encoding="utf-8"))
-                if isinstance(data, dict) and "active_root" in data:
+                if isinstance(data, dict) and data.get("active_root"):
                     return Path(data["active_root"]).resolve()
             except Exception:
                 pass
 
-        # 3. Default to repository root in source-development mode (when no explicit configuration exists)
-        return _repo_root()
+        # 3. Source-development fallback (only when running in non-frozen source repo mode)
+        if not getattr(sys, "frozen", False):
+            repo = _repo_root()
+            if (repo / "Database" / "Main" / "family.db").exists():
+                return repo
+
+        # 4. Packaged or unconfigured fallback: return path that does not exist
+        bootstrap_file = _user_bootstrap_config_path()
+        return bootstrap_file.parent / "unconfigured_data_root"
 
     @classmethod
     def set_active_root_pointer(cls, new_root: Path) -> None:

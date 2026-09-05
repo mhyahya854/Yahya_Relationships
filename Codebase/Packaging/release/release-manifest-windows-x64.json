@@ -1,0 +1,34 @@
+{
+  "app_name": "People Relationships",
+  "version": "1.0.0",
+  "git_sha": "7087eb005674212145a1a8951316b070e503a585",
+  "target_os": "windows",
+  "target_arch": "x64",
+  "build_timestamp": "2026-09-05T07:57:01.245Z",
+  "backend_sidecar": {
+    "name": "people-relationships-backend-x86_64-pc-windows-msvc.exe",
+    "sha256": "45abc1fba5b9f832595ec968342847c8e08675d407b41efdbb88a2251b4de0ef",
+    "size_bytes": 15834733
+  },
+  "artifacts": [
+    {
+      "name": "People Relationships_1.0.0_x64_en-US.msi",
+      "path": "C:\\Users\\mhyah\\Downloads\\Family Relationships\\Codebase\\Desktop\\Tauri\\target\\release\\bundle\\msi\\People Relationships_1.0.0_x64_en-US.msi",
+      "size_bytes": 19566592,
+      "size_mb": "18.66",
+      "sha256": "e17d5d4785bb2084d7154c85b282bc88783ac584f51d66424eaba39b3691a25c"
+    },
+    {
+      "name": "People Relationships_1.0.0_x64-setup.exe",
+      "path": "C:\\Users\\mhyah\\Downloads\\Family Relationships\\Codebase\\Desktop\\Tauri\\target\\release\\bundle\\nsis\\People Relationships_1.0.0_x64-setup.exe",
+      "size_bytes": 18651010,
+      "size_mb": "17.79",
+      "sha256": "ad7c7cfea35685070e3a4649ab17bde35c1a8cfd47bb511611bae3c15bdfe8a1"
+    }
+  ],
+  "privacy_audit": {
+    "status": "PASS",
+    "verified_zero_private_data": true,
+    "verified_by": "Packaging/Scripts/audit_package.py"
+  }
+}

@@ -7,15 +7,20 @@
     "setup": "node Scripts/setup.mjs",
     "dev": "node Scripts/dev.mjs",
     "dev:web": "npm --prefix App/Frontend run dev",
-    "dev:desktop": "cd Desktop/Tauri && tauri dev",
+    "dev:desktop": "node Scripts/run_tauri.mjs dev",
     "backend": "node Scripts/run-py.mjs -m app.backend.main",
     "build": "npm --prefix App/Frontend run build",
     "typecheck": "npm --prefix App/Frontend run typecheck",
     "test": "node Scripts/run-py.mjs -m pytest Tests/Backend -q",
     "test:ui": "node Tests/UI/smoke.mjs",
-    "tauri": "cd Desktop/Tauri && tauri",
-    "tauri:build": "cd Desktop/Tauri && tauri build",
-    "legacy:check": "node Scripts/run-py.mjs Scripts/build_family.py --check"
+    "tauri": "node Scripts/run_tauri.mjs",
+    "tauri:build": "node Scripts/run_tauri.mjs build",
+    "legacy:check": "node Scripts/run-py.mjs Scripts/build_family.py --check",
+    "package": "node Packaging/Scripts/package.mjs",
+    "package:windows": "node Packaging/Scripts/package.mjs --target windows",
+    "package:macos": "node Packaging/Scripts/package.mjs --target macos",
+    "package:linux": "node Packaging/Scripts/package.mjs --target linux",
+    "release": "node Packaging/Scripts/package.mjs --release"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

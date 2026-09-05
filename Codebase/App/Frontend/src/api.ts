@@ -16,7 +16,31 @@ import type {
   SiblingGroupFact,
 } from "./types";
 
+let dynamicBaseUrl: string | null = null;
+let dynamicUrlPromise: Promise<void> | null = null;
+
+async function ensureDynamicUrl(): Promise<void> {
+  if (dynamicBaseUrl) return;
+  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+    if (!dynamicUrlPromise) {
+      dynamicUrlPromise = (async () => {
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const url = await invoke<string>("get_backend_url");
+          if (url) {
+            dynamicBaseUrl = url.replace(/\/$/, "");
+          }
+        } catch {
+          dynamicBaseUrl = "http://127.0.0.1:8765";
+        }
+      })();
+    }
+    await dynamicUrlPromise;
+  }
+}
+
 function apiBase(): string {
+  if (dynamicBaseUrl) return dynamicBaseUrl;
   const configured = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
   if (configured) return configured.replace(/\/$/, "");
   if (
@@ -27,8 +51,6 @@ function apiBase(): string {
   }
   return "";
 }
-
-const BASE = apiBase();
 
 export class ApiError extends Error {
   code: string;
@@ -44,7 +66,9 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, {
+  await ensureDynamicUrl();
+  const base = apiBase();
+  const response = await fetch(`${base}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,
   });
@@ -302,10 +326,20 @@ export const api = {
         "/api/data-root/move",
         { method: "POST", body: JSON.stringify({ destination_path: destinationPath }) }
       ),
-    switch: (rootPath: string) =>
-      request<{ ok: boolean; previous_root: string; active_root: string; health: import("./features/dataRoot/types").DataRootHealth }>(
+    switch: (targetPath: string) =>
+      request<{ ok: boolean; active_root: string; health: import("./features/dataRoot/types").DataRootHealth }>(
         "/api/data-root/switch",
-        { method: "POST", body: JSON.stringify({ root_path: rootPath }) }
+        { method: "POST", body: JSON.stringify({ target_path: targetPath }) }
+      ),
+    initialize: (targetPath: string, ownerName?: string) =>
+      request<{ ok: boolean; active_root: string; health: import("./features/dataRoot/types").DataRootHealth }>(
+        "/api/data-root/initialize",
+        { method: "POST", body: JSON.stringify({ target_path: targetPath, owner_name: ownerName ?? "Mohammad Yahya Hussain" }) }
+      ),
+    restoreTo: (backupPath: string, targetPath?: string) =>
+      request<{ ok: boolean; active_root: string; health: import("./features/dataRoot/types").DataRootHealth }>(
+        "/api/data-root/restore-to",
+        { method: "POST", body: JSON.stringify({ backup_path: backupPath, target_path: targetPath ?? null }) }
       ),
   },
 

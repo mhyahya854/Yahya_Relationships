@@ -25,6 +25,8 @@ export interface DataRootHealth {
 }
 
 export interface DataRootStatus {
+  configured?: boolean;
+  first_run?: boolean;
   active_root: string;
   database_path: string;
   people_dir: string;

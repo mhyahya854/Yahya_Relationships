@@ -7,4 +7,6 @@ export const dataRootApi = {
   repair: () => api.dataRoot.repair(),
   move: (destinationPath: string) => api.dataRoot.move(destinationPath),
   switch: (rootPath: string) => api.dataRoot.switch(rootPath),
+  initialize: (targetPath: string, ownerName?: string) => api.dataRoot.initialize(targetPath, ownerName),
+  restoreTo: (backupPath: string, targetPath?: string) => api.dataRoot.restoreTo(backupPath, targetPath),
 };

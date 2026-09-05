@@ -2,11 +2,11 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "People Relationships",
   "version": "1.0.0",
-  "identifier": "local.people-relationships.app",
+  "identifier": "local.people-relationships",
   "build": {
     "beforeDevCommand": "npm --prefix ../../App/Frontend run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm --prefix ../../App/Frontend run build",
+    "beforeBuildCommand": "",
     "frontendDist": "../../App/Frontend/dist"
   },
   "app": {
@@ -27,7 +27,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": "all",
+    "externalBin": [
+      "binaries/people-relationships-backend"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

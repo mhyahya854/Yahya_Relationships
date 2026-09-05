@@ -1,0 +1,116 @@
+name: Build & Package Matrix
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target_triple: x86_64-pc-windows-msvc
+            artifact_name: People-Relationships-Windows-x64
+          - os: macos-14
+            target_triple: aarch64-apple-darwin
+            artifact_name: People-Relationships-macOS-arm64
+          - os: macos-13
+            target_triple: x86_64-apple-darwin
+            artifact_name: People-Relationships-macOS-x64
+          - os: ubuntu-latest
+            target_triple: x86_64-unknown-linux-gnu
+            artifact_name: People-Relationships-Linux-x64
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: Codebase/package-lock.json
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies (WebKitGTK & build tools)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            squashfs-tools \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pytest httpx
+          pip install -e Codebase/App
+
+      - name: Install npm dependencies
+        run: |
+          npm ci --prefix Codebase
+          npm ci --prefix Codebase/App/Frontend
+
+      - name: Run Backend Pytest Suite
+        run: |
+          pytest Codebase/Tests/Backend -v
+
+      - name: Run Legacy Kinship & Perspective Audit
+        run: |
+          python Codebase/Scripts/build_family.py --check
+
+      - name: Run Frontend Typecheck & Build
+        run: |
+          npm --prefix Codebase/App/Frontend run typecheck
+          npm --prefix Codebase/App/Frontend run build
+
+      - name: Cargo Check (Desktop Tauri)
+        run: |
+          cargo check --manifest-path Codebase/Desktop/Tauri/Cargo.toml
+
+      - name: Build Python Backend Sidecar
+        run: |
+          python Codebase/Packaging/Scripts/build_backend.py --triple ${{ matrix.target_triple }}
+
+      - name: Package Desktop Application
+        run: |
+          node Codebase/Packaging/Scripts/package.mjs
+
+      - name: Mandatory Privacy & Security Audit
+        run: |
+          python Codebase/Packaging/Scripts/audit_package.py Codebase/Desktop/Tauri/target/release/bundle
+
+      - name: Upload Release Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            Codebase/Packaging/release/
+            Codebase/Desktop/Tauri/target/release/bundle/
+          if-no-files-found: error
