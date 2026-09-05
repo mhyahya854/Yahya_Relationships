@@ -52,7 +52,7 @@ if not SCHEMA_PATH.exists() and IS_FROZEN:
         SCHEMA_PATH = _alt_schema
 
 APP_NAME = "People Relationships"
-APP_VERSION = "1.0.0"
+APP_VERSION = "0.5.0"
 APP_SCHEMA_VERSION = 1
 
 DEFAULT_HOST = "127.0.0.1"

@@ -10,6 +10,7 @@ import { PeopleView } from "./views/PeopleView";
 import { RelationshipsView } from "./views/RelationshipsView";
 import { SearchView } from "./views/SearchView";
 import { RootUnavailableView } from "./features/dataRoot/components/RootUnavailableView";
+import { StartupFailureView } from "./features/startupFailure/StartupFailureView";
 
 type Screen = "people" | "relationships" | "family" | "search" | "hermes" | "backups";
 
@@ -143,11 +144,32 @@ export function App() {
   const [rootUnavailable, setRootUnavailable] = useState(false);
   const [isFirstRun, setIsFirstRun] = useState(false);
   const [lastLocation, setLastLocation] = useState<string | undefined>(undefined);
+  const [backendFailure, setBackendFailure] = useState<{ port?: number; errorMessage?: string } | null>(null);
   const [checking, setChecking] = useState(true);
 
   const checkRoot = async () => {
+    setChecking(true);
+    setBackendFailure(null);
     try {
+      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const backendStatus = await invoke<{ port: number; healthy: boolean; error?: string }>("get_backend_status");
+          if (!backendStatus.healthy) {
+            setBackendFailure({
+              port: backendStatus.port,
+              errorMessage: backendStatus.error || "The local data service did not respond to health checks.",
+            });
+            setChecking(false);
+            return;
+          }
+        } catch {
+          // Fallback to direct HTTP check if command is unavailable
+        }
+      }
+
       const status = await api.dataRoot.status();
+      setBackendFailure(null);
       if (status.first_run || status.configured === false) {
         setIsFirstRun(true);
         setRootUnavailable(true);
@@ -160,8 +182,16 @@ export function App() {
         setIsFirstRun(false);
         setRootUnavailable(false);
       }
-    } catch {
-      // If backend reports failure
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      let port: number | undefined = undefined;
+      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          port = await invoke<number>("get_backend_port");
+        } catch {}
+      }
+      setBackendFailure({ port, errorMessage: message });
     } finally {
       setChecking(false);
     }
@@ -170,6 +200,16 @@ export function App() {
   useEffect(() => {
     void checkRoot();
   }, []);
+
+  if (!checking && backendFailure) {
+    return (
+      <StartupFailureView
+        port={backendFailure.port}
+        errorMessage={backendFailure.errorMessage}
+        onRetry={checkRoot}
+      />
+    );
+  }
 
   if (!checking && rootUnavailable) {
     return (

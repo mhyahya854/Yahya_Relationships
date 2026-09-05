@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "People Relationships",
-  "version": "1.0.0",
+  "version": "0.5.0",
   "identifier": "local.people-relationships",
   "build": {
     "beforeDevCommand": "npm --prefix ../../App/Frontend run dev",

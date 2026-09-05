@@ -1,8 +1,8 @@
 # Repository Structure & Path Migration Manifest
 
-**Migration Date:** 2026-09-04  
-**App Version:** 1.0.0  
-**Data Root Version:** 1  
+**Migration Date:** 2026-09-04<br/>
+**App Version:** 0.5.0<br/>
+**Data Root Version:** 1
 
 ## Overview
 

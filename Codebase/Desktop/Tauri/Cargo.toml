@@ -1,6 +1,6 @@
 [package]
 name = "people-relationships"
-version = "1.0.0"
+version = "0.5.0"
 description = "Local-first personal relationship brain"
 authors = ["People Relationships"]
 edition = "2021"

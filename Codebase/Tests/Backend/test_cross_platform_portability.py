@@ -188,11 +188,13 @@ def test_paths_with_spaces_and_unicode(tmp_path, monkeypatch):
         group_id="family",
     )
     assert person["id"] == "m_nchen_sch_n"
-    assert (complex_root / "Database" / "People" / "family" / person["id"] / "journal.md").exists()
+    journal_path = Path(person["folder"]) / "journal.md"
+    assert journal_path.exists()
+    assert journal_path == complex_root / "Database" / "People" / "Family" / person["id"] / "journal.md"
 
 
 def test_case_sensitivity_safety(tmp_path, monkeypatch):
-    """Ensure person IDs and folder mappings are consistently lowercase to prevent case collision on Linux."""
+    """Ensure person IDs and canonical group folder mappings behave consistently on case-sensitive filesystems."""
     boot_file = tmp_path / "boot_case.json"
     monkeypatch.setenv("PEOPLE_RELATIONSHIPS_BOOTSTRAP", str(boot_file))
     monkeypatch.delenv("PEOPLE_RELATIONSHIPS_ROOT", raising=False)
@@ -207,11 +209,66 @@ def test_case_sensitivity_safety(tmp_path, monkeypatch):
         birth_year=1990,
         group_id="family",
     )
-    # Both person_id and group_id must be lowercase for filesystem case safety
     assert person["id"] == person["id"].lower()
     assert person["id"] == "test_person"
     assert person["groups"][0]["id"] == "family"
-    assert (root / "Database" / "People" / "family" / "test_person" / "journal.md").exists()
+    journal_path = Path(person["folder"]) / "journal.md"
+    assert journal_path.exists()
+    assert journal_path == root / "Database" / "People" / "Family" / "test_person" / "journal.md"
+
+
+def test_case_tolerant_existing_folder_reuse(tmp_path, monkeypatch):
+    """Verify that if a group folder already exists with lowercase 'family', it is safely reused."""
+    boot_file = tmp_path / "boot_reuse.json"
+    monkeypatch.setenv("PEOPLE_RELATIONSHIPS_BOOTSTRAP", str(boot_file))
+    monkeypatch.delenv("PEOPLE_RELATIONSHIPS_ROOT", raising=False)
+    DataRootManager.set_override_root(None)
+
+    root = tmp_path / "ReuseTestRoot"
+    initialize_new_data_root(str(root), owner_name="Owner")
+
+    # Pre-create lowercase 'family' folder
+    lowercase_group_dir = root / "Database" / "People" / "family"
+    lowercase_group_dir.mkdir(parents=True, exist_ok=True)
+
+    person = create_person(
+        name="Case Reuse Person",
+        gender="female",
+        birth_year=1992,
+        group_id="family",
+    )
+    folder = Path(person["folder"])
+    assert folder.parent == lowercase_group_dir
+    assert (folder / "journal.md").exists()
+
+
+def test_data_root_independent_of_cwd(tmp_path, monkeypatch):
+    """Ensure DataRootManager and backend operations are completely independent of current process working directory."""
+    boot_file = tmp_path / "boot_cwd.json"
+    monkeypatch.setenv("PEOPLE_RELATIONSHIPS_BOOTSTRAP", str(boot_file))
+    monkeypatch.delenv("PEOPLE_RELATIONSHIPS_ROOT", raising=False)
+    DataRootManager.set_override_root(None)
+
+    root = tmp_path / "IndependentDataRoot"
+    initialize_new_data_root(str(root), owner_name="Owner")
+
+    # Change working directory to a completely separate temporary scratch dir
+    scratch_dir = tmp_path / "unrelated_scratch"
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(scratch_dir)
+
+    # All DataRoot operations must resolve correctly
+    active = DataRootManager.resolve_active_root()
+    assert active == root.resolve()
+
+    status = get_data_root_status()
+    assert status["configured"] is True
+    assert status["health"]["ok"] is True
+
+    # Person and journal operations succeed from unrelated CWD
+    person = create_person(name="CWD Test Person", gender="unknown", birth_year=2001)
+    read_res = read_journal(person["id"])
+    assert read_res["person_id"] == person["id"]
 
 
 def test_sidecar_target_triples():

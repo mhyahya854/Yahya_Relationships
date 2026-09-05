@@ -24,7 +24,7 @@ jobs:
           - os: macos-14
             target_triple: aarch64-apple-darwin
             artifact_name: People-Relationships-macOS-arm64
-          - os: macos-13
+          - os: macos-15-intel
             target_triple: x86_64-apple-darwin
             artifact_name: People-Relationships-macOS-x64
           - os: ubuntu-latest
@@ -90,17 +90,33 @@ jobs:
           npm --prefix Codebase/App/Frontend run typecheck
           npm --prefix Codebase/App/Frontend run build
 
+      - name: Build Native Python Backend Sidecar
+        run: |
+          python Codebase/Packaging/Scripts/build_backend.py --triple ${{ matrix.target_triple }}
+
+      - name: Verify Expected Backend Sidecar Exists
+        shell: bash
+        run: |
+          TRIPLE="${{ matrix.target_triple }}"
+          if [[ "$TRIPLE" == *"windows"* ]]; then
+            EXE_NAME="people-relationships-backend-${TRIPLE}.exe"
+          else
+            EXE_NAME="people-relationships-backend-${TRIPLE}"
+          fi
+          EXPECTED_PATH="Codebase/Desktop/Tauri/binaries/${EXE_NAME}"
+          if [ ! -f "$EXPECTED_PATH" ]; then
+            echo "::error::Expected backend sidecar binary does not exist at: $EXPECTED_PATH"
+            exit 1
+          fi
+          echo "Verified sidecar binary exists at: $EXPECTED_PATH ($(wc -c < "$EXPECTED_PATH") bytes)"
+
       - name: Cargo Check (Desktop Tauri)
         run: |
           cargo check --manifest-path Codebase/Desktop/Tauri/Cargo.toml
 
-      - name: Build Python Backend Sidecar
-        run: |
-          python Codebase/Packaging/Scripts/build_backend.py --triple ${{ matrix.target_triple }}
-
       - name: Package Desktop Application
         run: |
-          node Codebase/Packaging/Scripts/package.mjs
+          node Codebase/Packaging/Scripts/package.mjs --skip-sidecar
 
       - name: Mandatory Privacy & Security Audit
         run: |

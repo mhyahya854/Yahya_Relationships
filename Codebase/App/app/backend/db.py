@@ -272,10 +272,30 @@ def ensure_person_folder(
     exactly one folder; group membership never duplicates folders.
     """
     config.ensure_root_dirs()
+    people_dir = config.PEOPLE_DIR
+
+    # 1. If person folder already exists anywhere under people_dir, honour it
+    if people_dir.exists():
+        for sub in people_dir.iterdir():
+            if sub.is_dir() and sub.name != "_archived":
+                candidate = sub / person_id
+                if candidate.is_dir():
+                    if not (candidate / "journal.md").exists():
+                        person_row = connection.execute(
+                            "SELECT name FROM people WHERE id = ?", (person_id,)
+                        ).fetchone()
+                        name = person_row["name"] if person_row else person_id
+                        (candidate / "journal.md").write_text(
+                            f"# {name}\n\n", encoding="utf-8", newline="\n"
+                        )
+                    return candidate
+
+    # 2. Determine target group slug
     group_row = None
     if group_id is not None:
         group_row = connection.execute(
-            "SELECT id, slug FROM groups WHERE id = ?", (group_id,)
+            "SELECT id, slug FROM groups WHERE id = ? OR LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?)",
+            (group_id, group_id, group_id),
         ).fetchone()
     if group_row is None:
         group_row = connection.execute(
@@ -291,7 +311,16 @@ def ensure_person_folder(
             "SELECT id, slug FROM groups WHERE id = 'other'"
         ).fetchone()
     slug = group_row["slug"] if group_row else "Other"
-    folder = config.PEOPLE_DIR / slug / person_id
+
+    # 3. Match existing directory case-insensitively if present
+    target_group_dir = people_dir / slug
+    if not target_group_dir.exists() and people_dir.exists():
+        for sub in people_dir.iterdir():
+            if sub.is_dir() and sub.name.lower() == slug.lower():
+                target_group_dir = sub
+                break
+
+    folder = target_group_dir / person_id
     folder.mkdir(parents=True, exist_ok=True)
     if not (folder / "journal.md").exists():
         person_row = connection.execute(

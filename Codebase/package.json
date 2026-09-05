@@ -1,7 +1,7 @@
 {
   "name": "people-relationships",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.5.0",
   "description": "People Relationships — local-first relationship brain",
   "scripts": {
     "setup": "node Scripts/setup.mjs",

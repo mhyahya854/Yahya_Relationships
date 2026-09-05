@@ -1,14 +1,25 @@
-use std::net::TcpListener;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use serde::Serialize;
 use tauri::{Manager, RunEvent};
 
 struct BackendState {
     port: u16,
+    healthy: bool,
+    error: Option<String>,
     child: Mutex<Option<Child>>,
+}
+
+#[derive(Serialize)]
+struct BackendStatus {
+    port: u16,
+    healthy: bool,
+    error: Option<String>,
 }
 
 fn find_available_port() -> u16 {
@@ -178,18 +189,70 @@ fn spawn_backend(port: u16) -> Option<Child> {
     None
 }
 
-fn wait_for_backend_readiness(port: u16, max_duration: Duration) -> bool {
+fn check_backend_http_health(port: u16) -> Result<(), String> {
+    let addr: SocketAddr = format!("127.0.0.1:{port}")
+        .parse()
+        .map_err(|e| format!("Invalid address: {e}"))?;
+
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(500))
+        .map_err(|e| format!("Connection failed: {e}"))?;
+
+    stream
+        .set_read_timeout(Some(Duration::from_millis(1500)))
+        .map_err(|e| format!("Failed to set read timeout: {e}"))?;
+    stream
+        .set_write_timeout(Some(Duration::from_millis(1500)))
+        .map_err(|e| format!("Failed to set write timeout: {e}"))?;
+
+    let request = format!(
+        "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUser-Agent: PeopleRelationships-Desktop\r\nConnection: close\r\n\r\n"
+    );
+
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| format!("Failed to send HTTP request: {e}"))?;
+
+    let mut buffer = [0u8; 4096];
+    let n = stream
+        .read(&mut buffer)
+        .map_err(|e| format!("Failed to read HTTP response: {e}"))?;
+
+    let response_str = String::from_utf8_lossy(&buffer[..n]);
+    let first_line = response_str.lines().next().unwrap_or("");
+
+    if !first_line.contains("200") {
+        return Err(format!("Backend returned non-200 status: {first_line}"));
+    }
+
+    if !response_str.contains("People Relationships") {
+        return Err("Backend response missing expected application identity".to_string());
+    }
+
+    Ok(())
+}
+
+fn wait_for_backend_readiness(port: u16, max_duration: Duration) -> Result<(), String> {
     let start = Instant::now();
-    let client = std::net::TcpStream::connect;
-    let target = format!("127.0.0.1:{port}");
+    let mut last_error = String::from("No response received within startup window");
+    let mut delay = Duration::from_millis(150);
 
     while start.elapsed() < max_duration {
-        if client(&target).is_ok() {
-            return true;
+        match check_backend_http_health(port) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last_error = e;
+            }
         }
-        std::thread::sleep(Duration::from_millis(150));
+        std::thread::sleep(delay);
+        if delay < Duration::from_millis(500) {
+            delay += Duration::from_millis(50);
+        }
     }
-    false
+
+    Err(format!(
+        "Backend did not become healthy within {:?}: {}",
+        max_duration, last_error
+    ))
 }
 
 #[tauri::command]
@@ -207,6 +270,20 @@ fn get_backend_url(state: tauri::State<BackendState>) -> String {
 #[tauri::command]
 fn get_backend_port(state: tauri::State<BackendState>) -> u16 {
     state.port
+}
+
+#[tauri::command]
+fn get_backend_status(state: tauri::State<BackendState>) -> BackendStatus {
+    BackendStatus {
+        port: state.port,
+        healthy: state.healthy,
+        error: state.error.clone(),
+    }
+}
+
+#[tauri::command]
+fn exit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 #[tauri::command]
@@ -245,13 +322,21 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             let child = spawn_backend(port);
+            let readiness_result = wait_for_backend_readiness(port, Duration::from_secs(15));
+            let (healthy, error) = match readiness_result {
+                Ok(()) => (true, None),
+                Err(err) => {
+                    eprintln!("Backend readiness check failed: {err}");
+                    (false, Some(err))
+                }
+            };
+
             app.manage(BackendState {
                 port,
+                healthy,
+                error,
                 child: Mutex::new(child),
             });
-
-            // Wait for backend readiness before displaying window
-            let _ = wait_for_backend_readiness(port, Duration::from_secs(12));
 
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -261,6 +346,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_backend_url,
             get_backend_port,
+            get_backend_status,
+            exit_app,
             open_path,
             pick_folder,
         ])

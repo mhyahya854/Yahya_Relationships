@@ -244,7 +244,8 @@ def create_person(
                 )
         target_group = group_id or "other"
         group = connection.execute(
-            "SELECT id FROM groups WHERE id = ?", (target_group,)
+            "SELECT id FROM groups WHERE id = ? OR LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?)",
+            (target_group, target_group, target_group),
         ).fetchone()
         if group is None:
             raise errors.ValidationError(f"Unknown group id: {target_group}")

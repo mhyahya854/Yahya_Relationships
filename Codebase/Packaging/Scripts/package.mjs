@@ -18,6 +18,7 @@ function parseArgs() {
   const args = process.argv.slice(2);
   let target = "host";
   let release = false;
+  let skipSidecar = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--target" && args[i + 1]) {
@@ -25,9 +26,11 @@ function parseArgs() {
       i++;
     } else if (args[i] === "--release") {
       release = true;
+    } else if (args[i] === "--skip-sidecar") {
+      skipSidecar = true;
     }
   }
-  return { target, release };
+  return { target, release, skipSidecar };
 }
 
 function getHostPlatform() {
@@ -84,15 +87,19 @@ async function main() {
   }
 
   // 2. Build Python Backend Sidecar
-  console.log(`\n[2/5] Packaging Python Backend Sidecar with PyInstaller...`);
-  const pythonCmd = resolve(codebaseDir, "Scripts/run-py.mjs");
-  const buildBackend = spawnSync(process.execPath, [pythonCmd, "Packaging/Scripts/build_backend.py"], {
-    cwd: codebaseDir,
-    stdio: "inherit",
-  });
-  if (buildBackend.status !== 0) {
-    console.error("Backend sidecar build failed!");
-    process.exit(buildBackend.status ?? 1);
+  if (skipSidecar) {
+    console.log(`\n[2/5] Skipping Python Backend Sidecar build (--skip-sidecar requested).`);
+  } else {
+    console.log(`\n[2/5] Packaging Python Backend Sidecar with PyInstaller...`);
+    const pythonCmd = resolve(codebaseDir, "Scripts/run-py.mjs");
+    const buildBackend = spawnSync(process.execPath, [pythonCmd, "Packaging/Scripts/build_backend.py"], {
+      cwd: codebaseDir,
+      stdio: "inherit",
+    });
+    if (buildBackend.status !== 0) {
+      console.error("Backend sidecar build failed!");
+      process.exit(buildBackend.status ?? 1);
+    }
   }
 
   // 3. Build Tauri Desktop Package
@@ -179,9 +186,15 @@ async function main() {
     }
   }
 
+  let appVersion = "0.5.0";
+  try {
+    const pkg = JSON.parse(readFileSync(join(codebaseDir, "package.json"), "utf-8"));
+    if (pkg.version) appVersion = pkg.version;
+  } catch {}
+
   const manifest = {
     app_name: "People Relationships",
-    version: "1.0.0",
+    version: appVersion,
     git_sha: getGitSha(),
     target_os: host,
     target_arch: process.arch,

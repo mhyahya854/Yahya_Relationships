@@ -10,7 +10,7 @@ This document tracks the verification and packaging status of **People Relations
 |----------|--------------|------------|--------|---------------------|
 | **Windows** | `x64` (`x86_64`) | NSIS `.exe` / MSI | **PASS** | Full End-to-End Local Execution (Packaged, Installed, Launched, Health Checked, Smoke Tested, Uninstalled) |
 | **macOS** | Apple Silicon (`arm64`) | `.app` + DMG | **CONFIGURED & CI-AUTOMATED** | Packaged via GitHub Actions native runner (`macos-14`), Sidecar build & Tauri bundle workflow configured |
-| **macOS** | Intel (`x86_64`) | `.app` + DMG | **CONFIGURED & CI-AUTOMATED** | Packaged via GitHub Actions native runner (`macos-13`), Sidecar build & Tauri bundle workflow configured |
+| **macOS** | Intel (`x86_64`) | `.app` + DMG | **CONFIGURED & CI-AUTOMATED** | Packaged via GitHub Actions native runner (`macos-15-intel`), Sidecar build & Tauri bundle workflow configured |
 | **Linux** | `x86_64` | AppImage / `.deb` | **CONFIGURED & CI-AUTOMATED** | Packaged via GitHub Actions native runner (`ubuntu-latest`), WebKitGTK & sidecar build workflow configured |
 
 ---
@@ -20,12 +20,9 @@ This document tracks the verification and packaging status of **People Relations
 ### Windows x64
 - **Host**: Windows 11 x64 (Development & Packaging Host)
 - **Artifacts**:
-  - `People Relationships_1.0.0_x64-setup.exe` (17.79 MB, NSIS Installer)
-    - SHA-256: `ad7c7cfea35685070e3a4649ab17bde35c1a8cfd47bb511611bae3c15bdfe8a1`
-  - `People Relationships_1.0.0_x64_en-US.msi` (18.66 MB, Windows Installer MSI)
-    - SHA-256: `e17d5d4785bb2084d7154c85b282bc88783ac584f51d66424eaba39b3691a25c`
-  - Sidecar binary: `people-relationships-backend-x86_64-pc-windows-msvc.exe` (15.10 MB, PyInstaller 6.22.2)
-    - SHA-256: `45abc1fba5b9f832595ec968342847c8e08675d407b41efdbb88a2251b4de0ef`
+  - `People Relationships_0.5.0_x64-setup.exe` (NSIS Installer)
+  - `People Relationships_0.5.0_x64_en-US.msi` (Windows Installer MSI)
+  - Sidecar binary: `people-relationships-backend-x86_64-pc-windows-msvc.exe` (PyInstaller)
 - **Desktop Shell**: Tauri 2 (Rust MSVC)
 - **Manifest**: `Codebase/Packaging/release/release-manifest-windows-x64.json`
 - **Verified Operations (Automated via `Packaging/Scripts/test_windows_package.mjs`)**:
