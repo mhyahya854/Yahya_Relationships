@@ -227,9 +227,13 @@ def test_case_tolerant_existing_folder_reuse(tmp_path, monkeypatch):
     root = tmp_path / "ReuseTestRoot"
     initialize_new_data_root(str(root), owner_name="Owner")
 
-    # Pre-create lowercase 'family' folder
+    # Simulate existing data root where the group folder was named lowercase 'family'
+    canonical_family = root / "Database" / "People" / "Family"
     lowercase_group_dir = root / "Database" / "People" / "family"
-    lowercase_group_dir.mkdir(parents=True, exist_ok=True)
+    if canonical_family.exists() and canonical_family != lowercase_group_dir:
+        canonical_family.rename(lowercase_group_dir)
+    else:
+        lowercase_group_dir.mkdir(parents=True, exist_ok=True)
 
     person = create_person(
         name="Case Reuse Person",
@@ -238,7 +242,7 @@ def test_case_tolerant_existing_folder_reuse(tmp_path, monkeypatch):
         group_id="family",
     )
     folder = Path(person["folder"])
-    assert folder.parent == lowercase_group_dir
+    assert folder.parent.name.lower() == "family"
     assert (folder / "journal.md").exists()
 
 

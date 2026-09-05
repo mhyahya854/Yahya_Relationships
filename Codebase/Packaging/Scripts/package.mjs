@@ -60,7 +60,7 @@ function getGitSha() {
 }
 
 async function main() {
-  const { target, release } = parseArgs();
+  const { target, release, skipSidecar } = parseArgs();
   const host = getHostPlatform();
 
   console.log(`=== People Relationships Desktop Packaging Pipeline ===`);
