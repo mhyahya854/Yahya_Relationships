@@ -302,3 +302,190 @@ def test_cross_platform_spaces_and_unicode(tmp_path):
             conn.close()
     finally:
         DataRootManager.set_override_root(None)
+
+
+def test_create_person_mkdir_succeeds_journal_write_fails(isolated):
+    """TEST 1: mkdir succeeds, journal write fails.
+    Verifies that the newly created person directory is cleanly removed,
+    leaving no orphan folder, and SQLite transaction is rolled back."""
+    target_id = "mkdir_succeeds_fail"
+    orig_write_text = Path.write_text
+
+    def failing_write_text(self, *args, **kwargs):
+        if self.name == "journal.md" and target_id in str(self):
+            # Target directory exists at this point because mkdir succeeded
+            assert self.parent.exists(), "Expected parent folder to exist before writing journal"
+            raise OSError("Simulated disk I/O failure during journal write")
+        return orig_write_text(self, *args, **kwargs)
+
+    undo_depth_before = len(mutation_history._MUTATION_STACK)
+
+    with patch.object(Path, "write_text", new=failing_write_text):
+        with pytest.raises(errors.StorageError) as exc_info:
+            people.create_person(
+                name="Mkdir Succeeds Fail",
+                aliases=["Alias 1"],
+                gender="female",
+                group_ids=["family"],
+            )
+
+    assert "Failed to create canonical journal" in str(exc_info.value)
+
+    # Verify DB rollback
+    conn = db.get_connection()
+    try:
+        assert conn.execute("SELECT * FROM people WHERE id = ?", (target_id,)).fetchone() is None
+        assert len(conn.execute("SELECT * FROM aliases WHERE person_id = ?", (target_id,)).fetchall()) == 0
+        assert len(conn.execute("SELECT * FROM person_groups WHERE person_id = ?", (target_id,)).fetchall()) == 0
+        assert len(conn.execute("SELECT * FROM fact_sources WHERE entity_key = ?", (target_id,)).fetchall()) == 0
+
+        # Verify filesystem compensation: folder must NOT remain on disk
+        folder = db.find_person_folder(conn, target_id)
+        assert folder is None or not folder.exists()
+        expected = db.expected_person_folder(conn, target_id)
+        assert not expected.exists(), "Newly created folder was left on disk after write failure!"
+    finally:
+        conn.close()
+
+    # Verify Undo stack depth restored
+    assert len(mutation_history._MUTATION_STACK) == undo_depth_before
+    assert not any(s.get("description") == "Created person: Mkdir Succeeds Fail" for s in mutation_history._MUTATION_STACK)
+
+
+def test_create_person_partial_journal_file_cleaned_up_on_failure(isolated):
+    """TEST 2: Partial journal file exists when write fails.
+    Verifies that a partially-written file and newly created folder are both removed."""
+    target_id = "partial_write_fail"
+    orig_write_text = Path.write_text
+
+    def partial_write_then_fail(self, *args, **kwargs):
+        if self.name == "journal.md" and target_id in str(self):
+            # Write partial corrupted data to disk
+            self.write_bytes(b"# Partial corrupted data")
+            assert self.exists() and self.stat().st_size > 0
+            raise OSError("Simulated partial write crash mid-operation")
+        return orig_write_text(self, *args, **kwargs)
+
+    undo_depth_before = len(mutation_history._MUTATION_STACK)
+
+    with patch.object(Path, "write_text", new=partial_write_then_fail):
+        with pytest.raises(errors.StorageError):
+            people.create_person(
+                name="Partial Write Fail",
+                group_ids=["family"],
+            )
+
+    conn = db.get_connection()
+    try:
+        expected = db.expected_person_folder(conn, target_id)
+        # Both partial journal and folder must be gone
+        assert not (expected / "journal.md").exists(), "Partial journal was left on disk!"
+        assert not expected.exists(), "Folder was left on disk after partial journal failure!"
+        assert conn.execute("SELECT * FROM people WHERE id = ?", (target_id,)).fetchone() is None
+    finally:
+        conn.close()
+
+    assert len(mutation_history._MUTATION_STACK) == undo_depth_before
+
+
+def test_create_person_pre_existing_folder_must_survive(isolated):
+    """TEST 3: Pre-existing folder must survive.
+    If the person folder existed prior to the attempted creation, compensation must NOT delete it."""
+    target_id = "pre_existing_folder_person"
+    conn = db.get_connection()
+    expected_folder = db.expected_person_folder(conn, target_id, group_id="family")
+    conn.close()
+
+    expected_folder.mkdir(parents=True, exist_ok=True)
+    marker_file = expected_folder / "existing_note.txt"
+    marker_file.write_text("pre-existing data", encoding="utf-8")
+
+    orig_write_text = Path.write_text
+
+    def fail_write(self, *args, **kwargs):
+        if self.name == "journal.md" and target_id in str(self):
+            raise OSError("Simulated write failure")
+        return orig_write_text(self, *args, **kwargs)
+
+    with patch.object(Path, "write_text", new=fail_write):
+        with pytest.raises(errors.StorageError):
+            people.create_person(
+                name="Pre Existing Folder Person",
+                group_ids=["family"],
+            )
+
+    # Pre-existing folder MUST STILL EXIST!
+    assert expected_folder.exists(), "Pre-existing folder was deleted by compensation!"
+    assert marker_file.exists()
+    assert marker_file.read_text(encoding="utf-8") == "pre-existing data"
+    # Target journal must not exist
+    assert not (expected_folder / "journal.md").exists()
+
+
+def test_create_person_pre_existing_journal_must_never_be_deleted(isolated):
+    """TEST 4: Pre-existing journal must never be deleted.
+    If a journal file already existed at the target path before the attempt, compensation must preserve it."""
+    target_id = "pre_existing_journal_person"
+    conn = db.get_connection()
+    expected_folder = db.expected_person_folder(conn, target_id, group_id="family")
+    conn.close()
+
+    expected_folder.mkdir(parents=True, exist_ok=True)
+    existing_journal = expected_folder / "journal.md"
+    existing_journal.write_text("# Existing Canonical Prose\n\nPreserve this.\n", encoding="utf-8")
+
+    # Simulate failure after filesystem check (e.g. failure during link_fact_source)
+    with patch("app.backend.services.people.db.link_fact_source", side_effect=RuntimeError("Simulated DB error")):
+        with pytest.raises(RuntimeError):
+            people.create_person(
+                name="Pre Existing Journal Person",
+                group_ids=["family"],
+            )
+
+    # Pre-existing journal and folder MUST REMAIN UNTOUCHED!
+    assert existing_journal.exists(), "Pre-existing journal was deleted!"
+    assert "Preserve this." in existing_journal.read_text(encoding="utf-8")
+    assert expected_folder.exists()
+
+
+def test_create_person_undo_stack_restored_with_prior_snapshots(isolated):
+    """TEST 6: Undo stack restored with prior snapshots intact.
+    Pushes prior snapshots, fails create_person, and verifies prior snapshots remain untouched."""
+    mutation_history.record_pre_mutation_snapshot("Prior Snapshot Alpha")
+    mutation_history.record_pre_mutation_snapshot("Prior Snapshot Beta")
+    stack_depth_before = len(mutation_history._MUTATION_STACK)
+    assert stack_depth_before >= 2
+
+    with patch("app.backend.db.ensure_journal", side_effect=OSError("Disk failure")):
+        with pytest.raises(errors.StorageError):
+            people.create_person(name="Undo Stack Test Person", group_ids=["family"])
+
+    # Stack depth returns to exactly prior depth
+    assert len(mutation_history._MUTATION_STACK) == stack_depth_before
+    assert mutation_history.get_last_mutation_description() == "Prior Snapshot Beta"
+    assert any(s["description"] == "Prior Snapshot Alpha" for s in mutation_history._MUTATION_STACK)
+    assert not any(s["description"] == "Created person: Undo Stack Test Person" for s in mutation_history._MUTATION_STACK)
+
+
+def test_create_person_provenance_and_sources_rollback(isolated):
+    """TEST: Provenance and sources transaction rollback.
+    Verifies that no dangling fact_sources or uncommitted sources remain after rollback."""
+    conn = db.get_connection()
+    sources_before = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
+    fact_sources_before = conn.execute("SELECT COUNT(*) FROM fact_sources").fetchone()[0]
+    conn.close()
+
+    with patch("app.backend.db.ensure_journal", side_effect=OSError("Disk write error")):
+        with pytest.raises(errors.StorageError):
+            people.create_person(name="Provenance Test Person", group_ids=["family"])
+
+    conn = db.get_connection()
+    try:
+        sources_after = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
+        fact_sources_after = conn.execute("SELECT COUNT(*) FROM fact_sources").fetchone()[0]
+        dangling = conn.execute("SELECT * FROM fact_sources WHERE entity_key LIKE 'provenance_test_person%'").fetchall()
+        assert len(dangling) == 0, "Dangling fact_sources left after rollback!"
+        assert fact_sources_after == fact_sources_before
+        assert sources_after == sources_before
+    finally:
+        conn.close()

@@ -225,8 +225,10 @@ def create_person(
     record_pre_mutation_snapshot(f"Created person: {name}")
 
     connection = db.get_connection()
-    created_folder: Path | None = None
-    created_journal: Path | None = None
+    target_folder: Path | None = None
+    target_journal: Path | None = None
+    folder_existed_before = True
+    journal_existed_before = True
     snapshot_committed = False
     try:
         connection.execute("BEGIN")
@@ -319,10 +321,6 @@ def create_person(
 
         try:
             journal_path = db.ensure_journal(connection, person_id)
-            if not folder_existed_before and target_folder.exists():
-                created_folder = target_folder
-            if not journal_existed_before and target_journal.exists():
-                created_journal = target_journal
             if not journal_path.is_file():
                 raise OSError(f"Canonical journal.md not created at {journal_path}")
         except Exception as fs_exc:
@@ -330,7 +328,6 @@ def create_person(
                 f"Failed to create canonical journal for '{name}': {fs_exc}",
                 details={"person_id": person_id, "path": str(target_journal)},
             ) from fs_exc
-
 
         # Both DB and filesystem are verified
         connection.commit()
@@ -343,20 +340,21 @@ def create_person(
                 connection.rollback()
             except Exception:
                 pass
-            if created_journal and created_journal.exists():
+            if not journal_existed_before and target_journal is not None and target_journal.exists():
                 try:
-                    created_journal.unlink()
+                    target_journal.unlink()
                 except OSError:
                     pass
-            if created_folder and created_folder.exists():
+            if not folder_existed_before and target_folder is not None and target_folder.exists():
                 try:
-                    shutil.rmtree(created_folder)
+                    shutil.rmtree(target_folder)
                 except OSError:
                     pass
             pop_latest_snapshot()
         raise
     finally:
         connection.close()
+
 
 
 

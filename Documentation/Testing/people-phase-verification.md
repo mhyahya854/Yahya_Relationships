@@ -151,3 +151,38 @@ The following real screenshots have been captured, visually inspected, and valid
 - Real Journals: 35/35 (100% UNCHANGED)
 - Kinship Baseline: 35 people, 44 parent-child facts, 12 marriages, 10 sibling groups, 21 cousin paths (100% UNCHANGED)
 
+### Final Create-Person Filesystem Atomicity Closure
+
+#### Precise Edge Case
+In `services/people.py:create_person()`, cleanup variables `created_folder` and `created_journal` were previously assigned only *after* `db.ensure_journal(connection, person_id)` returned successfully. Because `ensure_journal()` first creates the directory (`target_folder.mkdir()`) and then writes `journal.md` (`journal.write_text()`), a failure during write (or leaving a partial file) caused `ensure_journal()` to raise before `created_folder` was recorded. The exception handler saw `created_folder is None`, leaving behind the newly-created empty person folder or partial journal file and violating all-or-nothing atomicity.
+
+#### Implementation Approach
+1. **Pre-Operation Existence Baseline**: Prior to invoking `ensure_journal()`, `create_person()` inspects `target_folder.exists()` and `target_journal.exists()`, storing `folder_existed_before` and `journal_existed_before`.
+2. **Post-Failure Actual State Compensation**: In the `except Exception:` block:
+   - If `not journal_existed_before and target_journal.exists()`: the journal file (including 0-byte or partial files) is unlinked.
+   - If `not folder_existed_before and target_folder.exists()`: the person folder is recursively removed via `shutil.rmtree(target_folder)`.
+   - Any folder or journal that existed prior to the attempted operation is strictly preserved.
+3. **Undo History Protection**: `domain/mutations/history.py` was refined so that when recording a snapshot at maximum depth (`MAX_HISTORY_DEPTH`), evicted prior snapshots are preserved in `_evicted_prior`. On failure, `pop_latest_snapshot()` restores `_evicted_prior`, guaranteeing the undo stack returns to its exact prior depth without dropping earlier history.
+4. **Isolated Smoke Testing**: `Scripts/test_e2e_runner.mjs` and `Tests/UI/clean_smoke_data.py` were hardened to clone and execute in a temporary `PEOPLE_RELATIONSHIPS_ROOT` sandbox, preventing any test mutation from touching the production `Database/Main/family.db` or production journals.
+
+#### Regression Tests Added
+- `test_create_person_mkdir_succeeds_journal_write_fails`: Mocks `Path.write_text` after real `mkdir()` succeeds; proves new folder is deleted, DB rolls back, and undo stack depth is preserved.
+- `test_create_person_partial_journal_file_cleaned_up_on_failure`: Creates partial file then fails; proves partial file and directory are cleaned up.
+- `test_create_person_pre_existing_folder_must_survive`: Pre-creates target directory; verifies pre-existing directory and contents survive failure.
+- `test_create_person_pre_existing_journal_must_never_be_deleted`: Pre-creates journal; verifies pre-existing journal is untouched by compensation.
+- `test_create_person_undo_stack_restored_with_prior_snapshots`: Pushes snapshots before failure; verifies all prior snapshots survive.
+- `test_create_person_provenance_and_sources_rollback`: Verifies SQLite rollback cleans all `fact_sources` and uncommitted `sources`.
+
+#### Final Gate Test Counts
+- **Journal Integrity Suite**: 15 passed in 14.79s (`node Scripts/run-py.mjs -m pytest Tests/Backend/test_journal_integrity.py -v`)
+- **Backend Pytest Suite**: 141 passed in 54.92s (`node Scripts/run-py.mjs -m pytest Tests/Backend -v`)
+- **Legacy Kinship & Perspective Audit**: PASS (`npm run legacy:check`)
+- **Frontend Typecheck**: PASS (0 errors) (`npm run typecheck`)
+- **Frontend Production Build**: PASS (`npm run build`, built in 13.06s)
+- **UI / E2E Comprehensive Suite**: 18/18 PASS (`npm run test:ui`)
+- **UI Smoke Tests**: PASS (`node Scripts/test_e2e_runner.mjs`)
+- **Cargo Check (Desktop Tauri)**: PASS (`cargo check --manifest-path Codebase/Desktop/Tauri/Cargo.toml`, 17.34s)
+- **Production Data Integrity**:
+  - `Database/Main/family.db` SHA-256: `3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E` (EXACT MATCH)
+  - 35/35 Canonical Journals (EXACT MATCH)
+  - Kinship Baseline: 35 people, 44 parent-child facts, 12 marriages, 10 sibling groups, 21 cousin paths (EXACT MATCH)

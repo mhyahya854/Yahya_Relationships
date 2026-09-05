@@ -72,9 +72,11 @@ def record_pre_mutation_snapshot(
             "filesystem": fs_manifest,
         }
 
+        evicted = None
+        if len(_MUTATION_STACK) >= MAX_HISTORY_DEPTH:
+            evicted = _MUTATION_STACK.pop(0)
+        snapshot["_evicted_prior"] = evicted
         _MUTATION_STACK.append(snapshot)
-        if len(_MUTATION_STACK) > MAX_HISTORY_DEPTH:
-            _MUTATION_STACK.pop(0)
     finally:
         connection.close()
 
@@ -115,9 +117,16 @@ def get_last_mutation_description() -> Optional[str]:
 
 
 def pop_latest_snapshot() -> Optional[Dict[str, Any]]:
-    """Remove and return the most recent snapshot without applying it (e.g. on operation failure/rollback)."""
+    """Remove and return the most recent snapshot without applying it (e.g. on operation failure/rollback).
+
+    Restores any prior snapshot evicted by capacity if this popped snapshot caused eviction.
+    """
     if _MUTATION_STACK:
-        return _MUTATION_STACK.pop()
+        popped = _MUTATION_STACK.pop()
+        evicted = popped.pop("_evicted_prior", None)
+        if evicted is not None:
+            _MUTATION_STACK.insert(0, evicted)
+        return popped
     return None
 
 

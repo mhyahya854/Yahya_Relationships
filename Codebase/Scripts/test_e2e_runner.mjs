@@ -1,12 +1,25 @@
 import { spawn, spawnSync, execSync } from "node:child_process";
 import { resolve } from "node:path";
+import { mkdirSync, cpSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const root = resolve(import.meta.dirname, "..");
+const repoRoot = resolve(root, "..");
 
+const tempRoot = resolve(tmpdir(), `smoke_e2e_root_${Date.now()}`);
+mkdirSync(tempRoot, { recursive: true });
+cpSync(resolve(repoRoot, "Database"), resolve(tempRoot, "Database"), { recursive: true });
+cpSync(resolve(repoRoot, "Backups"), resolve(tempRoot, "Backups"), { recursive: true });
+
+console.log(`=== Setting up Isolated Data Root at ${tempRoot} ===`);
 console.log("=== Starting Dev Stack for E2E Testing ===");
 const devProcess = spawn(process.execPath, [resolve(root, "Scripts/dev.mjs")], {
   cwd: root,
   stdio: "inherit",
+  env: {
+    ...process.env,
+    PEOPLE_RELATIONSHIPS_ROOT: tempRoot,
+  },
 });
 
 async function waitForUrl(url, timeoutMs = 25000) {
@@ -73,7 +86,14 @@ async function run() {
     spawnSync(pythonExe, [resolve(root, "Tests/UI/clean_smoke_data.py")], {
       cwd: resolve(root, ".."),
       stdio: "inherit",
+      env: {
+        ...process.env,
+        PEOPLE_RELATIONSHIPS_ROOT: tempRoot,
+      },
     });
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {}
     setTimeout(() => process.exit(process.exitCode ?? 0), 500);
   }
 }

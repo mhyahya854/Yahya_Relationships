@@ -5,11 +5,16 @@ Run from the repository root:
 """
 
 import json
+import os
 import shutil
 import sqlite3
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = (
+    Path(os.environ["PEOPLE_RELATIONSHIPS_ROOT"]).resolve()
+    if os.environ.get("PEOPLE_RELATIONSHIPS_ROOT")
+    else Path(__file__).resolve().parents[3]
+)
 con = sqlite3.connect(ROOT / "Database" / "Main" / "family.db")
 ids = [
     row[0]
