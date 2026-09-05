@@ -96,3 +96,58 @@ The following real screenshots have been captured, visually inspected, and valid
 5. `edit-person.png`: Edit Person dialog showing multi-group management, primary folder selection, and floating UndoBar.
 6. `remove-person-preview.png` / `delete-impact-preview.png`: Safe deletion consequence preview showing direct changes, warnings, and safe archival to `Database/People/_archived/`.
 
+---
+
+## 6. Canonical Journal Integrity Hardening Pass
+
+### Defects Identified
+1. **Read Paths Silently Creating Journals / Folders**: Ordinary serialization and read queries (`_person_serialize`, `list_people`, `get_person`, `get_person_profile`, `duplicate_warnings`, `read_journal`) called `db.ensure_person_folder()` or `db.ensure_journal()`, which mutated disk by silently creating folders and blank `journal.md` files whenever a person was accessed. This destroyed missing-journal evidence.
+2. **Partial Person Creation on Filesystem Failure**: `create_person()` committed the SQLite transaction prior to creating the folder and journal, and wrapped filesystem operations in `except Exception: pass`, leaving dangling canonical person records without a journal if filesystem creation failed.
+
+### Final Read / Write Separation
+- **Read-Only Helpers**:
+  - `db.find_person_folder(connection, person_id) -> Path | None`: Resolves canonical directory without touching or creating anything on disk.
+  - `db.expected_person_folder(connection, person_id, group_id) -> Path`: Calculates target path without filesystem mutations.
+  - `db.find_journal_path(connection, person_id) -> tuple[Path, bool]`: Returns canonical path and boolean existence flag without creating files.
+  - `services.journals.read_journal(person_id)`: Uses `_resolve_journal_path_readonly()` and returns `{ "exists": False, "content": "", ... }` if missing on disk.
+  - `services.people._person_serialize()`: Exposes `folder`, `folder_exists: bool`, and `journal_exists: bool` purely from read-only lookups.
+- **Mutating Helpers (Explicit Write Paths Only)**:
+  - `db.ensure_person_folder()` and `db.ensure_journal()`: Reserved exclusively for explicit creation (`create_person`), explicit writes (`save_journal`), and explicit maintenance (`safe_repair_data_root`).
+
+### Missing Journal UX
+- **Person Profile (Journal Tab)**: Renders a warning card: *"journal.md could not be found for this person. The canonical Markdown journal file is missing on disk. Reading this profile will not recreate it automatically."*
+- **People View**: Badges rows with `⚠` if `journal_exists === false`.
+- **Navigation Safety**: Navigating tabs or opening profiles never triggers save or creation operations.
+
+### Create-Person Failure-Atomic Semantics
+- Validates request & verifies DataRoot is writable.
+- Captures pre-mutation snapshot on undo history.
+- Begins SQLite transaction (`BEGIN`).
+- Inserts person, aliases, group memberships, and provenance records.
+- Attempts `db.ensure_journal()` BEFORE committing SQLite.
+- If filesystem creation fails:
+  - SQLite transaction is rolled back (`connection.rollback()`).
+  - Any partial directory or file created during the attempt is cleanly unlinked/removed.
+  - Pre-mutation snapshot is popped from the undo stack (`pop_latest_snapshot()`).
+  - Structured `StorageError` (`STORAGE_ERROR`, HTTP 500) is surfaced without being swallowed.
+- If filesystem creation succeeds:
+  - SQLite transaction commits (`connection.commit()`).
+  - Manifest is updated and the new canonical person is returned.
+
+### Regression Tests Added (`Tests/Backend/test_journal_integrity.py` & `Tests/UI/people_e2e.mjs`)
+1. `test_existing_person_and_journal_reads_do_not_mutate`: Read paths leave mtime and contents byte-identical.
+2. `test_missing_journal_not_recreated_by_reads`: Deleting `journal.md` and executing `list_people`, `get_person`, `check_duplicate_person`, `get_person_profile`, and `read_journal` does NOT recreate the file. Exposes `journal_exists: False`.
+3. `test_missing_person_folder_not_recreated_by_reads`: Deleting the person folder leaves it absent on reads. Exposes `folder_exists: False`.
+4. `test_explicit_ensure_journal_creates_folder_and_file`: Explicit calls still create folder and file.
+5. `test_create_person_normal_success_creates_exactly_one_folder_and_journal`: Normal creation yields 1 folder and 1 journal.
+6. `test_create_person_filesystem_failure_rolls_back_atomically`: Mocked filesystem failure rolls back DB, unlinks partial files, pops snapshot, and raises `StorageError`.
+7. `test_person_edit_preserves_journal_without_duplication`: Editing a person preserves canonical journal without duplication.
+8. `test_create_person_refuses_when_data_root_is_read_only`: Preserves `DataRootReadOnlyError`.
+9. `test_cross_platform_spaces_and_unicode`: DataRoots with spaces and Unicode accents function identically.
+10. `people_e2e.mjs Step 17b`: UI check ensuring profile displays missing journal warning and leaves disk file absent.
+
+### Production Data Verification
+- Production DB SHA-256: `3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E` (100% UNCHANGED)
+- Real Journals: 35/35 (100% UNCHANGED)
+- Kinship Baseline: 35 people, 44 parent-child facts, 12 marriages, 10 sibling groups, 21 cousin paths (100% UNCHANGED)
+

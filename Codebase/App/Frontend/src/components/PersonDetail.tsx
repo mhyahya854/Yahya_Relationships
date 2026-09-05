@@ -323,8 +323,9 @@ export function PersonProfile({
           className={`tab profile-tab ${activeTab === "journal" ? "active" : ""}`}
           onClick={() => setActiveTab("journal")}
         >
-          Journal {profileData?.journal?.content?.trim() ? "✓" : ""}
+          Journal {profileData?.journal ? (profileData.journal.exists === false ? "⚠" : (profileData.journal.content?.trim() ? "✓" : "")) : ""}
         </button>
+
       </div>
 
       <ErrorNote error={error} />
@@ -548,6 +549,30 @@ export function PersonProfile({
                 </span>
               </div>
 
+              {profileData.journal.exists === false && (
+                <div
+                  className="journal-missing-warning"
+                  style={{
+                    padding: "14px 18px",
+                    background: "#fffbeb",
+                    border: "1px solid #f59e0b",
+                    borderRadius: 8,
+                    color: "#92400e",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700 }}>
+                    <span style={{ fontSize: 16 }}>⚠</span>
+                    <span>journal.md could not be found for this person.</span>
+                  </div>
+                  <div className="tiny" style={{ color: "#78350f" }}>
+                    The canonical Markdown journal file is missing on disk. Reading this profile will not recreate it automatically.
+                  </div>
+                </div>
+              )}
+
               {journalError ? <ErrorNote error={journalError} /> : null}
               {journalInfo && <div className="info-note">{journalInfo}</div>}
 
@@ -567,10 +592,12 @@ export function PersonProfile({
               ) : (
                 <div className="empty-state" style={{ padding: 24, textAlign: "center" }}>
                   <p className="muted" style={{ margin: "0 0 12px" }}>
-                    No journal prose recorded yet for {person.name}.
+                    {profileData.journal.exists === false
+                      ? `Journal file is missing from disk for ${person.name}.`
+                      : `No journal prose recorded yet for ${person.name}.`}
                   </p>
                   <Button kind="primary" onClick={() => setJournalMode("edit")}>
-                    Write First Entry
+                    {profileData.journal.exists === false ? "Create Journal" : "Write First Entry"}
                   </Button>
                 </div>
               )}
@@ -713,6 +740,26 @@ export function JournalModal({
         </Button>
         <span className="muted tiny journal-path">{journal?.path ?? "…"}</span>
       </div>
+      {journal && journal.exists === false && (
+        <div
+          className="journal-missing-warning"
+          style={{
+            padding: "10px 14px",
+            background: "#fffbeb",
+            border: "1px solid #f59e0b",
+            borderRadius: 6,
+            color: "#92400e",
+            fontSize: 13,
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <span>⚠</span>
+          <span>journal.md could not be found on disk for this person.</span>
+        </div>
+      )}
       {error ? <ErrorNote error={error} /> : null}
       {info && <div className="info-note">{info}</div>}
       {journal &&

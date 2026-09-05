@@ -263,34 +263,58 @@ def metadata_to_json(connection: sqlite3.Connection) -> dict:
     return result
 
 
-def ensure_person_folder(
-    connection: sqlite3.Connection, person_id: str, group_id: str | None = None
-) -> Path:
-    """Return the canonical person folder, creating it when absent.
+def find_person_folder(
+    connection: sqlite3.Connection, person_id: str
+) -> Path | None:
+    """Resolve the canonical person folder without modifying the filesystem.
 
-    Folder location follows the person's primary group. One person always has
-    exactly one folder; group membership never duplicates folders.
+    Checks the person's primary group first, then other group directories under
+    people_dir, excluding `_archived` and hidden directories.
+    Returns None if no folder exists. Never creates directories or files.
     """
-    config.ensure_root_dirs()
     people_dir = config.PEOPLE_DIR
+    if not people_dir.exists():
+        return None
 
-    # 1. If person folder already exists anywhere under people_dir, honour it
-    if people_dir.exists():
+    # 1. Determine primary group slug to check primary location first
+    group_row = connection.execute(
+        """
+        SELECT g.id, g.slug FROM groups g
+        JOIN person_groups pg ON pg.group_id = g.id
+        WHERE pg.person_id = ? AND pg.is_primary = 1
+        """,
+        (person_id,),
+    ).fetchone()
+
+    if group_row:
+        slug = group_row["slug"]
+        primary_dir = people_dir / slug
+        if primary_dir.is_dir():
+            candidate = primary_dir / person_id
+            if candidate.is_dir():
+                return candidate
+        # Check case-insensitive match for primary group directory
         for sub in people_dir.iterdir():
-            if sub.is_dir() and sub.name != "_archived":
+            if sub.is_dir() and sub.name.lower() == slug.lower() and sub.name != "_archived":
                 candidate = sub / person_id
                 if candidate.is_dir():
-                    if not (candidate / "journal.md").exists():
-                        person_row = connection.execute(
-                            "SELECT name FROM people WHERE id = ?", (person_id,)
-                        ).fetchone()
-                        name = person_row["name"] if person_row else person_id
-                        (candidate / "journal.md").write_text(
-                            f"# {name}\n\n", encoding="utf-8", newline="\n"
-                        )
                     return candidate
 
-    # 2. Determine target group slug
+    # 2. Check other directories under people_dir (ignoring _archived and hidden dirs)
+    for sub in people_dir.iterdir():
+        if sub.is_dir() and sub.name != "_archived" and not sub.name.startswith("."):
+            candidate = sub / person_id
+            if candidate.is_dir():
+                return candidate
+
+    return None
+
+
+def expected_person_folder(
+    connection: sqlite3.Connection, person_id: str, group_id: str | None = None
+) -> Path:
+    """Return the expected canonical folder path for a person without touching the filesystem."""
+    people_dir = config.PEOPLE_DIR
     group_row = None
     if group_id is not None:
         group_row = connection.execute(
@@ -312,28 +336,50 @@ def ensure_person_folder(
         ).fetchone()
     slug = group_row["slug"] if group_row else "Other"
 
-    # 3. Match existing directory case-insensitively if present
     target_group_dir = people_dir / slug
     if not target_group_dir.exists() and people_dir.exists():
         for sub in people_dir.iterdir():
-            if sub.is_dir() and sub.name.lower() == slug.lower():
+            if sub.is_dir() and sub.name.lower() == slug.lower() and sub.name != "_archived":
                 target_group_dir = sub
                 break
 
-    folder = target_group_dir / person_id
+    return target_group_dir / person_id
+
+
+def find_journal_path(
+    connection: sqlite3.Connection, person_id: str
+) -> tuple[Path, bool]:
+    """Return (canonical_journal_path, exists) without modifying the filesystem."""
+    folder = find_person_folder(connection, person_id)
+    if folder is not None:
+        journal = folder / "journal.md"
+        return journal, journal.is_file()
+    expected = expected_person_folder(connection, person_id)
+    return expected / "journal.md", False
+
+
+def ensure_person_folder(
+    connection: sqlite3.Connection, person_id: str, group_id: str | None = None
+) -> Path:
+    """Return the canonical person folder, creating it on disk if absent.
+
+    MUTATING operation - for explicit creation, repair, or write paths only.
+    """
+    config.ensure_root_dirs()
+    existing = find_person_folder(connection, person_id)
+    if existing is not None:
+        return existing
+
+    folder = expected_person_folder(connection, person_id, group_id=group_id)
     folder.mkdir(parents=True, exist_ok=True)
-    if not (folder / "journal.md").exists():
-        person_row = connection.execute(
-            "SELECT name FROM people WHERE id = ?", (person_id,)
-        ).fetchone()
-        name = person_row["name"] if person_row else person_id
-        (folder / "journal.md").write_text(
-            f"# {name}\n\n", encoding="utf-8", newline="\n"
-        )
     return folder
 
 
 def ensure_journal(connection: sqlite3.Connection, person_id: str) -> Path:
+    """Return the canonical journal.md path, creating the folder and file if absent.
+
+    MUTATING operation - for explicit creation, repair, or write paths only.
+    """
     person = connection.execute(
         "SELECT id, name FROM people WHERE id = ?", (person_id,)
     ).fetchone()
@@ -342,7 +388,8 @@ def ensure_journal(connection: sqlite3.Connection, person_id: str) -> Path:
     folder = ensure_person_folder(connection, person_id)
     journal = folder / "journal.md"
     if not journal.exists():
+        name = person["name"] if person["name"] else person_id
         journal.write_text(
-            f"# {person['name']}\n\n", encoding="utf-8", newline="\n"
+            f"# {name}\n\n", encoding="utf-8", newline="\n"
         )
     return journal

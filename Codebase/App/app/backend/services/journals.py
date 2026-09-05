@@ -41,7 +41,22 @@ def _atomic_write(path: Path, content: str) -> None:
         raise
 
 
-def _journal_path(person_id: str) -> Path:
+def _resolve_journal_path_readonly(person_id: str) -> tuple[Path, bool]:
+    if not person_id or not person_id.replace("_", "").replace("-", "").isalnum():
+        raise errors.ValidationError(f"Unsafe person id: {person_id!r}")
+    connection = db.get_connection()
+    try:
+        row = connection.execute(
+            "SELECT id, name FROM people WHERE id = ?", (person_id,)
+        ).fetchone()
+        if row is None:
+            raise errors.NotFoundError(f"Unknown person id: {person_id}")
+        return db.find_journal_path(connection, person_id)
+    finally:
+        connection.close()
+
+
+def _ensure_journal_path(person_id: str) -> Path:
     if not person_id or not person_id.replace("_", "").replace("-", "").isalnum():
         raise errors.ValidationError(f"Unsafe person id: {person_id!r}")
     connection = db.get_connection()
@@ -57,14 +72,15 @@ def _journal_path(person_id: str) -> Path:
 
 
 def read_journal(person_id: str) -> dict:
-    path = _journal_path(person_id)
-    if not path.exists():
+    path, exists = _resolve_journal_path_readonly(person_id)
+    if not exists or not path.exists():
         return {
             "person_id": person_id,
             "path": str(path),
             "content": "",
             "modified_ns": None,
             "sha256": None,
+            "exists": False,
         }
     content, modified_ns, digest = _read_text(path)
     return {
@@ -73,6 +89,7 @@ def read_journal(person_id: str) -> dict:
         "content": content,
         "modified_ns": modified_ns,
         "sha256": digest,
+        "exists": True,
     }
 
 
@@ -84,7 +101,7 @@ def save_journal(
     expected_sha256: str | None = None,
     origin: str = "user",
 ) -> dict:
-    path = _journal_path(person_id)
+    path = _ensure_journal_path(person_id)
     if path.exists():
         current, modified_ns, digest = _read_text(path)
         changed_externally = False

@@ -114,6 +114,13 @@ def get_last_mutation_description() -> Optional[str]:
     return _MUTATION_STACK[-1]["description"]
 
 
+def pop_latest_snapshot() -> Optional[Dict[str, Any]]:
+    """Remove and return the most recent snapshot without applying it (e.g. on operation failure/rollback)."""
+    if _MUTATION_STACK:
+        return _MUTATION_STACK.pop()
+    return None
+
+
 def undo_last_mutation(force_archive_conflicts: bool = False) -> Dict[str, Any]:
     """Restore database AND filesystem to snapshot state prior to the last mutation.
 

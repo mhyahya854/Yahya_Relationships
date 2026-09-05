@@ -7,7 +7,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .. import config, db
-from ..domain.mutations.history import record_pre_mutation_snapshot, update_latest_filesystem_manifest
+from ..domain.mutations.history import (
+    pop_latest_snapshot,
+    record_pre_mutation_snapshot,
+    update_latest_filesystem_manifest,
+)
 from . import errors
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_]{0,119}$")
@@ -65,11 +69,20 @@ def _person_serialize(connection: sqlite3.Connection, row) -> dict:
             (row["id"],),
         )
     ]
-    folder = None
+    folder_path = None
+    folder_exists = False
+    journal_exists = False
     try:
-        folder = str(db.ensure_person_folder(connection, row["id"]))
+        folder_path = db.find_person_folder(connection, row["id"])
+        if folder_path is not None and folder_path.is_dir():
+            folder_exists = True
+            journal_file = folder_path / "journal.md"
+            journal_exists = journal_file.is_file()
     except (LookupError, OSError):
-        folder = None
+        folder_path = None
+        folder_exists = False
+        journal_exists = False
+
     return {
         "id": row["id"],
         "name": row["name"],
@@ -82,7 +95,9 @@ def _person_serialize(connection: sqlite3.Connection, row) -> dict:
         "note_ur": row["note_ur"],
         "photo_path": row["photo_path"],
         "groups": group_rows(connection, row["id"]),
-        "folder": folder,
+        "folder": str(folder_path) if folder_exists else None,
+        "folder_exists": folder_exists,
+        "journal_exists": journal_exists,
     }
 
 
@@ -202,7 +217,6 @@ def create_person(
     from ..data_root.errors import DataRootReadOnlyError
     from ..data_root.manager import DataRootManager
     from ..domain.maintenance import check_maintenance_lock
-    from ..domain.mutations.history import update_latest_filesystem_manifest
 
     check_maintenance_lock()
     if DataRootManager.is_read_only():
@@ -211,6 +225,9 @@ def create_person(
     record_pre_mutation_snapshot(f"Created person: {name}")
 
     connection = db.get_connection()
+    created_folder: Path | None = None
+    created_journal: Path | None = None
+    snapshot_committed = False
     try:
         connection.execute("BEGIN")
         base = _slugify(str(name).strip())
@@ -293,18 +310,54 @@ def create_person(
 
         source_id = db.register_source(connection, origin=origin)
         db.link_fact_source(connection, source_id, "people", person_id, origin=origin)
-        connection.commit()
+
+        # Canonical filesystem creation with failure-atomicity
+        target_folder = db.expected_person_folder(connection, person_id)
+        target_journal = target_folder / "journal.md"
+        folder_existed_before = target_folder.exists()
+        journal_existed_before = target_journal.exists()
+
         try:
             journal_path = db.ensure_journal(connection, person_id)
-            update_latest_filesystem_manifest({"created_paths": [str(journal_path)]})
-        except Exception:
-            pass
+            if not folder_existed_before and target_folder.exists():
+                created_folder = target_folder
+            if not journal_existed_before and target_journal.exists():
+                created_journal = target_journal
+            if not journal_path.is_file():
+                raise OSError(f"Canonical journal.md not created at {journal_path}")
+        except Exception as fs_exc:
+            raise errors.StorageError(
+                f"Failed to create canonical journal for '{name}': {fs_exc}",
+                details={"person_id": person_id, "path": str(target_journal)},
+            ) from fs_exc
+
+
+        # Both DB and filesystem are verified
+        connection.commit()
+        snapshot_committed = True
+        update_latest_filesystem_manifest({"created_paths": [str(journal_path)]})
         return get_person(person_id)
     except Exception:
-        connection.rollback()
+        if not snapshot_committed:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            if created_journal and created_journal.exists():
+                try:
+                    created_journal.unlink()
+                except OSError:
+                    pass
+            if created_folder and created_folder.exists():
+                try:
+                    shutil.rmtree(created_folder)
+                except OSError:
+                    pass
+            pop_latest_snapshot()
         raise
     finally:
         connection.close()
+
 
 
 def update_person(
@@ -767,18 +820,8 @@ def delete_person(person_id: str, *, force: bool = False) -> dict:
 
 def _folder_for(connection: sqlite3.Connection, person_id: str) -> Path | None:
     """Resolve the person's canonical folder without creating it."""
-    row = connection.execute(
-        """
-        SELECT g.slug FROM groups g
-        JOIN person_groups pg ON pg.group_id = g.id
-        WHERE pg.person_id = ? AND pg.is_primary = 1
-        """,
-        (person_id,),
-    ).fetchone()
-    if row is None:
-        return None
-    folder = config.PEOPLE_DIR / row["slug"] / person_id
-    return folder if folder.exists() else None
+    return db.find_person_folder(connection, person_id)
+
 
 
 def assign_group(person_id: str, group_id: str, *, primary: bool = False) -> dict:

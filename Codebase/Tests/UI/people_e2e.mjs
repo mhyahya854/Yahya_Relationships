@@ -351,6 +351,26 @@ try {
   if (countAfterUndo !== 36) throw new Error(`Expected 36 people after Undo, got: ${countAfterUndo}`);
   console.log("  Undo successfully restored person record and filesystem state!");
 
+  // 17b. Missing Journal Integrity Check in UI
+  console.log("[Step 17b] Testing missing journal detection in profile...");
+  const synthJournalPath = join(tempRoot, "Database/People/Family/synthetic_test_person/journal.md");
+  if (existsSync(synthJournalPath)) {
+    rmSync(synthJournalPath);
+  }
+  await typeInto(".toolbar input[placeholder*='Search']", "Synthetic");
+  await sleep(300);
+  await clickText(".person-cell", "Synthetic Test Person");
+  await page.waitForSelector(".person-profile-container", { timeout: 8000 });
+  await clickText(".profile-tab", "Journal");
+  await sleep(600);
+  const warningElem = await page.$(".journal-missing-warning");
+  if (!warningElem) throw new Error("Expected missing journal warning banner in profile!");
+  const stillMissing = !existsSync(synthJournalPath);
+  if (!stillMissing) throw new Error("Opening profile silently recreated missing journal.md!");
+  console.log("  Missing journal warning displayed and journal.md was NOT recreated by read!");
+  await page.click(".modal-head button[title='Close']");
+  await sleep(300);
+
   // 18. Check console errors
   const criticalErrors = consoleErrors.filter(
     (e) => !e.includes("favicon") && !e.includes("404") && !e.includes("React DevTools"),

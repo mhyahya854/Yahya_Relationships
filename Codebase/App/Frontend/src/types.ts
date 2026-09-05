@@ -19,6 +19,8 @@ export interface Person {
   photo_path: string | null;
   groups: PersonGroup[];
   folder: string | null;
+  folder_exists?: boolean;
+  journal_exists?: boolean;
 }
 
 export interface Group {
@@ -61,6 +63,7 @@ export interface Journal {
   content: string;
   modified_ns: string | null;
   sha256: string | null;
+  exists?: boolean;
 }
 
 export interface SearchResult {

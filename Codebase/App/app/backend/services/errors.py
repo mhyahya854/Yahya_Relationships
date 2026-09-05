@@ -51,3 +51,8 @@ class CycleError(ValidationError):
 
 class InvalidOperationError(AppError):
     code = "INVALID_OPERATION"
+
+
+class StorageError(AppError):
+    code = "STORAGE_ERROR"
+    http_status = 500
