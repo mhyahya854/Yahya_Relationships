@@ -199,20 +199,33 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                     "SELECT COUNT(*) FROM marriages WHERE spouse_a = ? OR spouse_b = ?",
                     (person_id, person_id),
                 ).fetchone()[0]
+                sib_count = connection.execute(
+                    "SELECT COUNT(*) FROM sibling_group_members WHERE person_id = ?",
+                    (person_id,),
+                ).fetchone()[0]
                 gen_count = connection.execute(
                     "SELECT COUNT(*) FROM general_relationships WHERE person_a = ? OR person_b = ?",
                     (person_id, person_id),
                 ).fetchone()[0]
 
-                if pc_count + m_count > 0:
+                if pc_count + m_count + sib_count > 0:
                     warnings.append(
-                        f"{p_name} is referenced by {pc_count} parent-child and {m_count} marriage facts. Remove those family facts before deleting."
+                        f"{p_name} is referenced by {pc_count} parent-child, {m_count} marriage, and {sib_count} sibling facts. Remove those family facts before deleting."
                     )
                 if gen_count > 0:
                     warnings.append(
                         f"Deleting {p_name} will also remove {gen_count} general relationships."
                     )
-                direct_changes.append(f"Delete person {p_name}.")
+                direct_changes.append(f"Delete canonical person: {p_name}.")
+                if pc_count > 0:
+                    direct_changes.append(f"Remove {pc_count} parent-child facts.")
+                if m_count > 0:
+                    direct_changes.append(f"Remove {m_count} marriage facts.")
+                if sib_count > 0:
+                    direct_changes.append(f"Remove from {sib_count} sibling groups.")
+                if gen_count > 0:
+                    direct_changes.append(f"Remove {gen_count} general relationships.")
+                direct_changes.append("Safely archive person folder and journal to Database/People/_archived/.")
                 connection.execute("DELETE FROM general_relationships WHERE person_a = ? OR person_b = ?", (person_id, person_id))
                 connection.execute("DELETE FROM parent_child WHERE parent_id = ? OR child_id = ?", (person_id, person_id))
                 connection.execute("DELETE FROM marriages WHERE spouse_a = ? OR spouse_b = ?", (person_id, person_id))

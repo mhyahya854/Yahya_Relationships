@@ -86,7 +86,7 @@ function buildFlowEdges(
   });
 }
 
-function RelationshipsContent() {
+function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | null }) {
   const { perspectiveId, perspectivePerson, setPerspective, returnToDefault } =
     usePerspective();
   const graph = useRelationshipGraph();
@@ -216,6 +216,15 @@ function RelationshipsContent() {
     },
     [graph, perspectiveId],
   );
+
+  useEffect(() => {
+    if (initialTargetId && people.length > 0) {
+      const match = people.find((p) => p.id === initialTargetId);
+      if (match) {
+        selectPerson(match);
+      }
+    }
+  }, [initialTargetId, people, selectPerson]);
 
   const showWhy = useCallback(
     async (entry: RelationshipEntry) => {
@@ -720,10 +729,10 @@ function EntryGroup({
   );
 }
 
-export function RelationshipsView() {
+export function RelationshipsView({ initialTargetId }: { initialTargetId?: string | null }) {
   return (
     <ReactFlowProvider>
-      <RelationshipsContent />
+      <RelationshipsContent initialTargetId={initialTargetId} />
     </ReactFlowProvider>
   );
 }

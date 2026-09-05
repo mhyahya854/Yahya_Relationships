@@ -187,6 +187,8 @@ class PersonCreate(BaseModel):
     note_en: str | None = None
     note_ur: str | None = None
     group_id: str | None = None
+    group_ids: list[str] | None = None
+    primary_group_id: str | None = None
 
 
 class PersonUpdate(BaseModel):
@@ -203,6 +205,8 @@ class PersonUpdate(BaseModel):
     clear_note_en: bool = False
     note_ur: str | None = None
     clear_note_ur: bool = False
+    group_ids: list[str] | None = None
+    primary_group_id: str | None = None
 
 
 @app.get("/api/people")
@@ -222,6 +226,8 @@ def api_create_person(payload: PersonCreate) -> dict:
         note_en=payload.note_en,
         note_ur=payload.note_ur,
         group_id=payload.group_id,
+        group_ids=payload.group_ids,
+        primary_group_id=payload.primary_group_id,
         origin="user",
     )
     return {"ok": True, "person": created}
@@ -230,6 +236,14 @@ def api_create_person(payload: PersonCreate) -> dict:
 @app.get("/api/people/{person_id}")
 def api_get_person(person_id: str) -> dict:
     return {"ok": True, "person": people.get_person(person_id)}
+
+
+@app.get("/api/people/{person_id}/profile")
+def api_get_person_profile(person_id: str, perspective_id: str | None = None) -> dict:
+    return {
+        "ok": True,
+        "profile": people.get_person_profile(person_id, perspective_id=perspective_id),
+    }
 
 
 @app.patch("/api/people/{person_id}")
@@ -249,6 +263,8 @@ def api_update_person(person_id: str, payload: PersonUpdate) -> dict:
         clear_note_en=payload.clear_note_en,
         note_ur=payload.note_ur,
         clear_note_ur=payload.clear_note_ur,
+        group_ids=payload.group_ids,
+        primary_group_id=payload.primary_group_id,
         origin="user",
     )
     return {"ok": True, "person": updated}

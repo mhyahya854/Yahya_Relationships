@@ -91,7 +91,13 @@ function PerspectiveSelector() {
 
 function Shell() {
   const [screen, setScreen] = useState<Screen>("relationships");
+  const [relationshipTargetId, setRelationshipTargetId] = useState<string | null>(null);
   const { perspectivePerson } = usePerspective();
+
+  const handleNavigateToRelationships = (personId: string) => {
+    setRelationshipTargetId(personId);
+    setScreen("relationships");
+  };
 
   return (
     <div className="shell">
@@ -128,8 +134,12 @@ function Shell() {
           <PerspectiveSelector />
         </header>
         <div className="content">
-          {screen === "people" && <PeopleView />}
-          {screen === "relationships" && <RelationshipsView />}
+          {screen === "people" && (
+            <PeopleView onNavigateToRelationships={handleNavigateToRelationships} />
+          )}
+          {screen === "relationships" && (
+            <RelationshipsView initialTargetId={relationshipTargetId} />
+          )}
           {screen === "family" && <FamilyView />}
           {screen === "search" && <SearchView />}
           {screen === "hermes" && <HermesView />}

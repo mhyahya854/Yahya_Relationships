@@ -153,12 +153,14 @@ def check_duplicate_person(name: str, aliases: list[str] | None = None) -> list[
         match_reason = None
         if target_norm == p_name_norm:
             match_reason = "exact name match"
-        elif target_norm in p_name_norm or p_name_norm in target_norm:
-            match_reason = "name substring match"
-        elif target_aliases and (p_name_norm in target_aliases or target_norm in p_aliases):
+        elif target_norm in p_aliases:
+            match_reason = "alias match"
+        elif target_aliases and p_name_norm in target_aliases:
             match_reason = "alias match"
         elif target_aliases and target_aliases.intersection(p_aliases):
             match_reason = "shared alias match"
+        elif target_norm in p_name_norm or p_name_norm in target_norm:
+            match_reason = "name substring match"
         elif len(target_tokens) > 0 and (target_tokens.issubset(p_tokens) or p_tokens.issubset(target_tokens)):
             match_reason = "name token overlap"
 
@@ -167,6 +169,7 @@ def check_duplicate_person(name: str, aliases: list[str] | None = None) -> list[
                 "id": p["id"],
                 "name": p["name"],
                 "aliases": p.get("aliases", []),
+                "groups": p.get("groups", []),
                 "reason": match_reason,
             })
     return candidates
@@ -183,6 +186,8 @@ def create_person(
     note_en: str | None = None,
     note_ur: str | None = None,
     group_id: str | None = None,
+    group_ids: list[str] | None = None,
+    primary_group_id: str | None = None,
     origin: str = "user",
 ) -> dict:
     if not name or not str(name).strip():
@@ -242,20 +247,50 @@ def create_person(
                     """,
                     (person_id, alias, index),
                 )
-        target_group = group_id or "other"
-        group = connection.execute(
-            "SELECT id FROM groups WHERE id = ? OR LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?)",
-            (target_group, target_group, target_group),
-        ).fetchone()
-        if group is None:
-            raise errors.ValidationError(f"Unknown group id: {target_group}")
-        connection.execute(
-            """
-            INSERT INTO person_groups (person_id, group_id, is_primary)
-            VALUES (?, ?, 1)
-            """,
-            (person_id, group["id"]),
-        )
+
+        # Resolve group_ids
+        target_group_ids = []
+        if group_ids:
+            for gid in group_ids:
+                s = str(gid).strip()
+                if s and s not in target_group_ids:
+                    target_group_ids.append(s)
+        elif group_id:
+            target_group_ids = [str(group_id).strip()]
+        if not target_group_ids:
+            target_group_ids = ["other"]
+
+        # Validate that all groups exist
+        matched_groups = []
+        for gid in target_group_ids:
+            grp = connection.execute(
+                "SELECT id, slug FROM groups WHERE id = ? OR LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?)",
+                (gid, gid, gid),
+            ).fetchone()
+            if grp is None:
+                raise errors.ValidationError(f"Unknown group id: {gid}")
+            if grp["id"] not in matched_groups:
+                matched_groups.append(grp["id"])
+
+        # Determine primary group
+        primary_id = None
+        if primary_group_id:
+            for gid in matched_groups:
+                if gid.lower() == str(primary_group_id).lower():
+                    primary_id = gid
+                    break
+        if not primary_id and matched_groups:
+            primary_id = matched_groups[0]
+
+        for gid in matched_groups:
+            connection.execute(
+                """
+                INSERT INTO person_groups (person_id, group_id, is_primary)
+                VALUES (?, ?, ?)
+                """,
+                (person_id, gid, 1 if gid == primary_id else 0),
+            )
+
         source_id = db.register_source(connection, origin=origin)
         db.link_fact_source(connection, source_id, "people", person_id, origin=origin)
         connection.commit()
@@ -288,6 +323,8 @@ def update_person(
     clear_note_en: bool = False,
     note_ur: str | None = None,
     clear_note_ur: bool = False,
+    group_ids: list[str] | None = None,
+    primary_group_id: str | None = None,
     origin: str = "user",
 ) -> dict:
     record_pre_mutation_snapshot(f"Updated person: {person_id}")
@@ -340,12 +377,72 @@ def update_person(
             params.append(note_ur)
         elif clear_note_ur:
             fields.append("note_ur = NULL")
-        if fields:
+
+        group_moves = []
+        if group_ids is not None:
+            target_group_ids = []
+            for gid in group_ids:
+                s = str(gid).strip()
+                if s and s not in target_group_ids:
+                    target_group_ids.append(s)
+            if not target_group_ids:
+                raise errors.ValidationError("A person must belong to at least one group.")
+
+            matched_groups = []
+            for gid in target_group_ids:
+                grp = connection.execute(
+                    "SELECT id, slug FROM groups WHERE id = ? OR LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?)",
+                    (gid, gid, gid),
+                ).fetchone()
+                if grp is None:
+                    raise errors.ValidationError(f"Unknown group id: {gid}")
+                if grp["id"] not in matched_groups:
+                    matched_groups.append(grp["id"])
+
+            old_primary_row = connection.execute(
+                """
+                SELECT g.id, g.slug FROM groups g
+                JOIN person_groups pg ON pg.group_id = g.id
+                WHERE pg.person_id = ? AND pg.is_primary = 1
+                """,
+                (person_id,),
+            ).fetchone()
+
+            new_primary_id = None
+            if primary_group_id:
+                for gid in matched_groups:
+                    if gid.lower() == str(primary_group_id).lower():
+                        new_primary_id = gid
+                        break
+            if not new_primary_id:
+                if old_primary_row and old_primary_row["id"] in matched_groups:
+                    new_primary_id = old_primary_row["id"]
+                else:
+                    new_primary_id = matched_groups[0]
+
+            new_primary_group = connection.execute(
+                "SELECT id, slug FROM groups WHERE id = ?", (new_primary_id,)
+            ).fetchone()
+
+            if old_primary_row and new_primary_group and old_primary_row["slug"] != new_primary_group["slug"]:
+                old_folder = config.PEOPLE_DIR / old_primary_row["slug"] / person_id
+                target_folder = config.PEOPLE_DIR / new_primary_group["slug"] / person_id
+                if old_folder.exists() and old_folder.resolve() != target_folder.resolve():
+                    if target_folder.exists():
+                        raise errors.InvalidOperationError(
+                            "A person folder already exists under the target group. "
+                            "Resolve the duplicate folders manually before moving.",
+                            code="FOLDER_EXISTS",
+                        )
+                    group_moves.append((old_folder, target_folder))
+
+        if fields or aliases is not None or group_ids is not None:
             connection.execute("BEGIN")
-            params.append(person_id)
-            connection.execute(
-                f"UPDATE people SET {', '.join(fields)} WHERE id = ?", params
-            )
+            if fields:
+                params.append(person_id)
+                connection.execute(
+                    f"UPDATE people SET {', '.join(fields)} WHERE id = ?", params
+                )
             if aliases is not None:
                 connection.execute(
                     "DELETE FROM aliases WHERE person_id = ?", (person_id,)
@@ -360,17 +457,209 @@ def update_person(
                             """,
                             (person_id, alias, index),
                         )
+            if group_ids is not None:
+                connection.execute("DELETE FROM person_groups WHERE person_id = ?", (person_id,))
+                for gid in matched_groups:
+                    connection.execute(
+                        """
+                        INSERT INTO person_groups (person_id, group_id, is_primary)
+                        VALUES (?, ?, ?)
+                        """,
+                        (person_id, gid, 1 if gid == new_primary_id else 0),
+                    )
+
             source_id = db.register_source(connection, origin=origin)
             db.link_fact_source(
                 connection, source_id, "people", person_id, origin=origin
             )
             connection.commit()
+
+            # Execute folder move safely if primary changed
+            for old_f, target_f in group_moves:
+                if old_f.exists() and not target_f.exists():
+                    target_f.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(old_f), str(target_f))
+                    update_latest_filesystem_manifest({
+                        "moves": [{"from": str(old_f), "to": str(target_f)}]
+                    })
+
         return get_person(person_id)
     except Exception:
         connection.rollback()
         raise
     finally:
         connection.close()
+
+
+def get_person_profile(person_id: str, perspective_id: str | None = None) -> dict:
+    """Aggregate complete profile for a person: identity, direct family facts,
+    general relationships, perspective-interpreted kinship, and journal preview."""
+    connection = db.get_connection()
+    try:
+        row = connection.execute(
+            "SELECT * FROM people WHERE id = ?", (person_id,)
+        ).fetchone()
+        if row is None:
+            raise errors.NotFoundError(f"Unknown person id: {person_id}")
+        person_brief = _person_serialize(connection, row)
+
+        # 1. Direct Family Facts
+        # Parents
+        parents_rows = connection.execute(
+            """
+            SELECT p.id, p.name, p.gender, p.birth_year, pc.role, pc.kind
+            FROM parent_child pc
+            JOIN people p ON pc.parent_id = p.id
+            WHERE pc.child_id = ?
+            ORDER BY pc.id
+            """,
+            (person_id,),
+        ).fetchall()
+        parents = [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "gender": r["gender"],
+                "birth_year": r["birth_year"],
+                "role": r["role"],
+                "kind": r["kind"],
+            }
+            for r in parents_rows
+        ]
+
+        # Children
+        children_rows = connection.execute(
+            """
+            SELECT p.id, p.name, p.gender, p.birth_year, pc.role, pc.kind
+            FROM parent_child pc
+            JOIN people p ON pc.child_id = p.id
+            WHERE pc.parent_id = ?
+            ORDER BY pc.id
+            """,
+            (person_id,),
+        ).fetchall()
+        children = [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "gender": r["gender"],
+                "birth_year": r["birth_year"],
+                "role": r["role"],
+                "kind": r["kind"],
+            }
+            for r in children_rows
+        ]
+
+        # Spouses
+        spouses_rows = connection.execute(
+            """
+            SELECT p.id, p.name, p.gender, p.birth_year, m.status, m.year, m.children_status
+            FROM marriages m
+            JOIN people p ON (p.id = CASE WHEN m.spouse_a = ? THEN m.spouse_b ELSE m.spouse_a END)
+            WHERE m.spouse_a = ? OR m.spouse_b = ?
+            ORDER BY m.display_order, m.id
+            """,
+            (person_id, person_id, person_id),
+        ).fetchall()
+        spouses = [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "gender": r["gender"],
+                "birth_year": r["birth_year"],
+                "status": r["status"],
+                "year": r["year"],
+                "children_status": r["children_status"],
+            }
+            for r in spouses_rows
+        ]
+
+        # Siblings
+        siblings_rows = connection.execute(
+            """
+            SELECT DISTINCT p.id, p.name, p.gender, p.birth_year, sg.type as sibling_type
+            FROM sibling_group_members sgm
+            JOIN sibling_groups sg ON sg.id = sgm.group_id
+            JOIN sibling_group_members sgm2 ON sgm2.group_id = sg.id
+            JOIN people p ON p.id = sgm2.person_id
+            WHERE sgm.person_id = ? AND sgm2.person_id <> ?
+            ORDER BY sgm2.member_order, p.display_order
+            """,
+            (person_id, person_id),
+        ).fetchall()
+        siblings = [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "gender": r["gender"],
+                "birth_year": r["birth_year"],
+                "type": r["sibling_type"],
+            }
+            for r in siblings_rows
+        ]
+
+        # 2. General Relationships
+        from ..kinship import labels
+        gen_rows = connection.execute(
+            """
+            SELECT * FROM general_relationships
+            WHERE person_a = ? OR person_b = ?
+            ORDER BY id
+            """,
+            (person_id, person_id),
+        ).fetchall()
+        general_relationships = []
+        for gr in gen_rows:
+            other_id = gr["person_b"] if gr["person_a"] == person_id else gr["person_a"]
+            other_p = connection.execute("SELECT id, name FROM people WHERE id = ?", (other_id,)).fetchone()
+            if other_p:
+                normalized = labels.normalize_general_entry(
+                    gr,
+                    from_person=person_id,
+                    label_a_to_b=gr["label_a_to_b"],
+                    label_b_to_a=gr["label_b_to_a"],
+                )
+                general_relationships.append({
+                    "id": gr["id"],
+                    "other_person": {"id": other_p["id"], "name": other_p["name"]},
+                    "type": gr["type"],
+                    "label": normalized["label_en"],
+                    "directionality": gr["directionality"],
+                    "notes": gr["notes"],
+                })
+
+    finally:
+        connection.close()
+
+    # 3. Perspective Relationship
+    perspective_summary = None
+    if perspective_id and perspective_id != person_id:
+        from . import relationship
+        perspective_summary = relationship.get_relationship(perspective_id, person_id)
+    elif perspective_id == person_id:
+        perspective_summary = {
+            "perspective": {"id": person_id, "name": person_brief["name"]},
+            "target": {"id": person_id, "name": person_brief["name"]},
+            "primary": [{"en": "Self", "ur": "خود", "group": "primary"}],
+            "additional": [],
+        }
+
+    # 4. Journal Preview
+    from . import journals
+    journal_data = journals.read_journal(person_id)
+
+    return {
+        "person": person_brief,
+        "family": {
+            "parents": parents,
+            "spouses": spouses,
+            "children": children,
+            "siblings": siblings,
+        },
+        "general": general_relationships,
+        "perspective": perspective_summary,
+        "journal": journal_data,
+    }
 
 
 def delete_person(person_id: str, *, force: bool = False) -> dict:

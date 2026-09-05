@@ -100,7 +100,28 @@ export interface DuplicateCandidate {
   id: string;
   name: string;
   aliases: string[];
+  groups?: PersonGroup[];
   reason: string;
+}
+
+export interface PersonProfileData {
+  person: Person;
+  family: {
+    parents: Array<{ id: string; name: string; gender: string | null; birth_year: number | null; role: string; kind: string }>;
+    spouses: Array<{ id: string; name: string; gender: string | null; birth_year: number | null; status: string; year: number | null; children_status: string | null }>;
+    children: Array<{ id: string; name: string; gender: string | null; birth_year: number | null; role: string; kind: string }>;
+    siblings: Array<{ id: string; name: string; gender: string | null; birth_year: number | null; type: string | null }>;
+  };
+  general: Array<{
+    id: number;
+    other_person: { id: string; name: string };
+    type: string;
+    label: string;
+    directionality: string;
+    notes: string | null;
+  }>;
+  perspective: RelationshipResult | null;
+  journal: Journal;
 }
 
 export interface DerivedDiffItem {

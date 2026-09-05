@@ -11,6 +11,7 @@ import type {
   MutationPreviewResult,
   ParentChildFact,
   Person,
+  PersonProfileData,
   RelationshipResult,
   SearchResult,
   SiblingGroupFact,
@@ -136,6 +137,12 @@ export const api = {
     },
     get: (id: string) =>
       request<{ ok: boolean; person: Person }>(`/api/people/${encodeURIComponent(id)}`),
+    profile: (id: string, perspectiveId?: string) => {
+      const suffix = perspectiveId ? `?perspective_id=${encodeURIComponent(perspectiveId)}` : "";
+      return request<{ ok: boolean; profile: PersonProfileData }>(
+        `/api/people/${encodeURIComponent(id)}/profile${suffix}`,
+      );
+    },
     create: (payload: Record<string, unknown>) =>
       request<{ ok: boolean; person: Person }>("/api/people", {
         method: "POST",
