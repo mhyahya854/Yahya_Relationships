@@ -412,7 +412,8 @@ textarea.text-input {
   text-align: left;
 }
 
-.person-search-row:hover {
+.person-search-row:hover,
+.person-search-row.active {
   background: var(--accent-soft);
 }
 
@@ -1159,15 +1160,20 @@ textarea.text-input {
   color: #111;
 }
 
-.family-focus-select {
+.family-focus-search-wrap {
+  position: relative;
+  min-width: 240px;
+  max-width: 320px;
+}
+
+.family-focus-search-wrap .person-search {
+  width: 100%;
+}
+
+.family-focus-search-wrap .person-search > input {
   padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
   font-size: 13px;
-  background: #fff;
-  color: inherit;
-  cursor: pointer;
-  max-width: 220px;
+  border-radius: 8px;
 }
 
 .family-legend {

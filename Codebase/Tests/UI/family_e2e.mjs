@@ -106,6 +106,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
   let browser = null;
+  let testError = null;
   const passedSteps = [];
 
   function step(num, name) {
@@ -151,6 +152,20 @@ async function main() {
       if (!element) throw new Error(`Button with text '${text}' not found.`);
       await element.click();
       await sleep(500);
+    }
+
+    async function typeSearch(text) {
+      await page.waitForSelector(".family-focus-search-wrap input", { timeout: 10000 });
+      const input = await page.$(".family-focus-search-wrap input");
+      await input.click();
+      await page.keyboard.down("Control");
+      await page.keyboard.press("KeyA");
+      await page.keyboard.up("Control");
+      await page.keyboard.press("Backspace");
+      if (text) {
+        await input.type(text);
+      }
+      await sleep(300);
     }
 
     await page.goto("http://localhost:1420", { waitUntil: "networkidle2" });
@@ -508,56 +523,343 @@ async function main() {
     if (!safeErrorUi) throw new Error("Backend does not cleanly return structured 404 for invalid focus");
     step(25, "Invalid/error path shows safe UI");
 
+    // -----------------------------------------------------------------------
+    // 26. Intermediate browser console check
+    // -----------------------------------------------------------------------
+    const initialConsoleErrors = consoleErrors.filter(
+      (e) => !e.includes("favicon") && !e.includes("404") && !e.includes("React DevTools"),
+    );
+    if (initialConsoleErrors.length > 0) {
+      throw new Error(`Unexpected browser console errors detected: ${JSON.stringify(initialConsoleErrors)}`);
+    }
+    step(26, "Browser console has no unexpected errors");
+
+    // -----------------------------------------------------------------------
+    // 27. Focus search finds canonical name
+    // -----------------------------------------------------------------------
+    await clickButtonText("Family");
+    await sleep(600);
+    await typeSearch("Yahya");
+    await page.waitForSelector(".person-search-results", { timeout: 8000 });
+    await page.screenshot({ path: join(DOC_SHOTS, "family-focus-search.png"), fullPage: false });
+    console.log("  [Screenshot] Captured: family-focus-search.png");
+    const foundCanonical = await page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll(".person-search-results .person-search-row"));
+      return rows.some((r) => r.textContent.includes("Mohammad Yahya Hussain"));
+    });
+    if (!foundCanonical) throw new Error("Focus search did not find canonical name 'Mohammad Yahya Hussain'");
+    step(27, "Focus search finds canonical name");
+
+    // -----------------------------------------------------------------------
+    // 28. Focus search finds alias
+    // -----------------------------------------------------------------------
+    await fetch("http://127.0.0.1:8765/api/people", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Alexandra Example",
+        aliases: ["Alex", "Lexi"],
+      }),
+    });
+    await clickButtonText("Reload");
+    await sleep(1000);
+    await typeSearch("Lexi");
+    await page.waitForSelector(".person-search-results", { timeout: 8000 });
+    const foundAlias = await page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll(".person-search-results .person-search-row"));
+      return rows.some((r) => r.textContent.includes("Alexandra Example") && r.textContent.includes("Lexi"));
+    });
+    if (!foundAlias) throw new Error("Focus search did not find person via alias 'Lexi'");
+    step(28, "Focus search finds alias");
+
+    // -----------------------------------------------------------------------
+    // 29. Selecting alias result changes Family focus to canonical person
+    // -----------------------------------------------------------------------
+    await page.keyboard.press("ArrowDown");
+    await sleep(200);
+    await page.keyboard.press("Enter");
+    await sleep(1200);
+    await page.waitForFunction(() => {
+      const current = document.querySelector(".family-focus-current");
+      return current && current.textContent.includes("Alexandra Example");
+    }, { timeout: 10000 });
+    step(29, "Selecting alias result changes Family focus to canonical person");
+
+    // -----------------------------------------------------------------------
+    // 30. Global Relationships perspective does not dictate initial Family focus
+    // -----------------------------------------------------------------------
+    const persCurrent = await page.$(".perspective-current");
+    if (persCurrent) {
+      await persCurrent.click();
+      await sleep(300);
+      await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll(".perspective-dropdown button"));
+        const irsaBtn = btns.find((b) => b.textContent.includes("Irsa Naz"));
+        if (irsaBtn) irsaBtn.click();
+      });
+      await sleep(600);
+    }
+    const currentPersName = await page.$eval(".perspective-current strong", (el) => el.textContent);
+    if (!currentPersName.includes("Irsa Naz")) {
+      throw new Error(`Expected global perspective Irsa Naz, got: ${currentPersName}`);
+    }
+
+    const returnBtn = await page.$("button[title*='Return to default viewer focus']");
+    if (returnBtn) {
+      await returnBtn.click();
+      await sleep(1000);
+    }
+    const famFocusName = await page.$eval(".family-focus-current", (el) => el.textContent);
+    if (!famFocusName.includes("Mohammad Yahya Hussain")) {
+      throw new Error(`Expected Family focus to default to Mohammad Yahya Hussain, got: ${famFocusName}`);
+    }
+    if (famFocusName.includes("Irsa Naz")) {
+      throw new Error("Family focus incorrectly inherited global perspective 'Irsa Naz'");
+    }
+    step(30, "Global Relationships perspective does not dictate initial Family focus");
+
+    // -----------------------------------------------------------------------
+    // 31. Family focus change does not alter global perspective
+    // -----------------------------------------------------------------------
+    await typeSearch("Aresha");
+    await page.waitForSelector(".person-search-results", { timeout: 8000 });
+    await page.keyboard.press("ArrowDown");
+    await sleep(200);
+    await page.keyboard.press("Enter");
+    await sleep(1200);
+
+    await page.waitForFunction(() => {
+      const current = document.querySelector(".family-focus-current");
+      return current && current.textContent.includes("Aresha Zubair");
+    }, { timeout: 10000 });
+
+    const persAfterFamChange = await page.$eval(".perspective-current strong", (el) => el.textContent);
+    if (!persAfterFamChange.includes("Irsa Naz")) {
+      throw new Error(`Global perspective changed unexpectedly to: ${persAfterFamChange}`);
+    }
+    step(31, "Family focus change does not alter global perspective");
+
+    // -----------------------------------------------------------------------
+    // 32. Family focus survives Family → Profile → Family
+    // 33. Selected Family person survives Family → Profile → Family
+    // -----------------------------------------------------------------------
+    await page.evaluate(() => {
+      const node = document.querySelector('.family-canvas g.node.clickable-node[id*="p_mohammad_yahya_hussain"]');
+      if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const name = document.querySelector("aside.family-side strong");
+      return name && name.textContent.includes("Mohammad Yahya Hussain");
+    }, { timeout: 8000 });
+
+    await clickButtonText("View Profile");
+    await sleep(1000);
+    await page.waitForSelector(".modal h2", { timeout: 5000 });
+    const closeProfBtn = await page.$(".modal-head button");
+    if (closeProfBtn) await closeProfBtn.click();
+    await sleep(500);
+
+    await clickButtonText("People");
+    await sleep(800);
+    await clickButtonText("Family");
+    await sleep(1200);
+    await page.waitForSelector(".family-diagram svg", { timeout: 10000 });
+
+    const famFocusAfterNav = await page.$eval(".family-focus-current", (el) => el.textContent);
+    if (!famFocusAfterNav.includes("Aresha Zubair")) {
+      throw new Error(`Expected Family focus 'Aresha Zubair' to survive navigation, got: ${famFocusAfterNav}`);
+    }
+    step(32, "Family focus survives Family → Profile → Family");
+
+    const selectedPersonAfterNav = await page.waitForFunction(() => {
+      const name = document.querySelector("aside.family-side strong");
+      return name && name.textContent.includes("Mohammad Yahya Hussain");
+    }, { timeout: 8000 });
+    if (!selectedPersonAfterNav) throw new Error("Selected person was lost after navigation");
+    step(33, "Selected Family person survives Family → Profile → Family");
+
+    // -----------------------------------------------------------------------
+    // 34. Return to My Family View resets Family only
+    // -----------------------------------------------------------------------
+    await clickButtonText("Return to My Family View");
+    await sleep(1200);
+    await page.waitForFunction(() => {
+      const current = document.querySelector(".family-focus-current");
+      return current && current.textContent.includes("Mohammad Yahya Hussain");
+    }, { timeout: 8000 });
+
+    const persAfterReturn = await page.$eval(".perspective-current strong", (el) => el.textContent);
+    if (!persAfterReturn.includes("Irsa Naz")) {
+      throw new Error(`Global perspective changed upon Return to My Family View: ${persAfterReturn}`);
+    }
+    step(34, "Return to My Family View resets Family only");
+
+    // -----------------------------------------------------------------------
+    // 35. Exact Family → Relationships perspective handoff
+    // 36. Exact Family → Relationships target handoff
+    // -----------------------------------------------------------------------
+    await typeSearch("Aresha");
+    await page.waitForSelector(".person-search-results", { timeout: 8000 });
+    await page.keyboard.press("ArrowDown");
+    await sleep(200);
+    await page.keyboard.press("Enter");
+    await sleep(1200);
+
+    await page.evaluate(() => {
+      const node = document.querySelector('.family-canvas g.node.clickable-node[id*="p_mohammad_yahya_hussain"]');
+      if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const name = document.querySelector("aside.family-side strong");
+      return name && name.textContent.includes("Mohammad Yahya Hussain");
+    }, { timeout: 8000 });
+
+    await clickButtonText("View in Relationships");
+    await sleep(1500);
+
+    await page.waitForFunction(() => {
+      const activeNav = document.querySelector("nav.nav button.active");
+      return activeNav && activeNav.textContent.includes("Relationships");
+    }, { timeout: 8000 });
+
+    await page.waitForFunction(() => {
+      const pers = document.querySelector(".perspective-current strong");
+      return pers && pers.textContent.includes("Aresha Zubair");
+    }, { timeout: 8000 });
+    step(35, "Exact Family → Relationships perspective handoff");
+
+    await page.waitForFunction(() => {
+      const target = document.querySelector(".selected-person-panel strong");
+      return target && target.textContent.includes("Mohammad Yahya Hussain");
+    }, { timeout: 8000 });
+
+    await page.waitForFunction(() => {
+      const relTitle = document.querySelector(".relationships-panel .rel-section-title");
+      const relLabel = document.querySelector(".relationships-panel .panel-rel-label");
+      return (
+        relTitle &&
+        relTitle.textContent.includes("Aresha Zubair") &&
+        relLabel &&
+        relLabel.textContent.toLowerCase().includes("cousin")
+      );
+    }, { timeout: 8000 });
+    step(36, "Exact Family → Relationships target handoff");
+
+    // -----------------------------------------------------------------------
+    // 37. Returning from Relationships preserves Family focus
+    // -----------------------------------------------------------------------
+    await clickButtonText("Family");
+    await sleep(1200);
+    await page.waitForSelector(".family-diagram svg", { timeout: 10000 });
+    const famFocusAfterRel = await page.$eval(".family-focus-current", (el) => el.textContent);
+    if (!famFocusAfterRel.includes("Aresha Zubair")) {
+      throw new Error(`Expected Family focus to remain 'Aresha Zubair', got: ${famFocusAfterRel}`);
+    }
+    step(37, "Returning from Relationships preserves Family focus");
+
+    // -----------------------------------------------------------------------
+    // 38. Rendered hostile-name Mermaid DOM is inert
+    // -----------------------------------------------------------------------
+    await page.evaluate(() => {
+      window.__familyPwned = undefined;
+    });
+    await fetch("http://127.0.0.1:8765/api/people", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Hostile <script>window.__familyPwned=1</script><img src=x onerror=\"window.__familyPwned=1\"><svg onload=\"window.__familyPwned=1\">",
+        aliases: ['"B"', '"><iframe srcdoc="<script>window.parent.__familyPwned=1</script>">'],
+      }),
+    });
+
+    await clickButtonText("Reload");
+    await sleep(2000);
+    await page.waitForSelector(".family-diagram svg", { timeout: 10000 });
+
+    const pwned = await page.evaluate(() => window.__familyPwned);
+    if (pwned !== undefined) {
+      throw new Error(`Mermaid DOM execution vulnerability triggered: window.__familyPwned = ${pwned}`);
+    }
+
+    const hostileDomElements = await page.evaluate(() => {
+      const container = document.querySelector(".family-diagram");
+      if (!container) return { scripts: 0, iframes: 0, onerrors: 0, onloads: 0 };
+      const scripts = container.querySelectorAll("script").length;
+      const iframes = container.querySelectorAll("iframe").length;
+      const onerrors = container.querySelectorAll("[onerror]").length;
+      const onloads = container.querySelectorAll("[onload]").length;
+      return { scripts, iframes, onerrors, onloads };
+    });
+
+    if (
+      hostileDomElements.scripts > 0 ||
+      hostileDomElements.iframes > 0 ||
+      hostileDomElements.onerrors > 0 ||
+      hostileDomElements.onloads > 0
+    ) {
+      throw new Error(`Hostile DOM elements found in Mermaid output: ${JSON.stringify(hostileDomElements)}`);
+    }
+    step(38, "Rendered hostile-name Mermaid DOM is inert");
+
+    // -----------------------------------------------------------------------
+    // 39. Browser console has no unexpected errors after hostile-name test
+    // -----------------------------------------------------------------------
     const criticalErrors = consoleErrors.filter(
       (e) => !e.includes("favicon") && !e.includes("404") && !e.includes("React DevTools"),
     );
     if (criticalErrors.length > 0) {
       throw new Error(`Unexpected browser console errors detected: ${JSON.stringify(criticalErrors)}`);
     }
-    step(26, "Browser console has no unexpected errors");
+    step(39, "Browser console has no unexpected errors after hostile-name test");
 
     console.log("\n=======================================================");
-    console.log(`🎉 ALL ${passedSteps.length} / 26 FAMILY UI E2E CHECKS PASSED!`);
+    console.log(`🎉 ALL ${passedSteps.length} / 39 FAMILY UI E2E CHECKS PASSED!`);
     console.log("=======================================================\n");
-  } finally {
-    if (browser) await browser.close();
-    if (process.platform === "win32") {
-      if (backend && backend.pid) {
-        try { execSync(`taskkill /pid ${backend.pid} /T /F`); } catch {}
+    } catch (err) {
+      testError = err;
+    } finally {
+      if (browser) await browser.close();
+      if (process.platform === "win32") {
+        if (backend && backend.pid) {
+          try { execSync(`taskkill /pid ${backend.pid} /T /F`); } catch {}
+        }
+        if (vite && vite.pid) {
+          try { execSync(`taskkill /pid ${vite.pid} /T /F`); } catch {}
+        }
+      } else {
+        try { backend.kill("SIGKILL"); } catch {}
+        try { vite.kill("SIGKILL"); } catch {}
       }
-      if (vite && vite.pid) {
-        try { execSync(`taskkill /pid ${vite.pid} /T /F`); } catch {}
-      }
-    } else {
-      try { backend.kill("SIGKILL"); } catch {}
-      try { vite.kill("SIGKILL"); } catch {}
-    }
 
-    // Verify production data integrity
-    const finalDbHash = sha256(PROD_DB);
-    if (finalDbHash !== initialDbHash) {
-      console.error(`[CRITICAL] Production DB modified! Initial: ${initialDbHash}, Final: ${finalDbHash}`);
-      process.exit(1);
-    }
-    console.log(`[Safety Verification] Initial DB Hash: ${initialDbHash}`);
-    console.log(`[Safety Verification] Final DB Hash:   ${finalDbHash}`);
-
-    for (const j of initialJournals) {
-      const current = sha256(j.path);
-      if (current !== j.hash) {
-        console.error(`[CRITICAL] Production journal modified at: ${j.path}`);
+      // Verify production data integrity
+      const finalDbHash = sha256(PROD_DB);
+      if (finalDbHash !== initialDbHash) {
+        console.error(`[CRITICAL] Production DB modified! Initial: ${initialDbHash}, Final: ${finalDbHash}`);
         process.exit(1);
       }
+      console.log(`[Safety Verification] Initial DB Hash: ${initialDbHash}`);
+      console.log(`[Safety Verification] Final DB Hash:   ${finalDbHash}`);
+
+      for (const j of initialJournals) {
+        const current = sha256(j.path);
+        if (current !== j.hash) {
+          console.error(`[CRITICAL] Production journal modified at: ${j.path}`);
+          process.exit(1);
+        }
+      }
+      console.log(`[Safety Verification] All ${initialJournals.length} production journals are 100% byte-identical.`);
+
+      try {
+        rmSync(tempRoot, { recursive: true, force: true });
+        console.log("[Cleanup] Temporary test sandbox removed.");
+      } catch {}
+
+      if (testError) {
+        console.error("\n❌ [E2E FAILURE]:", testError);
+        process.exit(1);
+      }
+      process.exit(0);
     }
-    console.log(`[Safety Verification] All ${initialJournals.length} production journals are 100% byte-identical.`);
-
-    try {
-      rmSync(tempRoot, { recursive: true, force: true });
-      console.log("[Cleanup] Temporary test sandbox removed.");
-    } catch {}
-
-    process.exit(0);
-  }
 }
 
 main().catch((err) => {

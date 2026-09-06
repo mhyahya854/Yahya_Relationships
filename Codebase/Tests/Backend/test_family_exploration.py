@@ -475,3 +475,114 @@ def test_empty_partial_family_handled_cleanly(isolated):
     mermaid_text = build_family.build_mermaid(data)
     assert "flowchart TB" in mermaid_text
     assert f"p_{p['id']}" in mermaid_text
+
+
+# 29. alias-aware people search used by Family resolves alias to canonical person ID
+def test_alias_aware_people_search_for_family_focus(client, isolated):
+    p = people.create_person(
+        name="Alexandra Example",
+        aliases=["Alex", "Lexi"],
+    )
+    canon_id = p["id"]
+
+    # Search by canonical name
+    res_name = client.get("/api/people?query=Alexandra")
+    assert res_name.status_code == 200
+    people_name = res_name.json()["people"]
+    assert any(x["id"] == canon_id and x["name"] == "Alexandra Example" for x in people_name)
+
+    # Search by alias "Alex"
+    res_alias1 = client.get("/api/people?query=Alex")
+    assert res_alias1.status_code == 200
+    people_alias1 = res_alias1.json()["people"]
+    assert any(x["id"] == canon_id for x in people_alias1)
+
+    # Search by alias "Lexi"
+    res_alias2 = client.get("/api/people?query=Lexi")
+    assert res_alias2.status_code == 200
+    people_alias2 = res_alias2.json()["people"]
+    assert any(x["id"] == canon_id for x in people_alias2)
+
+    # In-memory search helper check
+    direct_alex = people.list_people(query="Alex")
+    assert any(x["id"] == canon_id for x in direct_alex)
+    direct_lexi = people.list_people(query="Lexi")
+    assert any(x["id"] == canon_id for x in direct_lexi)
+
+
+# 30. hostile Mermaid label text is escaped safely in rendered diagram source
+def test_hostile_mermaid_labels_escaped(isolated):
+    hostile_payloads = [
+        "Name <script>alert(1)</script>",
+        '<img src=x onerror="window.__familyPwned=1">',
+        '<svg onload="window.__familyPwned=1">',
+        '"><iframe srcdoc="<script>window.parent.__familyPwned=1</script>">',
+        "A [Test]",
+        '"B"',
+        "Ali & Sara",
+    ]
+    created = []
+    for idx, name in enumerate(hostile_payloads):
+        p = people.create_person(name=name, aliases=[f"HostileAlias{idx}"])
+        created.append(p)
+
+    data = {
+        "metadata": {
+            "title": "Security Family",
+            "focus_person": created[0]["id"],
+            "revision": 1,
+        },
+        "people": created,
+        "parent_child": [],
+        "marriages": [],
+        "sibling_groups": [],
+    }
+    diagram = build_family.build_mermaid(data)
+
+    # Unescaped executable script tags must NOT appear
+    assert "<script>" not in diagram
+    assert "</script>" not in diagram
+    assert 'onerror="window.__familyPwned=1"' not in diagram
+    assert 'onload="window.__familyPwned=1"' not in diagram
+    assert "<iframe" not in diagram
+
+    # Escaped safe entities must be present
+    assert "&lt;script&gt;" in diagram
+    assert "&lt;img" in diagram
+    assert "&lt;svg" in diagram
+    assert "&lt;iframe" in diagram
+    assert "&amp;" in diagram
+    assert "&quot;" in diagram
+
+
+# 31. canonical node ID independent of display name
+def test_canonical_node_id_independent_of_display_name(isolated):
+    p = people.create_person(name="Original Name")
+    canon_id = p["id"]
+
+    data1 = {
+        "metadata": {"title": "Fam", "focus_person": canon_id, "revision": 1},
+        "people": [p],
+        "parent_child": [],
+        "marriages": [],
+        "sibling_groups": [],
+    }
+    d1 = build_family.build_mermaid(data1)
+    assert f"p_{canon_id}" in d1
+
+    # Update person's display name to something completely different
+    people.update_person(canon_id, name="Completely Altered Name <script>")
+    p_updated = people.get_person(canon_id)
+
+    data2 = {
+        "metadata": {"title": "Fam", "focus_person": canon_id, "revision": 1},
+        "people": [p_updated],
+        "parent_child": [],
+        "marriages": [],
+        "sibling_groups": [],
+    }
+    d2 = build_family.build_mermaid(data2)
+    # Node ID remains strictly p_{canon_id}
+    assert f"p_{canon_id}" in d2
+    assert "p_Original" not in d2
+    assert "p_Completely" not in d2

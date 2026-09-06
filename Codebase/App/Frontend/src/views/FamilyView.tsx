@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { Avatar, Button, ErrorNote } from "../components/ui";
+import { Avatar, Button, ErrorNote, PersonSearch } from "../components/ui";
 import { JournalModal, useRelationship } from "../components/PersonDetail";
 import { usePerspective } from "../state";
 import type { Group, Person, RelationshipEntry } from "../types";
@@ -12,7 +12,7 @@ import mermaid from "mermaid";
 mermaid.initialize({
   startOnLoad: false,
   theme: "neutral",
-  securityLevel: "loose",
+  securityLevel: "strict",
   flowchart: {
     useMaxWidth: false,
     htmlLabels: true,
@@ -24,18 +24,39 @@ mermaid.initialize({
 interface Props {
   onNavigateToProfile?: (personId: string) => void;
   onNavigateToRelationships?: (personId: string, fromPerspectiveId?: string) => void;
+  focusPersonId?: string | null;
+  onFocusPersonChange?: (personId: string) => void;
+  selectedPersonId?: string | null;
+  onSelectedPersonChange?: (personId: string | null) => void;
   initialFocusId?: string | null;
 }
 
 export function FamilyView({
   onNavigateToProfile,
   onNavigateToRelationships,
+  focusPersonId: propFocusPersonId,
+  onFocusPersonChange,
+  selectedPersonId,
+  onSelectedPersonChange,
   initialFocusId,
 }: Props) {
-  const { perspectiveId, defaultId } = usePerspective();
-  const [focusPersonId, setFocusPersonId] = useState<string>(
-    initialFocusId || perspectiveId || "mohammad_yahya_hussain",
+  const { defaultId } = usePerspective();
+  const [internalFocusId, setInternalFocusId] = useState<string>(
+    propFocusPersonId || initialFocusId || defaultId || "mohammad_yahya_hussain",
   );
+  const currentFocusId =
+    propFocusPersonId !== undefined && propFocusPersonId !== null
+      ? propFocusPersonId
+      : internalFocusId;
+
+  const handleFocusChange = (nextId: string) => {
+    if (onFocusPersonChange) {
+      onFocusPersonChange(nextId);
+    } else {
+      setInternalFocusId(nextId);
+    }
+  };
+
   const [defaultFocusId, setDefaultFocusId] = useState<string>(
     defaultId || "mohammad_yahya_hussain",
   );
@@ -69,6 +90,26 @@ export function FamilyView({
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
   const [undoNotice, setUndoNotice] = useState<string | null>(null);
 
+  const handleSelectPerson = (person: Person | null) => {
+    setSelected(person);
+    if (onSelectedPersonChange) {
+      onSelectedPersonChange(person ? person.id : null);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedPersonId && people.length > 0) {
+      if (!selected || selected.id !== selectedPersonId) {
+        const match = people.find((p) => p.id === selectedPersonId);
+        if (match) {
+          setSelected(match);
+        }
+      }
+    } else if (!selectedPersonId && selected) {
+      setSelected(null);
+    }
+  }, [selectedPersonId, people]);
+
   const loadPeopleAndGroups = useCallback(async () => {
     try {
       const [peopleRes, groupsRes] = await Promise.all([
@@ -93,7 +134,7 @@ export function FamilyView({
         setFocusPerson(result.focus);
       }
       if (result.people && result.people.length > 0) {
-        setPeople((prev) => (prev.length > 0 ? prev : (result.people as unknown as Person[])));
+        setPeople(result.people as unknown as Person[]);
       }
       if (result.legend) {
         setLegend(result.legend);
@@ -110,22 +151,16 @@ export function FamilyView({
   }, [loadPeopleAndGroups]);
 
   useEffect(() => {
-    if (initialFocusId) {
-      setFocusPersonId(initialFocusId);
+    if (currentFocusId) {
+      void loadFamilyData(currentFocusId);
     }
-  }, [initialFocusId]);
-
-  useEffect(() => {
-    if (focusPersonId) {
-      void loadFamilyData(focusPersonId);
-    }
-  }, [focusPersonId, loadFamilyData]);
+  }, [currentFocusId, loadFamilyData]);
 
   const handleSavedMutation = async (desc: string) => {
     setUndoNotice(desc);
     await loadPeopleAndGroups();
-    if (focusPersonId) {
-      await loadFamilyData(focusPersonId);
+    if (currentFocusId) {
+      await loadFamilyData(currentFocusId);
     }
   };
 
@@ -135,8 +170,8 @@ export function FamilyView({
       if (res.ok) {
         setUndoNotice(null);
         await loadPeopleAndGroups();
-        if (focusPersonId) {
-          await loadFamilyData(focusPersonId);
+        if (currentFocusId) {
+          await loadFamilyData(currentFocusId);
         }
       }
     } catch (err) {
@@ -185,7 +220,7 @@ export function FamilyView({
           const handleSelect = () => {
             const person = people.find((entry) => entry.id === personId);
             if (person) {
-              setSelected(person);
+              handleSelectPerson(person);
               highlightNode(container, personId);
             }
           };
@@ -201,14 +236,16 @@ export function FamilyView({
           node.addEventListener("dblclick", () => {
             const person = people.find((entry) => entry.id === personId);
             if (person) {
-              setFocusPersonId(person.id);
+              handleFocusChange(person.id);
             }
           });
         });
 
         // Center current focus node after diagram render
-        if (focusPersonId) {
-          highlightNode(container, focusPersonId);
+        if (selected) {
+          highlightNode(container, selected.id);
+        } else if (currentFocusId) {
+          highlightNode(container, currentFocusId);
         }
       })
       .catch((err: unknown) => setError(err))
@@ -219,7 +256,7 @@ export function FamilyView({
     return () => {
       cancelled = true;
     };
-  }, [diagram, people, focusPersonId]);
+  }, [diagram, people, currentFocusId]);
 
   useEffect(() => {
     if (selected && diagramRef.current) {
@@ -245,17 +282,17 @@ export function FamilyView({
 
   const handleCenterFocus = () => {
     setZoom(1);
-    if (diagramRef.current && focusPersonId) {
-      highlightNode(diagramRef.current, focusPersonId);
+    if (diagramRef.current && currentFocusId) {
+      highlightNode(diagramRef.current, currentFocusId);
     }
   };
 
   const selectedRelationship = useRelationship(
-    selected ? focusPersonId : null,
+    selected ? currentFocusId : null,
     selected ? selected.id : null,
   );
 
-  const isDefaultFocus = focusPersonId === defaultFocusId;
+  const isDefaultFocus = currentFocusId === (defaultFocusId || defaultId || "mohammad_yahya_hussain");
 
   return (
     <div className="view">
@@ -285,7 +322,13 @@ export function FamilyView({
           <Button onClick={handleCenterFocus} title="Reset view and center on focus person">
             Center Focus
           </Button>
-          <Button disabled={loading || rendering} onClick={() => void loadFamilyData(focusPersonId)}>
+          <Button
+            disabled={loading || rendering}
+            onClick={() => {
+              void loadPeopleAndGroups();
+              void loadFamilyData(currentFocusId);
+            }}
+          >
             Reload
           </Button>
         </div>
@@ -314,31 +357,22 @@ export function FamilyView({
               size={24}
             />
           )}
-          <span>{focusPerson?.name ?? focusPersonId}</span>
+          <span>{focusPerson?.name ?? currentFocusId}</span>
         </div>
 
-        <select
-          className="family-focus-select"
-          aria-label="Change Family Focus Person"
-          value={focusPersonId}
-          onChange={(e) => {
-            const nextId = e.target.value;
-            if (nextId) {
-              setFocusPersonId(nextId);
-            }
-          }}
-        >
-          {people.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} {p.birth_year ? `(${p.birth_year})` : ""}
-            </option>
-          ))}
-        </select>
+        <div className="family-focus-search-wrap">
+          <PersonSearch
+            people={people}
+            onSelect={(person) => handleFocusChange(person.id)}
+            placeholder="Search by name or alias…"
+            ariaLabel="Search family focus by name or alias"
+          />
+        </div>
 
         {!isDefaultFocus && (
           <Button
             kind="ghost"
-            onClick={() => setFocusPersonId(defaultFocusId)}
+            onClick={() => handleFocusChange(defaultFocusId || defaultId || "mohammad_yahya_hussain")}
             title="Return to default viewer focus"
           >
             Return to My Family View
@@ -420,7 +454,7 @@ export function FamilyView({
                   )}
                 </div>
               </div>
-              <Button kind="ghost" onClick={() => setSelected(null)} title="Close context panel">
+              <Button kind="ghost" onClick={() => handleSelectPerson(null)} title="Close context panel">
                 ✕
               </Button>
             </div>
@@ -489,7 +523,7 @@ export function FamilyView({
             <div className="row-actions family-side-actions">
               <Button
                 kind="primary"
-                onClick={() => setFocusPersonId(selected.id)}
+                onClick={() => handleFocusChange(selected.id)}
                 title="Re-orient entire family tree around this person"
               >
                 Make Family Focus
@@ -504,7 +538,7 @@ export function FamilyView({
               )}
               {onNavigateToRelationships && (
                 <Button
-                  onClick={() => onNavigateToRelationships(selected.id, focusPersonId)}
+                  onClick={() => onNavigateToRelationships(selected.id, currentFocusId)}
                   title="Explore detailed proof paths in Relationships view"
                 >
                   View in Relationships

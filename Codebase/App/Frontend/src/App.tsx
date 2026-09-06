@@ -93,14 +93,29 @@ function Shell() {
   const [screen, setScreen] = useState<Screen>("relationships");
   const [peopleTargetId, setPeopleTargetId] = useState<string | null>(null);
   const [relationshipTargetId, setRelationshipTargetId] = useState<string | null>(null);
-  const { perspectivePerson, setPerspective } = usePerspective();
+  const { perspectivePerson, defaultId, setPerspective } = usePerspective();
 
-  const handleNavigateToRelationships = (personId: string, fromPerspectiveId?: string) => {
-    if (fromPerspectiveId && fromPerspectiveId !== perspectivePerson?.id) {
-      void setPerspective(fromPerspectiveId);
+  // Family Session State (persists across tab navigation during app session)
+  const [familyFocusId, setFamilyFocusId] = useState<string | null>(null);
+  const [familySelectedId, setFamilySelectedId] = useState<string | null>(null);
+
+  // Initialize Family focus to defaultId once available (independent of global perspective)
+  useEffect(() => {
+    if (!familyFocusId && defaultId) {
+      setFamilyFocusId(defaultId);
     }
-    setRelationshipTargetId(personId);
-    setScreen("relationships");
+  }, [defaultId, familyFocusId]);
+
+  const handleNavigateToRelationships = async (personId: string, fromPerspectiveId?: string) => {
+    try {
+      if (fromPerspectiveId && fromPerspectiveId !== perspectivePerson?.id) {
+        await setPerspective(fromPerspectiveId);
+      }
+      setRelationshipTargetId(personId);
+      setScreen("relationships");
+    } catch (err) {
+      console.error("Failed to set perspective for Relationships handoff:", err);
+    }
   };
 
   const handleNavigateToProfile = (personId: string) => {
@@ -154,6 +169,10 @@ function Shell() {
           )}
           {screen === "family" && (
             <FamilyView
+              focusPersonId={familyFocusId ?? defaultId ?? "mohammad_yahya_hussain"}
+              onFocusPersonChange={(newId) => setFamilyFocusId(newId)}
+              selectedPersonId={familySelectedId}
+              onSelectedPersonChange={(personId) => setFamilySelectedId(personId)}
               onNavigateToProfile={handleNavigateToProfile}
               onNavigateToRelationships={handleNavigateToRelationships}
             />
