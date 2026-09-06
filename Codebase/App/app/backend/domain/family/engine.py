@@ -859,8 +859,16 @@ def migrate_json_to_sqlite(json_path, force=False):
 
 
 def mermaid_escape(value):
-    """Escape characters that would break a quoted Mermaid label."""
-    return str(value).replace("&", "&amp;").replace('"', "&quot;")
+    """Escape characters that would break a quoted Mermaid label or inject HTML."""
+    if value is None:
+        return ""
+    text = str(value)
+    text = text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+    text = text.replace("<br/>", "___BR___").replace("<br>", "___BR___")
+    text = text.replace("&", "&amp;").replace('"', "&quot;")
+    text = text.replace("<", "&lt;").replace(">", "&gt;")
+    text = text.replace("___BR___", "<br/>")
+    return text
 
 
 def _couple_key(marriage):
@@ -1108,10 +1116,24 @@ def _person_label(person, marker):
 
 
 def _marriage_status_line(marriage):
+    status = marriage.get("status") or "married"
     year = marriage.get("year")
-    if year is not None:
-        return f"married {year} / شادی {year}"
-    return "married / شادی شدہ"
+    if status == "divorced":
+        if year is not None:
+            return f"divorced {year} / طلاق شدہ {year}"
+        return "divorced / طلاق شدہ"
+    elif status == "widowed":
+        if year is not None:
+            return f"widowed {year} / بیوہ {year}"
+        return "widowed / بیوہ"
+    elif status == "unknown":
+        if year is not None:
+            return f"relationship {year} / تعلق {year}"
+        return "relationship / تعلق"
+    else:
+        if year is not None:
+            return f"married {year} / شادی {year}"
+        return "married / شادی شدہ"
 
 
 def _marriage_label(marriage, extra_lines=None):

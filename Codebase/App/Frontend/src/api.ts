@@ -233,6 +233,17 @@ export const api = {
   },
 
   family: {
+    view: (focusPersonId?: string) => {
+      const suffix = focusPersonId ? `?focus_person_id=${encodeURIComponent(focusPersonId)}` : "";
+      return request<{
+        ok: boolean;
+        focus: { id: string; name: string; gender?: string | null; birth_year?: number | null; branch?: string | null };
+        default_focus_id: string;
+        diagram: string;
+        people: Array<{ id: string; name: string; gender?: string | null; birth_year?: number | null; branch?: string | null }>;
+        legend: Array<{ key: string; label: string; symbol: string; description: string }>;
+      }>(`/api/family/view${suffix}`);
+    },
     diagram: (perspectiveId: string) =>
       request<{ ok: boolean; perspective_id: string; mermaid: string }>(
         `/api/family/diagram?perspective_id=${encodeURIComponent(perspectiveId)}`,

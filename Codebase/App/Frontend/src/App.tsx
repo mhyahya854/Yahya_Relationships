@@ -91,12 +91,21 @@ function PerspectiveSelector() {
 
 function Shell() {
   const [screen, setScreen] = useState<Screen>("relationships");
+  const [peopleTargetId, setPeopleTargetId] = useState<string | null>(null);
   const [relationshipTargetId, setRelationshipTargetId] = useState<string | null>(null);
-  const { perspectivePerson } = usePerspective();
+  const { perspectivePerson, setPerspective } = usePerspective();
 
-  const handleNavigateToRelationships = (personId: string) => {
+  const handleNavigateToRelationships = (personId: string, fromPerspectiveId?: string) => {
+    if (fromPerspectiveId && fromPerspectiveId !== perspectivePerson?.id) {
+      void setPerspective(fromPerspectiveId);
+    }
     setRelationshipTargetId(personId);
     setScreen("relationships");
+  };
+
+  const handleNavigateToProfile = (personId: string) => {
+    setPeopleTargetId(personId);
+    setScreen("people");
   };
 
   return (
@@ -135,12 +144,20 @@ function Shell() {
         </header>
         <div className="content">
           {screen === "people" && (
-            <PeopleView onNavigateToRelationships={handleNavigateToRelationships} />
+            <PeopleView
+              initialPersonId={peopleTargetId}
+              onNavigateToRelationships={handleNavigateToRelationships}
+            />
           )}
           {screen === "relationships" && (
             <RelationshipsView initialTargetId={relationshipTargetId} />
           )}
-          {screen === "family" && <FamilyView />}
+          {screen === "family" && (
+            <FamilyView
+              onNavigateToProfile={handleNavigateToProfile}
+              onNavigateToRelationships={handleNavigateToRelationships}
+            />
+          )}
           {screen === "search" && <SearchView />}
           {screen === "hermes" && <HermesView />}
           {screen === "backups" && <BackupsView />}

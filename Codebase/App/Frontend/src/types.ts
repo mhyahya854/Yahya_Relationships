@@ -52,6 +52,8 @@ export interface RelationshipEntry {
   notes?: string | null;
   general_relationship_id?: number;
   stored_fact_id?: string;
+  stored_fact_kind?: string | null;
+  status?: string | null;
 }
 
 export interface RelationshipResult {

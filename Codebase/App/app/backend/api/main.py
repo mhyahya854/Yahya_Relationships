@@ -640,6 +640,86 @@ def api_family_facts() -> dict:
     return {"ok": True, **family.family_facts()}
 
 
+@app.get("/api/family/view")
+def api_family_view(focus_person_id: str | None = None) -> dict:
+    from ..domain.family import engine as build_family
+
+    model = load_model()
+    focus = focus_person_id or model["metadata"].get("focus_person")
+    focus_person = people.get_person(focus)
+    adjusted = _diagram_model(model, focus)
+    validate_model(adjusted)
+    mermaid_text = build_family.build_mermaid(adjusted)
+    build_family.audit_render_mapping(adjusted, mermaid_text)
+
+    people_summary = [
+        {
+            "id": p["id"],
+            "name": p["name"],
+            "gender": p.get("gender"),
+            "birth_year": p.get("birth_year"),
+            "branch": p.get("branch"),
+            "aliases": p.get("aliases", []),
+            "groups": [],
+        }
+        for p in model["people"]
+    ]
+
+    legend = [
+        {
+            "key": "focus",
+            "label": "Focus Person",
+            "symbol": "focus-box",
+            "description": "Active viewer perspective with red border",
+        },
+        {
+            "key": "maternal",
+            "label": "Maternal Branch",
+            "symbol": "maternal-box",
+            "description": "Mother's lineage (pink couple clusters)",
+        },
+        {
+            "key": "paternal",
+            "label": "Paternal Branch",
+            "symbol": "paternal-box",
+            "description": "Father's lineage (blue couple clusters)",
+        },
+        {
+            "key": "marriage",
+            "label": "Marriage",
+            "symbol": "solid-line",
+            "description": "Horizontal unit with solid line connecting spouses",
+        },
+        {
+            "key": "parent_child",
+            "label": "Parent → Child",
+            "symbol": "arrow-down",
+            "description": "Solid line downward from couple junction to child",
+        },
+        {
+            "key": "sibling_group",
+            "label": "Sibling / Cross Link",
+            "symbol": "dotted-line",
+            "description": "Recorded sibling groups or cross-family connections",
+        },
+    ]
+
+    return {
+        "ok": True,
+        "focus": {
+            "id": focus_person["id"],
+            "name": focus_person["name"],
+            "gender": focus_person.get("gender"),
+            "birth_year": focus_person.get("birth_year"),
+            "branch": focus_person.get("branch"),
+        },
+        "default_focus_id": model["metadata"].get("focus_person"),
+        "diagram": mermaid_text,
+        "people": people_summary,
+        "legend": legend,
+    }
+
+
 @app.get("/api/family/diagram")
 def api_family_diagram(perspective_id: str | None = None) -> dict:
     from ..domain.family import engine as build_family

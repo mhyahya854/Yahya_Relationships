@@ -9,11 +9,12 @@ import type { Group, Person, RelationshipEntry } from "../types";
 
 interface Props {
   onNavigateToRelationships?: (personId: string) => void;
+  initialPersonId?: string | null;
 }
 
 type SortOption = "name-asc" | "name-desc" | "birth-asc" | "birth-desc" | "relationship";
 
-export function PeopleView({ onNavigateToRelationships }: Props) {
+export function PeopleView({ onNavigateToRelationships, initialPersonId }: Props) {
   const { perspectiveId, perspectivePerson, setPerspective } = usePerspective();
   const [people, setPeople] = useState<Person[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -57,6 +58,15 @@ export function PeopleView({ onNavigateToRelationships }: Props) {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (initialPersonId && people.length > 0) {
+      const match = people.find((p) => p.id === initialPersonId);
+      if (match) {
+        setSelected(match);
+      }
+    }
+  }, [initialPersonId, people]);
 
   // Load perspective relationship interpretations when perspectiveId changes
   useEffect(() => {
