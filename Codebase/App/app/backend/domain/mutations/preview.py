@@ -240,6 +240,43 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                     raise errors.NotFoundError("Sibling group not found.")
                 direct_changes.append(f"Remove sibling group fact ({group_id}).")
 
+            elif action == "update_sibling_group":
+                group_id = params["group_id"]
+                type_ = params.get("type_")
+                if type_ is None and "type" in params:
+                    type_ = params["type"]
+                ordered = params.get("ordered")
+                row = connection.execute("SELECT * FROM sibling_groups WHERE id = ?", (group_id,)).fetchone()
+                if not row:
+                    raise errors.NotFoundError("Sibling group not found.")
+                members = [
+                    r["person_id"]
+                    for r in connection.execute(
+                        "SELECT person_id FROM sibling_group_members WHERE group_id = ? ORDER BY member_order, person_id",
+                        (group_id,),
+                    ).fetchall()
+                ]
+                new_type = type_ if type_ is not None else row["type"]
+                if new_type == "full" and len(members) != 2:
+                    raise errors.ValidationError("Full-sibling facts need exactly two members.", code="FULL_SIBLING_SIZE")
+                new_ordered = ordered if ordered is not None else bool(row["is_ordered"])
+                connection.execute(
+                    "UPDATE sibling_groups SET type = ?, is_ordered = ? WHERE id = ?",
+                    (new_type, 1 if new_ordered else 0, group_id),
+                )
+                if new_ordered:
+                    for idx, mid in enumerate(members, start=1):
+                        connection.execute(
+                            "UPDATE sibling_group_members SET member_order = ? WHERE group_id = ? AND person_id = ?",
+                            (idx, group_id, mid),
+                        )
+                else:
+                    connection.execute(
+                        "UPDATE sibling_group_members SET member_order = NULL WHERE group_id = ?",
+                        (group_id,),
+                    )
+                direct_changes.append(f"Update sibling group fact ({group_id}): type={new_type or 'default'}, ordered={bool(new_ordered)}.")
+
             elif action == "delete_person":
                 person_id = params["person_id"]
                 p_name = idx_before.get(person_id, {}).get("name", person_id)
@@ -299,6 +336,30 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
             elif action == "delete_general":
                 rel_id = params["relationship_id"]
                 direct_changes.append(f"Remove general relationship ID #{rel_id}.")
+
+            elif action == "update_general":
+                rel_id = params["relationship_id"]
+                row = connection.execute("SELECT * FROM general_relationships WHERE id = ?", (rel_id,)).fetchone()
+                if not row:
+                    raise errors.NotFoundError(f"General relationship #{rel_id} not found.")
+                new_type = params.get("type", row["type"])
+                new_directionality = params.get("directionality", row["directionality"])
+                new_direction_from = params.get("direction_from", row["direction_from"]) if new_directionality == "directional" else None
+                new_label_a = params.get("label_a_to_b", row["label_a_to_b"])
+                new_label_b = params.get("label_b_to_a", row["label_b_to_a"])
+                new_notes = params.get("notes", row["notes"])
+                connection.execute(
+                    """
+                    UPDATE general_relationships
+                    SET type = ?, directionality = ?, direction_from = ?,
+                        label_a_to_b = ?, label_b_to_a = ?, notes = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (new_type, new_directionality, new_direction_from, new_label_a, new_label_b, new_notes, db.utc_now(), rel_id),
+                )
+                name_a = idx_before.get(row["person_a"], {}).get("name", row["person_a"])
+                name_b = idx_before.get(row["person_b"], {}).get("name", row["person_b"])
+                direct_changes.append(f"Update general relationship between {name_a} and {name_b}: type={new_type}.")
 
             else:
                 raise errors.ValidationError(f"Unknown action for preview: {action!r}")

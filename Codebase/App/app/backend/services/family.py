@@ -7,6 +7,7 @@ legacy builder uses. Derived kinship terms are never stored.
 """
 
 import sqlite3
+from typing import Any
 
 from .. import db
 from ..domain.mutations.history import pop_latest_snapshot, record_pre_mutation_snapshot
@@ -459,6 +460,89 @@ def add_sibling_group(
             "That sibling group conflicts with existing constraints.",
             code="FACT_CONSTRAINT",
         ) from exc
+    except Exception:
+        connection.rollback()
+        pop_latest_snapshot()
+        raise
+    finally:
+        connection.close()
+
+
+_UNSET = object()
+
+
+def update_sibling_group(
+    group_id: str,
+    *,
+    type_: Any = _UNSET,
+    ordered: Any = _UNSET,
+) -> dict:
+    _check_write_allowed()
+    record_pre_mutation_snapshot(f"Updated sibling group: {group_id}")
+    connection = db.get_connection()
+    try:
+        group = connection.execute(
+            "SELECT * FROM sibling_groups WHERE id = ?", (group_id,)
+        ).fetchone()
+        if not group:
+            raise errors.NotFoundError("Sibling group fact not found.")
+
+        members = [
+            row["person_id"]
+            for row in connection.execute(
+                "SELECT person_id FROM sibling_group_members WHERE group_id = ? ORDER BY member_order, person_id",
+                (group_id,),
+            ).fetchall()
+        ]
+
+        if type_ is not _UNSET:
+            if type_ in (None, ""):
+                new_type = None
+            elif type_ == "full":
+                new_type = "full"
+            else:
+                raise errors.ValidationError(f"Unsupported sibling-group type: {type_!r}.")
+        else:
+            new_type = group["type"]
+
+        if new_type == "full" and len(members) != 2:
+            raise errors.ValidationError(
+                "Full-sibling facts need exactly two members.",
+                code="FULL_SIBLING_SIZE",
+            )
+
+        if ordered is not _UNSET:
+            new_ordered = bool(ordered)
+        else:
+            new_ordered = bool(group["is_ordered"])
+
+        _begin(connection)
+        connection.execute(
+            "UPDATE sibling_groups SET type = ?, is_ordered = ? WHERE id = ?",
+            (new_type, 1 if new_ordered else 0, group_id),
+        )
+
+        if new_ordered:
+            for idx, person_id in enumerate(members, start=1):
+                connection.execute(
+                    "UPDATE sibling_group_members SET member_order = ? WHERE group_id = ? AND person_id = ?",
+                    (idx, group_id, person_id),
+                )
+        else:
+            connection.execute(
+                "UPDATE sibling_group_members SET member_order = NULL WHERE group_id = ?",
+                (group_id,),
+            )
+
+        _validate_after_write(connection)
+        connection.commit()
+        return {
+            "ok": True,
+            "id": group_id,
+            "type": new_type,
+            "ordered": bool(new_ordered),
+            "members": members,
+        }
     except Exception:
         connection.rollback()
         pop_latest_snapshot()

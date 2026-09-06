@@ -284,6 +284,17 @@ export const api = {
       request<{ ok: boolean }>(`/api/family/sibling-group/${encodeURIComponent(groupId)}`, {
         method: "DELETE",
       }),
+    updateSiblingGroup: (
+      groupId: string,
+      payload: { type?: string | null; type_?: string | null; ordered?: boolean },
+    ) =>
+      request<{ ok: boolean; id: string; type?: string | null; ordered: boolean }>(
+        `/api/family/sibling-group/${encodeURIComponent(groupId)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        },
+      ),
   },
 
   journals: {

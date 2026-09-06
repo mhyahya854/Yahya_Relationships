@@ -1,8 +1,24 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../../../api";
-import type { GeneralRelationshipFact, MutationPreviewResult, ParentChildFact, Person, RelationshipEntry } from "../../../types";
+import type {
+  GeneralRelationshipFact,
+  MarriageFact,
+  MutationPreviewResult,
+  ParentChildFact,
+  Person,
+  RelationshipEntry,
+  SiblingGroupFact,
+} from "../../../types";
 import { MutationPreviewDialog } from "../../mutations/components/MutationPreviewDialog";
 import { relationshipsApi } from "../api";
+import {
+  GENERAL_TYPES,
+  MARRIAGE_CHILDREN_STATUSES,
+  MARRIAGE_STATUSES,
+  PARENT_KINDS,
+  PARENT_ROLES,
+  SIBLING_GROUP_TYPES,
+} from "../constants";
 
 interface Props {
   perspectivePerson: Person;
@@ -25,14 +41,31 @@ export const EditRelationshipDialog: React.FC<Props> = ({
   // Stored Fact match state
   const [generalFact, setGeneralFact] = useState<GeneralRelationshipFact | null>(null);
   const [parentChildFact, setParentChildFact] = useState<ParentChildFact | null>(null);
-  const [marriageFact, setMarriageFact] = useState<any | null>(null);
-  const [siblingGroupFact, setSiblingGroupFact] = useState<any | null>(null);
+  const [marriageFact, setMarriageFact] = useState<MarriageFact | null>(null);
+  const [siblingGroupFact, setSiblingGroupFact] = useState<SiblingGroupFact | null>(null);
   const [sourcePaths, setSourcePaths] = useState<any[]>([]);
+  const [peopleMap, setPeopleMap] = useState<Record<string, string>>({});
 
-  // Form Fields
+  // General Form Fields
+  const [genType, setGenType] = useState("close_friend");
+  const [genDirectionality, setGenDirectionality] = useState<"symmetric" | "directional">("symmetric");
+  const [genDirectionFrom, setGenDirectionFrom] = useState<string>(perspectivePerson.id);
+  const [labelAToB, setLabelAToB] = useState("");
+  const [labelBToA, setLabelBToA] = useState("");
   const [genNotes, setGenNotes] = useState("");
+
+  // Parent-Child Form Fields
   const [parentRole, setParentRole] = useState("parent");
   const [parentKind, setParentKind] = useState("biological");
+
+  // Marriage Form Fields
+  const [marriageStatus, setMarriageStatus] = useState("married");
+  const [marriageYear, setMarriageYear] = useState("");
+  const [marriageChildrenStatus, setMarriageChildrenStatus] = useState("");
+
+  // Sibling Group Form Fields
+  const [siblingType, setSiblingType] = useState("");
+  const [siblingOrdered, setSiblingOrdered] = useState(false);
 
   // Consequence Preview for Deletion
   const [previewResult, setPreviewResult] = useState<MutationPreviewResult | null>(null);
@@ -58,10 +91,21 @@ export const EditRelationshipDialog: React.FC<Props> = ({
         });
         if (match) {
           setGeneralFact(match);
+          setGenType(match.type);
+          setGenDirectionality(match.directionality);
+          setGenDirectionFrom(match.direction_from || match.person_a);
+          setLabelAToB(match.label_a_to_b || "");
+          setLabelBToA(match.label_b_to_a || "");
           setGenNotes(match.notes || "");
         }
       } else if (entry.domain === "family") {
         const factsRes = await api.family.facts();
+        const pMap: Record<string, string> = {};
+        factsRes.people?.forEach((p) => {
+          pMap[p.id] = p.name;
+        });
+        setPeopleMap(pMap);
+
         // Check direct parent-child fact
         const pcMatch = factsRes.parent_child.find(
           (pc) =>
@@ -82,16 +126,21 @@ export const EditRelationshipDialog: React.FC<Props> = ({
         );
         if (mMatch) {
           setMarriageFact(mMatch);
+          setMarriageStatus(mMatch.status || "married");
+          setMarriageYear(mMatch.year ? String(mMatch.year) : "");
+          setMarriageChildrenStatus(mMatch.children_status || "");
         }
 
         // Check direct sibling group fact
         const sgMatch = factsRes.sibling_groups?.find(
-          (g: any) =>
+          (g) =>
             g.members?.includes(perspectivePerson.id) &&
             g.members?.includes(targetPerson.id)
         );
         if (sgMatch) {
           setSiblingGroupFact(sgMatch);
+          setSiblingType(sgMatch.type || "");
+          setSiblingOrdered(Boolean(sgMatch.ordered));
         }
 
         // Load Show Why source paths if derived
@@ -116,8 +165,16 @@ export const EditRelationshipDialog: React.FC<Props> = ({
   const handleSaveGeneral = async () => {
     if (!generalFact) return;
     setLoading(true);
+    setErrorMsg(null);
     try {
-      await api.relationships.general.update(generalFact.id, { notes: genNotes });
+      await api.relationships.general.update(generalFact.id, {
+        type: genType,
+        directionality: genDirectionality,
+        direction_from: genDirectionality === "directional" ? genDirectionFrom : null,
+        label_a_to_b: labelAToB || undefined,
+        label_b_to_a: labelBToA || undefined,
+        notes: genNotes || undefined,
+      });
       onSaved(`Updated general relationship between ${perspectivePerson.name} and ${targetPerson.name}`);
       onClose();
     } catch (err: unknown) {
@@ -130,6 +187,7 @@ export const EditRelationshipDialog: React.FC<Props> = ({
   const handleSaveParentChild = async () => {
     if (!parentChildFact) return;
     setLoading(true);
+    setErrorMsg(null);
     try {
       await api.family.updateParentChild({
         parent_id: parentChildFact.parent_id,
@@ -146,8 +204,48 @@ export const EditRelationshipDialog: React.FC<Props> = ({
     }
   };
 
+  const handleSaveMarriage = async () => {
+    if (!marriageFact) return;
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      await api.family.updateMarriage({
+        person_a: marriageFact.spouse_a,
+        person_b: marriageFact.spouse_b,
+        status: marriageStatus,
+        year: marriageYear ? parseInt(marriageYear, 10) : null,
+        children_status: marriageChildrenStatus || null,
+      });
+      onSaved(`Updated marriage fact between ${perspectivePerson.name} and ${targetPerson.name}`);
+      onClose();
+    } catch (err: unknown) {
+      setErrorMsg((err as Error).message || "Failed to update marriage fact.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveSiblingGroup = async () => {
+    if (!siblingGroupFact) return;
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      await api.family.updateSiblingGroup(siblingGroupFact.id, {
+        type: siblingType || null,
+        ordered: siblingOrdered,
+      });
+      onSaved(`Updated sibling group fact between ${perspectivePerson.name} and ${targetPerson.name}`);
+      onClose();
+    } catch (err: unknown) {
+      setErrorMsg((err as Error).message || "Failed to update sibling group fact.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDeletePreview = async (action: string, params: any) => {
     setLoading(true);
+    setErrorMsg(null);
     try {
       const res = await api.mutations.preview(action, params);
       setPreviewResult(res);
@@ -162,6 +260,7 @@ export const EditRelationshipDialog: React.FC<Props> = ({
   const handleConfirmDelete = async () => {
     if (!pendingDeleteAction) return;
     setLoading(true);
+    setErrorMsg(null);
     try {
       const { action, params } = pendingDeleteAction;
       if (action === "delete_general") {
@@ -173,6 +272,9 @@ export const EditRelationshipDialog: React.FC<Props> = ({
       } else if (action === "delete_marriage") {
         await api.family.deleteMarriage(params.person_a, params.person_b);
         onSaved(`Removed marriage fact between ${perspectivePerson.name} and ${targetPerson.name}`);
+      } else if (action === "delete_sibling_group") {
+        await api.family.deleteSiblingGroup(params.group_id);
+        onSaved(`Removed sibling group fact between ${perspectivePerson.name} and ${targetPerson.name}`);
       }
       setPreviewResult(null);
       onClose();
@@ -200,7 +302,7 @@ export const EditRelationshipDialog: React.FC<Props> = ({
             {errorMsg && <div className="diff-card diff-invalid">{errorMsg}</div>}
 
             {/* Source Transparency Badge */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
               <span className={`badge-fact ${entry.derived ? "badge-derived" : "badge-explicit"}`}>
                 {entry.derived ? "Derived Kinship Term" : "Stored Explicit Fact"}
               </span>
@@ -239,15 +341,83 @@ export const EditRelationshipDialog: React.FC<Props> = ({
 
             {/* EXPLICIT GENERAL FACT EDIT */}
             {generalFact && (
-              <div className="form-group">
-                <label>Notes</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={genNotes}
-                  onChange={(e) => setGenNotes(e.target.value)}
-                  placeholder="Notes about this relationship..."
-                />
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div className="form-group">
+                  <label>Relationship Type</label>
+                  <select
+                    className="form-select"
+                    value={genType}
+                    onChange={(e) => setGenType(e.target.value)}
+                  >
+                    {GENERAL_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Directionality</label>
+                  <select
+                    className="form-select"
+                    value={genDirectionality}
+                    onChange={(e) => setGenDirectionality(e.target.value as "symmetric" | "directional")}
+                  >
+                    <option value="symmetric">Symmetric (Mutual relation)</option>
+                    <option value="directional">Directional (Different roles/labels)</option>
+                  </select>
+                </div>
+
+                {genDirectionality === "directional" && (
+                  <div className="form-group">
+                    <label>Direction From</label>
+                    <select
+                      className="form-select"
+                      value={genDirectionFrom}
+                      onChange={(e) => setGenDirectionFrom(e.target.value)}
+                    >
+                      <option value={perspectivePerson.id}>From {perspectivePerson.name}</option>
+                      <option value={targetPerson.id}>From {targetPerson.name}</option>
+                    </select>
+                  </div>
+                )}
+
+                {(genDirectionality === "directional" || genType === "custom") && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div className="form-group">
+                      <label>{perspectivePerson.name} &rarr; {targetPerson.name} label</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. Mentor"
+                        value={labelAToB}
+                        onChange={(e) => setLabelAToB(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>{targetPerson.name} &rarr; {perspectivePerson.name} label</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. Mentee"
+                        value={labelBToA}
+                        onChange={(e) => setLabelBToA(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label>Notes</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={genNotes}
+                    onChange={(e) => setGenNotes(e.target.value)}
+                    placeholder="Notes about this relationship..."
+                  />
+                </div>
               </div>
             )}
 
@@ -261,9 +431,11 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                     value={parentRole}
                     onChange={(e) => setParentRole(e.target.value)}
                   >
-                    <option value="father">Father</option>
-                    <option value="mother">Mother</option>
-                    <option value="parent">Parent</option>
+                    {PARENT_ROLES.map((r) => (
+                      <option key={r.value} value={r.value}>
+                        {r.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="form-group">
@@ -273,35 +445,105 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                     value={parentKind}
                     onChange={(e) => setParentKind(e.target.value)}
                   >
-                    <option value="biological">Biological</option>
-                    <option value="adopted">Adopted</option>
-                    <option value="step">Step</option>
-                    <option value="foster">Foster</option>
-                    <option value="guardian">Guardian</option>
-                    <option value="unspecified">Unspecified</option>
+                    {PARENT_KINDS.map((k) => (
+                      <option key={k.value} value={k.value}>
+                        {k.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
             )}
 
-            {/* EXPLICIT MARRIAGE FACT VIEW */}
+            {/* EXPLICIT MARRIAGE FACT EDIT */}
             {marriageFact && (
-              <div className="preview-direct">
-                <h4>Marriage Fact</h4>
-                <p>Status: {marriageFact.status} {marriageFact.year ? `(Year: ${marriageFact.year})` : ""}</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div className="form-group">
+                    <label>Status</label>
+                    <select
+                      className="form-select"
+                      value={marriageStatus}
+                      onChange={(e) => setMarriageStatus(e.target.value)}
+                    >
+                      {MARRIAGE_STATUSES.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Marriage Year (Optional)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      placeholder="e.g. 1998"
+                      value={marriageYear}
+                      onChange={(e) => setMarriageYear(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Children Status</label>
+                  <select
+                    className="form-select"
+                    value={marriageChildrenStatus}
+                    onChange={(e) => setMarriageChildrenStatus(e.target.value)}
+                  >
+                    {MARRIAGE_CHILDREN_STATUSES.map((cs) => (
+                      <option key={cs.value} value={cs.value}>
+                        {cs.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )}
 
-            {/* EXPLICIT SIBLING GROUP FACT VIEW */}
+            {/* EXPLICIT SIBLING GROUP FACT EDIT */}
             {siblingGroupFact && (
-              <div className="preview-direct">
-                <h4>Sibling Group Fact</h4>
-                <p>
-                  Group ID: {siblingGroupFact.id}{" "}
-                  {siblingGroupFact.type ? `(${siblingGroupFact.type})` : ""}
-                </p>
-                <div className="muted small">
-                  Explicit sibling record in database with {siblingGroupFact.members?.length || 0} members.
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div className="preview-direct" style={{ margin: 0 }}>
+                  <p style={{ margin: 0, fontWeight: 600 }}>
+                    Group ID: {siblingGroupFact.id}
+                  </p>
+                  <div className="muted small" style={{ marginTop: 4 }}>
+                    Members: {siblingGroupFact.members.map((m) => peopleMap[m] || m).join(", ")}
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "center" }}>
+                  <div className="form-group">
+                    <label>Sibling Group Type</label>
+                    <select
+                      className="form-select"
+                      value={siblingType}
+                      onChange={(e) => setSiblingType(e.target.value)}
+                    >
+                      {SIBLING_GROUP_TYPES.map((st) => (
+                        <option key={st.value} value={st.value}>
+                          {st.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 22 }}>
+                    <input
+                      type="checkbox"
+                      id="sibling-ordered-cb"
+                      checked={siblingOrdered}
+                      onChange={(e) => setSiblingOrdered(e.target.checked)}
+                    />
+                    <label htmlFor="sibling-ordered-cb" style={{ margin: 0, cursor: "pointer" }}>
+                      Ordered (birth-order sequence)
+                    </label>
+                  </div>
+                </div>
+
+                <div className="muted tiny" style={{ marginTop: 2 }}>
+                  Note: Group membership is immutable. To add or remove siblings from this group, remove this fact and record a new sibling group.
                 </div>
               </div>
             )}
@@ -309,7 +551,7 @@ export const EditRelationshipDialog: React.FC<Props> = ({
 
           <div className="modal-footer">
             {/* Delete button for explicit facts */}
-            {!entry.derived && (generalFact || parentChildFact || marriageFact) && (
+            {!entry.derived && (generalFact || parentChildFact || marriageFact || siblingGroupFact) && (
               <button
                 className="btn btn-danger"
                 style={{ marginRight: "auto" }}
@@ -326,6 +568,10 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                       person_a: marriageFact.spouse_a,
                       person_b: marriageFact.spouse_b,
                     });
+                  } else if (siblingGroupFact) {
+                    handleDeletePreview("delete_sibling_group", {
+                      group_id: siblingGroupFact.id,
+                    });
                   }
                 }}
                 disabled={loading}
@@ -340,13 +586,25 @@ export const EditRelationshipDialog: React.FC<Props> = ({
 
             {generalFact && (
               <button className="btn btn-primary" onClick={handleSaveGeneral} disabled={loading}>
-                {loading ? "Saving..." : "Save Notes"}
+                {loading ? "Saving..." : "Save Relationship Fact"}
               </button>
             )}
 
             {parentChildFact && (
               <button className="btn btn-primary" onClick={handleSaveParentChild} disabled={loading}>
                 {loading ? "Saving..." : "Save Parent Fact"}
+              </button>
+            )}
+
+            {marriageFact && (
+              <button className="btn btn-primary" onClick={handleSaveMarriage} disabled={loading}>
+                {loading ? "Saving..." : "Save Marriage Fact"}
+              </button>
+            )}
+
+            {siblingGroupFact && (
+              <button className="btn btn-primary" onClick={handleSaveSiblingGroup} disabled={loading}>
+                {loading ? "Saving..." : "Save Sibling Group Fact"}
               </button>
             )}
           </div>

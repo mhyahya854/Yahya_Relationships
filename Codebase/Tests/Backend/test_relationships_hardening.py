@@ -989,3 +989,455 @@ def test_temporary_copy_of_production_db_migration(tmp_path):
     finally:
         con.close()
         temp_copy.unlink(missing_ok=True)
+
+
+# ==============================================================================
+# 23. Stored Fact Editing Closure Tests
+# ==============================================================================
+
+def test_update_marriage_status(isolated):
+    """Update marriage status (married -> divorced) persists in DB."""
+    res = family.update_marriage("abrar_hussain", "shaheen_abrar", status="divorced")
+    assert res["status"] == "divorced"
+    con = db.get_connection()
+    try:
+        row = con.execute(
+            "SELECT status FROM marriages WHERE (spouse_a = 'abrar_hussain' AND spouse_b = 'shaheen_abrar') OR (spouse_a = 'shaheen_abrar' AND spouse_b = 'abrar_hussain')"
+        ).fetchone()
+        assert row["status"] == "divorced"
+    finally:
+        con.close()
+
+
+def test_update_marriage_year(isolated):
+    """Update marriage year persists in DB."""
+    res = family.update_marriage("abrar_hussain", "shaheen_abrar", year=1988)
+    assert res["year"] == 1988
+    con = db.get_connection()
+    try:
+        row = con.execute(
+            "SELECT year FROM marriages WHERE (spouse_a = 'abrar_hussain' AND spouse_b = 'shaheen_abrar') OR (spouse_a = 'shaheen_abrar' AND spouse_b = 'abrar_hussain')"
+        ).fetchone()
+        assert row["year"] == 1988
+    finally:
+        con.close()
+
+
+def test_update_marriage_children_status(isolated):
+    """Update marriage children_status persists in DB."""
+    p1 = people.create_person(name="Spouse A", gender="male")["id"]
+    p2 = people.create_person(name="Spouse B", gender="female")["id"]
+    family.add_marriage(person_a=p1, person_b=p2, status="married")
+    res = family.update_marriage(p1, p2, children_status="no_children")
+    assert res["children_status"] == "no_children"
+    con = db.get_connection()
+    try:
+        row = con.execute(
+            "SELECT children_status FROM marriages WHERE (spouse_a = ? AND spouse_b = ?) OR (spouse_a = ? AND spouse_b = ?)",
+            (p1, p2, p2, p1),
+        ).fetchone()
+        assert row["children_status"] == "no_children"
+    finally:
+        con.close()
+
+
+def test_update_marriage_invalid_rollback(isolated):
+    """Invalid marriage update raises ValidationError and leaves DB unchanged."""
+    con = db.get_connection()
+    try:
+        before = dict(con.execute(
+            "SELECT * FROM marriages WHERE (spouse_a = 'abrar_hussain' AND spouse_b = 'shaheen_abrar') OR (spouse_a = 'shaheen_abrar' AND spouse_b = 'abrar_hussain')"
+        ).fetchone())
+    finally:
+        con.close()
+
+    with pytest.raises(errors.ValidationError):
+        family.update_marriage("abrar_hussain", "shaheen_abrar", status="invalid_status_xyz")
+
+    con = db.get_connection()
+    try:
+        after = dict(con.execute(
+            "SELECT * FROM marriages WHERE (spouse_a = 'abrar_hussain' AND spouse_b = 'shaheen_abrar') OR (spouse_a = 'shaheen_abrar' AND spouse_b = 'abrar_hussain')"
+        ).fetchone())
+        assert before == after
+    finally:
+        con.close()
+
+
+def test_update_marriage_undo_restores(isolated):
+    """Undo restores original marriage fact attributes."""
+    con = db.get_connection()
+    try:
+        orig = dict(con.execute(
+            "SELECT * FROM marriages WHERE (spouse_a = 'abrar_hussain' AND spouse_b = 'shaheen_abrar') OR (spouse_a = 'shaheen_abrar' AND spouse_b = 'abrar_hussain')"
+        ).fetchone())
+    finally:
+        con.close()
+
+    family.update_marriage("abrar_hussain", "shaheen_abrar", status="widowed", year=1995, children_status="unknown")
+    history.undo_last_mutation()
+
+    con = db.get_connection()
+    try:
+        restored = dict(con.execute(
+            "SELECT * FROM marriages WHERE (spouse_a = 'abrar_hussain' AND spouse_b = 'shaheen_abrar') OR (spouse_a = 'shaheen_abrar' AND spouse_b = 'abrar_hussain')"
+        ).fetchone())
+        assert restored["status"] == orig["status"]
+        assert restored["year"] == orig["year"]
+        assert restored["children_status"] == orig["children_status"]
+    finally:
+        con.close()
+
+
+def test_explicit_sibling_group_delete(isolated):
+    """Explicit sibling group delete removes group and member records."""
+    facts = family.family_facts()
+    assert len(facts["sibling_groups"]) > 0
+    group = facts["sibling_groups"][0]
+    group_id = group["id"]
+
+    res = family.delete_sibling_group(group_id)
+    assert res["ok"] is True
+
+    con = db.get_connection()
+    try:
+        assert con.execute("SELECT 1 FROM sibling_groups WHERE id = ?", (group_id,)).fetchone() is None
+        assert con.execute("SELECT 1 FROM sibling_group_members WHERE group_id = ?", (group_id,)).fetchone() is None
+    finally:
+        con.close()
+
+
+def test_explicit_sibling_group_delete_preview(isolated):
+    """Sibling group deletion preview calculates consequences without mutating DB."""
+    facts = family.family_facts()
+    group_id = facts["sibling_groups"][0]["id"]
+
+    con_before = db.get_connection()
+    try:
+        count_before = con_before.execute("SELECT COUNT(*) FROM sibling_groups").fetchone()[0]
+    finally:
+        con_before.close()
+
+    res = preview.preview_mutation("delete_sibling_group", {"group_id": group_id})
+    assert len(res["direct_changes"]) > 0
+    assert any(group_id in dc for dc in res["direct_changes"])
+
+    con_after = db.get_connection()
+    try:
+        count_after = con_after.execute("SELECT COUNT(*) FROM sibling_groups").fetchone()[0]
+        assert count_before == count_after
+    finally:
+        con_after.close()
+
+
+def test_explicit_sibling_group_delete_undo(isolated):
+    """Undo restores exact sibling group record and member rows."""
+    facts = family.family_facts()
+    group = facts["sibling_groups"][0]
+    group_id = group["id"]
+
+    con = db.get_connection()
+    try:
+        orig_group = dict(con.execute("SELECT * FROM sibling_groups WHERE id = ?", (group_id,)).fetchone())
+        orig_members = [dict(r) for r in con.execute("SELECT * FROM sibling_group_members WHERE group_id = ? ORDER BY person_id", (group_id,)).fetchall()]
+    finally:
+        con.close()
+
+    family.delete_sibling_group(group_id)
+    history.undo_last_mutation()
+
+    con = db.get_connection()
+    try:
+        restored_group = dict(con.execute("SELECT * FROM sibling_groups WHERE id = ?", (group_id,)).fetchone())
+        restored_members = [dict(r) for r in con.execute("SELECT * FROM sibling_group_members WHERE group_id = ? ORDER BY person_id", (group_id,)).fetchall()]
+        assert restored_group == orig_group
+        assert restored_members == orig_members
+    finally:
+        con.close()
+
+
+def test_update_sibling_group_type(isolated):
+    """Update sibling group type persists and updates correctly."""
+    p1 = people.create_person(name="Sib Person 1", gender="male")["id"]
+    p2 = people.create_person(name="Sib Person 2", gender="female")["id"]
+    added = family.add_sibling_group(member_ids=[p1, p2], type_=None, ordered=False)
+    gid = added["id"]
+
+    updated = family.update_sibling_group(gid, type_="full")
+    assert updated["type"] == "full"
+
+    con = db.get_connection()
+    try:
+        row = con.execute("SELECT type FROM sibling_groups WHERE id = ?", (gid,)).fetchone()
+        assert row["type"] == "full"
+    finally:
+        con.close()
+
+    updated2 = family.update_sibling_group(gid, type_=None)
+    assert updated2["type"] is None
+
+
+def test_update_sibling_group_ordered(isolated):
+    """Update sibling group ordered flag assigns or clears member order."""
+    p1 = people.create_person(name="Sib Order 1", gender="male")["id"]
+    p2 = people.create_person(name="Sib Order 2", gender="female")["id"]
+    added = family.add_sibling_group(member_ids=[p1, p2], type_=None, ordered=False)
+    gid = added["id"]
+
+    family.update_sibling_group(gid, ordered=True)
+    con = db.get_connection()
+    try:
+        g_row = con.execute("SELECT is_ordered FROM sibling_groups WHERE id = ?", (gid,)).fetchone()
+        assert g_row["is_ordered"] == 1
+        m_rows = con.execute("SELECT member_order FROM sibling_group_members WHERE group_id = ?", (gid,)).fetchall()
+        assert all(r["member_order"] is not None and r["member_order"] >= 1 for r in m_rows)
+    finally:
+        con.close()
+
+    family.update_sibling_group(gid, ordered=False)
+    con = db.get_connection()
+    try:
+        g_row = con.execute("SELECT is_ordered FROM sibling_groups WHERE id = ?", (gid,)).fetchone()
+        assert g_row["is_ordered"] == 0
+        m_rows = con.execute("SELECT member_order FROM sibling_group_members WHERE group_id = ?", (gid,)).fetchall()
+        assert all(r["member_order"] is None for r in m_rows)
+    finally:
+        con.close()
+
+
+def test_update_sibling_group_invalid_rollback(isolated):
+    """Invalid sibling group update raises ValidationError and rolls back."""
+    p1 = people.create_person(name="Sib Tri 1", gender="male")["id"]
+    p2 = people.create_person(name="Sib Tri 2", gender="male")["id"]
+    p3 = people.create_person(name="Sib Tri 3", gender="male")["id"]
+    added = family.add_sibling_group(member_ids=[p1, p2, p3], type_=None, ordered=False)
+    gid = added["id"]
+
+    with pytest.raises(errors.ValidationError):
+        family.update_sibling_group(gid, type_="full")
+
+    con = db.get_connection()
+    try:
+        row = con.execute("SELECT type FROM sibling_groups WHERE id = ?", (gid,)).fetchone()
+        assert row["type"] is None
+    finally:
+        con.close()
+
+
+def test_update_sibling_group_failed_no_phantom_undo(isolated):
+    """Failed sibling update does not leave an extra undo snapshot."""
+    p1 = people.create_person(name="Sib Stack 1", gender="male")["id"]
+    p2 = people.create_person(name="Sib Stack 2", gender="male")["id"]
+    p3 = people.create_person(name="Sib Stack 3", gender="male")["id"]
+    added = family.add_sibling_group(member_ids=[p1, p2, p3], type_=None)
+    gid = added["id"]
+
+    depth_after_add = len(history._MUTATION_STACK)
+    with pytest.raises(errors.ValidationError):
+        family.update_sibling_group(gid, type_="full")
+
+    assert len(history._MUTATION_STACK) == depth_after_add
+
+
+def test_edit_general_type(isolated):
+    """Editing general relationship type updates DB."""
+    p1 = people.create_person(name="Gen Person 1", gender="male")["id"]
+    p2 = people.create_person(name="Gen Person 2", gender="female")["id"]
+    rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
+    rid = rel["id"]
+
+    updated = general.update_general_relationship(rid, type="colleague")
+    assert updated["type"] == "colleague"
+    con = db.get_connection()
+    try:
+        row = con.execute("SELECT type FROM general_relationships WHERE id = ?", (rid,)).fetchone()
+        assert row["type"] == "colleague"
+    finally:
+        con.close()
+
+
+def test_edit_general_labels(isolated):
+    """Editing general relationship labels updates DB."""
+    p1 = people.create_person(name="Gen Lab 1", gender="male")["id"]
+    p2 = people.create_person(name="Gen Lab 2", gender="female")["id"]
+    rel = general.add_general_relationship(person_a=p1, person_b=p2, type="mentor", directionality="directional", label_a_to_b="Mentor", label_b_to_a="Mentee")
+    rid = rel["id"]
+
+    updated = general.update_general_relationship(rid, label_a_to_b="Senior Advisor", label_b_to_a="Junior Fellow")
+    assert updated["label_a_to_b"] == "Senior Advisor"
+    assert updated["label_b_to_a"] == "Junior Fellow"
+
+
+def test_edit_general_notes(isolated):
+    """Editing general relationship notes updates DB."""
+    p1 = people.create_person(name="Gen Notes 1", gender="male")["id"]
+    p2 = people.create_person(name="Gen Notes 2", gender="female")["id"]
+    rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend", notes="Initial note")
+    rid = rel["id"]
+
+    updated = general.update_general_relationship(rid, notes="Updated note content")
+    assert updated["notes"] == "Updated note content"
+
+
+def test_edit_general_directionality(isolated):
+    """Switching general relationship between symmetric and directional works cleanly."""
+    p1 = people.create_person(name="Gen Dir 1", gender="male")["id"]
+    p2 = people.create_person(name="Gen Dir 2", gender="female")["id"]
+    rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend", directionality="symmetric")
+    rid = rel["id"]
+
+    # Switch to directional
+    updated = general.update_general_relationship(rid, directionality="directional", direction_from=p1, label_a_to_b="Guide", label_b_to_a="Learner")
+    assert updated["directionality"] == "directional"
+    assert updated["direction_from"] == p1
+
+    # Switch back to symmetric
+    updated2 = general.update_general_relationship(rid, directionality="symmetric")
+    assert updated2["directionality"] == "symmetric"
+    assert updated2["direction_from"] is None
+
+
+def test_edit_general_custom_labels(isolated):
+    """Editing custom relationship labels works cleanly."""
+    p1 = people.create_person(name="Gen Cust 1", gender="male")["id"]
+    p2 = people.create_person(name="Gen Cust 2", gender="female")["id"]
+    rel = general.add_general_relationship(person_a=p1, person_b=p2, type="custom", label_a_to_b="Research Lead", label_b_to_a="Analyst")
+    rid = rel["id"]
+
+    updated = general.update_general_relationship(rid, label_a_to_b="Principal Investigator", label_b_to_a="Co-Investigator")
+    assert updated["label_a_to_b"] == "Principal Investigator"
+    assert updated["label_b_to_a"] == "Co-Investigator"
+
+
+def test_edit_general_duplicate_rejected(isolated):
+    """Attempting an edit that would collide with another existing general relationship is rejected."""
+    p1 = people.create_person(name="Gen Dup 1", gender="male")["id"]
+    p2 = people.create_person(name="Gen Dup 2", gender="female")["id"]
+    rel1 = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
+    rel2 = general.add_general_relationship(person_a=p1, person_b=p2, type="colleague")
+
+    with pytest.raises(errors.ValidationError) as exc_info:
+        general.update_general_relationship(rel2["id"], type="friend")
+
+    assert "duplicate" in str(exc_info.value).lower() or exc_info.value.code == "DUPLICATE_FACT"
+
+
+def test_edit_general_failed_preserves_old_row(isolated):
+    """A failed general relationship edit leaves the existing DB row completely intact."""
+    p1 = people.create_person(name="Gen Fail 1", gender="male")["id"]
+    p2 = people.create_person(name="Gen Fail 2", gender="female")["id"]
+    rel1 = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
+    rel2 = general.add_general_relationship(person_a=p1, person_b=p2, type="colleague")
+    con = db.get_connection()
+    try:
+        before = dict(con.execute("SELECT * FROM general_relationships WHERE id = ?", (rel2["id"],)).fetchone())
+    finally:
+        con.close()
+
+    with pytest.raises(errors.ValidationError):
+        general.update_general_relationship(rel2["id"], type="friend")
+
+    con = db.get_connection()
+    try:
+        after = dict(con.execute("SELECT * FROM general_relationships WHERE id = ?", (rel2["id"],)).fetchone())
+        assert before == after
+    finally:
+        con.close()
+
+
+def test_edit_general_undo_restores_exact_fact(isolated):
+    """Undo restores exact general relationship before edit."""
+    p1 = people.create_person(name="Gen Undo 1", gender="male")["id"]
+    p2 = people.create_person(name="Gen Undo 2", gender="female")["id"]
+    rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend", notes="First note")
+    rid = rel["id"]
+
+    general.update_general_relationship(rid, type="mentor", notes="Second note")
+    history.undo_last_mutation()
+
+    con = db.get_connection()
+    try:
+        row = dict(con.execute("SELECT * FROM general_relationships WHERE id = ?", (rid,)).fetchone())
+        assert row["type"] == "friend"
+        assert row["notes"] == "First note"
+    finally:
+        con.close()
+
+
+def test_edit_general_id_remains_stable(isolated):
+    """General relationship ID remains identical across edits."""
+    p1 = people.create_person(name="Gen Stable 1", gender="male")["id"]
+    p2 = people.create_person(name="Gen Stable 2", gender="female")["id"]
+    rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
+    rid = rel["id"]
+
+    updated = general.update_general_relationship(rid, type="colleague", notes="New notes")
+    assert updated["id"] == rid
+
+
+def test_edit_general_stored_fact_id_stable(isolated):
+    """The stored_fact_id and general_relationship_id in relationship view remain stable across edits."""
+    p1 = people.create_person(name="Gen Sem 1", gender="male")["id"]
+    p2 = people.create_person(name="Gen Sem 2", gender="female")["id"]
+    rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
+    rid = rel["id"]
+
+    rel_view_before = relationship.get_relationship(p1, p2)
+    entries_before = rel_view_before["primary"] + rel_view_before["additional"]
+    gen_entry_before = next(e for e in entries_before if e["domain"] == "general")
+    assert gen_entry_before["general_relationship_id"] == rid
+    assert gen_entry_before["stored_fact_id"] == f"general_relationship:{rid}"
+
+    general.update_general_relationship(rid, type="colleague")
+
+    rel_view_after = relationship.get_relationship(p1, p2)
+    entries_after = rel_view_after["primary"] + rel_view_after["additional"]
+    gen_entry_after = next(e for e in entries_after if e["domain"] == "general")
+    assert gen_entry_after["general_relationship_id"] == rid
+    assert gen_entry_after["stored_fact_id"] == f"general_relationship:{rid}"
+
+
+def test_parent_kind_unknown_accepted(isolated):
+    """Parent-child kind='unknown' is valid, stored, editable, and derived=False."""
+    p1 = people.create_person(name="Parent Unk", gender="male")["id"]
+    c1 = people.create_person(name="Child Unk", gender="male")["id"]
+    res = family.add_parent_child(parent_id=p1, child_id=c1, role="parent", kind="unknown")
+    assert res["kind"] == "unknown"
+
+    con = db.get_connection()
+    try:
+        row = con.execute("SELECT kind FROM parent_child WHERE parent_id = ? AND child_id = ?", (p1, c1)).fetchone()
+        assert row["kind"] == "unknown"
+    finally:
+        con.close()
+
+    updated = family.update_parent_child(p1, c1, role="father", kind="unknown")
+    assert updated["kind"] == "unknown"
+
+    rel = relationship.get_relationship(p1, c1)
+    entries = rel["primary"] + rel["additional"]
+    pc_entry = next(e for e in entries if e["domain"] == "family")
+    assert pc_entry["derived"] is False
+
+
+def test_parent_kind_unspecified_accepted(isolated):
+    """Parent-child kind='unspecified' is valid, stored, editable, and derived=False."""
+    p1 = people.create_person(name="Parent Unspec", gender="female")["id"]
+    c1 = people.create_person(name="Child Unspec", gender="female")["id"]
+    res = family.add_parent_child(parent_id=p1, child_id=c1, role="parent", kind="unspecified")
+    assert res["kind"] == "unspecified"
+
+    con = db.get_connection()
+    try:
+        row = con.execute("SELECT kind FROM parent_child WHERE parent_id = ? AND child_id = ?", (p1, c1)).fetchone()
+        assert row["kind"] == "unspecified"
+    finally:
+        con.close()
+
+    updated = family.update_parent_child(p1, c1, role="mother", kind="unspecified")
+    assert updated["kind"] == "unspecified"
+
+    rel = relationship.get_relationship(p1, c1)
+    entries = rel["primary"] + rel["additional"]
+    pc_entry = next(e for e in entries if e["domain"] == "family")
+    assert pc_entry["derived"] is False

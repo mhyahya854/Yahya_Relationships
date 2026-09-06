@@ -14,7 +14,7 @@ from pathlib import Path
 from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .. import config, db
 from ..hermes import tools as hermes_tools
@@ -446,6 +446,8 @@ def api_delete_general(relationship_id: int) -> dict:
 
 class GeneralRelationshipUpdate(BaseModel):
     type: str | None = None
+    directionality: str | None = None
+    direction_from: str | None = None
     label_a_to_b: str | None = None
     label_b_to_a: str | None = None
     notes: str | None = None
@@ -458,6 +460,8 @@ def api_update_general(relationship_id: int, payload: GeneralRelationshipUpdate)
         "relationship": general.update_general_relationship(
             relationship_id,
             type=payload.type,
+            directionality=payload.directionality,
+            direction_from=payload.direction_from,
             label_a_to_b=payload.label_a_to_b,
             label_b_to_a=payload.label_b_to_a,
             notes=payload.notes,
@@ -595,6 +599,25 @@ def api_create_sibling_group(payload: SiblingGroupCreate) -> dict:
 @app.delete("/api/family/sibling-group/{group_id}")
 def api_delete_sibling_group(group_id: str) -> dict:
     return {"ok": True, **family.delete_sibling_group(group_id)}
+
+
+class SiblingGroupUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    type_: str | None = Field(default=None, alias="type")
+    ordered: bool | None = None
+
+
+@app.patch("/api/family/sibling-group/{group_id}")
+def api_update_sibling_group(group_id: str, payload: SiblingGroupUpdate) -> dict:
+    return {
+        "ok": True,
+        **family.update_sibling_group(
+            group_id,
+            type_=payload.type_,
+            ordered=payload.ordered,
+        ),
+    }
 
 
 @app.get("/api/family/facts")

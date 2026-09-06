@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../../../api";
 import type { MutationPreviewResult, Person } from "../../../types";
 import { MutationPreviewDialog } from "../../mutations/components/MutationPreviewDialog";
+import { GENERAL_TYPES, MARRIAGE_STATUSES, PARENT_KINDS, PARENT_ROLES } from "../constants";
 
 interface Props {
   sourcePerson: Person;
@@ -292,9 +293,11 @@ export const AddRelationshipDialog: React.FC<Props> = ({
                           value={parentRole}
                           onChange={(e) => setParentRole(e.target.value)}
                         >
-                          <option value="father">Father</option>
-                          <option value="mother">Mother</option>
-                          <option value="parent">Parent (Unspecified gender)</option>
+                          {PARENT_ROLES.map((r) => (
+                            <option key={r.value} value={r.value}>
+                              {r.label}
+                            </option>
+                          ))}
                         </select>
                       </div>
                       <div className="form-group">
@@ -304,12 +307,11 @@ export const AddRelationshipDialog: React.FC<Props> = ({
                           value={parentKind}
                           onChange={(e) => setParentKind(e.target.value)}
                         >
-                          <option value="biological">Biological</option>
-                          <option value="adopted">Adopted</option>
-                          <option value="step">Step</option>
-                          <option value="foster">Foster</option>
-                          <option value="guardian">Guardian</option>
-                          <option value="unspecified">Unspecified</option>
+                          {PARENT_KINDS.map((k) => (
+                            <option key={k.value} value={k.value}>
+                              {k.label}
+                            </option>
+                          ))}
                         </select>
                       </div>
                     </div>
@@ -325,9 +327,11 @@ export const AddRelationshipDialog: React.FC<Props> = ({
                         value={marriageStatus}
                         onChange={(e) => setMarriageStatus(e.target.value)}
                       >
-                        <option value="married">Married</option>
-                        <option value="divorced">Divorced</option>
-                        <option value="widowed">Widowed</option>
+                        {MARRIAGE_STATUSES.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {s.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div className="form-group">
@@ -355,16 +359,11 @@ export const AddRelationshipDialog: React.FC<Props> = ({
                     value={genType}
                     onChange={(e) => setGenType(e.target.value)}
                   >
-                    <option value="close_friend">Close Friend</option>
-                    <option value="friend">Friend</option>
-                    <option value="childhood_friend">Childhood Friend</option>
-                    <option value="best_friend">Best Friend</option>
-                    <option value="colleague">Colleague</option>
-                    <option value="former_colleague">Former Colleague</option>
-                    <option value="neighbour">Neighbour</option>
-                    <option value="acquaintance">Acquaintance</option>
-                    <option value="mentor">Mentor / Mentee</option>
-                    <option value="custom">Custom Labels</option>
+                    {GENERAL_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

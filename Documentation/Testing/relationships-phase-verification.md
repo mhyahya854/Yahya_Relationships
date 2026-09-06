@@ -283,3 +283,56 @@ A surgical hardening pass closed four correctness gaps discovered during post-im
 - **Relationships UI E2E**: 30/30 checks passed.
 - **Smoke Suite**: All checks passed.
 - **Typecheck & Frontend Build**: Clean pass.
+
+---
+
+## 23. Stored Fact Editing Closure
+
+This final micro-closure completes stored-fact editing and UI enum completeness across the Relationships UI without reopening kinship semantics or altering schema versions.
+
+### 1. Marriage Editing Completed
+- **Form Fields**: Exposed canonical editable fields: `status` (`married`, `divorced`, `widowed`, `unknown`), `year` (optional integer), and `children_status` (`unspecified`, `no_children`, `unknown`).
+- **Save Behavior**: Wired to existing `api.family.updateMarriage()`. Validates model invariants and updates structured storage with atomic pre-mutation snapshot.
+- **Removal & Preview**: "Remove Fact" triggers dry-run consequence preview via `POST /api/mutations/preview` (`delete_marriage`). Confirming invokes `api.family.deleteMarriage()`.
+- **Undo Restoration**: Both editing and deleting marriage facts create atomic snapshots on the mutation stack; clicking "Undo" restores the exact prior state.
+
+### 2. Explicit Sibling Group Remove & Edit
+- **Fact Recognition**: Explicit sibling groups are recognized via `sibling_groups` in family facts (`stored_fact_kind === 'sibling_group'`) and display the `Stored Explicit Fact` badge.
+- **Remove Fact**: Enabled "Remove Fact" button calling `api.mutations.preview("delete_sibling_group", { group_id })`. Confirming triggers `api.family.deleteSiblingGroup(groupId)`. Single-step Undo restores the exact sibling group and its member associations.
+- **Metadata Editing**: Added minimal safe update backend operation:
+  - Service: `services/family.py::update_sibling_group(group_id, *, type_, ordered)` with `_UNSET` sentinel for clean type clearing.
+  - Route: `PATCH /api/family/sibling-group/{group_id}` accepting `SiblingGroupUpdate(type, ordered)`.
+  - Frontend: Sibling Type dropdown and Ordered checkbox.
+  - Immutability Design: Sibling group membership remains intentionally immutable in the dialog to protect identity semantics; changing members requires delete + re-add.
+- **Mutation Preview**: Extended preview engine in `domain/mutations/preview.py` to support `update_sibling_group` consequences.
+
+### 3. General Relationship Full-Edit Behavior
+- **Comprehensive Fact Form**: Extended `EditRelationshipDialog` beyond notes to expose canonical fact fields: `type` (canonical types), `directionality` (`symmetric` | `directional`), `direction_from` (when directional), `label_a_to_b`, `label_b_to_a`, and `notes`.
+- **Backend Service & Route**:
+  - Enhanced `services/general.py::update_general_relationship` and `PATCH /api/relationships/general/{id}` to support editing type, directionality, direction_from, labels, and notes.
+  - Directional transitions cleanly enforce `direction_from` constraints; symmetric transitions normalize `direction_from` to `None`.
+  - Custom label edits respect schema v2 unique index constraints; duplicate collisions raise clean 409 `ValidationError` without raw SQLite errors.
+- **Identity & Undo Stability**: `general_relationship_id` and `stored_fact_id` (`general_relationship:{id}`) remain invariant across edits; Undo restores the exact previous row.
+
+### 4. Canonical Enum Consistency
+- Extracted small shared constants module (`features/relationships/constants.ts`):
+  - `PARENT_KINDS`: 7 canonical kinds (`biological`, `unspecified`, `adopted`, `foster`, `guardian`, `step`, `unknown`).
+  - `PARENT_ROLES`: `parent`, `mother`, `father`, `unknown`.
+  - `MARRIAGE_STATUSES`: `married`, `divorced`, `widowed`, `unknown`.
+  - `MARRIAGE_CHILDREN_STATUSES`: `unspecified`, `no_children`, `unknown`.
+  - `SIBLING_GROUP_TYPES`: `unspecified`, `full`, `maternal`, `paternal`.
+  - `GENERAL_TYPES`: canonical non-family relationship types.
+- Unified `AddRelationshipDialog.tsx` and `EditRelationshipDialog.tsx` to reference the shared enums, preventing option drift.
+
+### 5. Stored vs. Derived UX Integrity
+- **Stored Explicit Facts**: Direct parent-child, direct marriage, explicit sibling group, and general relationships display the `Stored Explicit Fact` badge with appropriate edit forms and consequence-previewed `Remove Fact` actions.
+- **Derived Kinship Terms**: Inferred siblings, cousins, grandparents, aunts, uncles, and collateral relatives display `Derived Kinship Term` (`badge-derived`) with underlying lineage evidence paths and strictly NO `Remove Fact` or editing buttons.
+
+### 6. Verification & Test Coverage
+- **Backend Tests**: Added 24 comprehensive test cases in `Tests/Backend/test_relationships_hardening.py` covering marriage status/year/children_status updates, rollback atomicity, undo restoration, sibling group delete/update/rollback/undo, general relationship type/directionality/label/notes updates, custom label collision rejection, and parent kind `unknown`/`unspecified` acceptance.
+- **Pytest Suite**: All 215 backend tests passed (0 failures).
+- **UI Acceptance E2E**: Expanded `Codebase/Tests/UI/relationships_e2e.mjs` to 34 comprehensive criteria; all 34 passed against an isolated test sandbox.
+- **Production Data Integrity**:
+  - `Database/Main/family.db` SHA-256: `3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E` (verified unmodified).
+  - All 35 canonical `journal.md` files verified byte-identical.
+  - `git status Database/`: 100% clean.

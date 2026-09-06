@@ -171,6 +171,8 @@ def update_general_relationship(
     relationship_id: int,
     *,
     type: str | None = None,
+    directionality: str | None = None,
+    direction_from: str | None = None,
     label_a_to_b: str | None = None,
     label_b_to_a: str | None = None,
     notes: str | None = None,
@@ -186,36 +188,94 @@ def update_general_relationship(
             raise errors.NotFoundError(
                 f"Unknown general relationship id: {relationship_id}"
             )
-        fields = []
-        params: list = []
-        if type is not None:
-            if not str(type).strip():
-                raise errors.ValidationError("A relationship type is required.")
-            fields.append("type = ?")
-            params.append(str(type).strip())
-        if label_a_to_b is not None:
-            fields.append("label_a_to_b = ?")
-            params.append(label_a_to_b)
-        if label_b_to_a is not None:
-            fields.append("label_b_to_a = ?")
-            params.append(label_b_to_a)
-        if notes is not None:
-            fields.append("notes = ?")
-            params.append(notes)
-        if fields:
-            connection.execute("BEGIN")
-            fields.append("updated_at = ?")
-            params.append(db.utc_now())
-            params.append(relationship_id)
-            connection.execute(
-                f"UPDATE general_relationships SET {', '.join(fields)} WHERE id = ?",
-                params,
+
+        person_a = row["person_a"]
+        person_b = row["person_b"]
+
+        new_type = str(type).strip() if type is not None else row["type"]
+        if not new_type:
+            raise errors.ValidationError("A relationship type is required.")
+
+        new_directionality = str(directionality).strip() if directionality is not None else row["directionality"]
+        if new_directionality not in ("symmetric", "directional"):
+            raise errors.ValidationError(f"Invalid directionality: {new_directionality!r}.")
+
+        if new_directionality == "symmetric":
+            new_direction_from = None
+        else:
+            if direction_from is not None:
+                new_direction_from = direction_from
+            else:
+                new_direction_from = row["direction_from"] or person_a
+            if new_direction_from not in (person_a, person_b):
+                raise errors.ValidationError(
+                    f"direction_from must be either {person_a} or {person_b}."
+                )
+
+        new_label_a_to_b = label_a_to_b if label_a_to_b is not None else row["label_a_to_b"]
+        new_label_b_to_a = label_b_to_a if label_b_to_a is not None else row["label_b_to_a"]
+        new_notes = notes if notes is not None else row["notes"]
+
+        # Duplicate collision check against other records (id != relationship_id)
+        if new_type == "custom":
+            existing = connection.execute(
+                """
+                SELECT id FROM general_relationships
+                WHERE id != ? AND person_a = ? AND person_b = ? AND type = 'custom' AND directionality = ?
+                AND ((direction_from IS NULL AND ? IS NULL) OR direction_from = ?)
+                AND COALESCE(label_a_to_b, '') = COALESCE(?, '')
+                AND COALESCE(label_b_to_a, '') = COALESCE(?, '')
+                """,
+                (relationship_id, person_a, person_b, new_directionality, new_direction_from, new_direction_from, new_label_a_to_b, new_label_b_to_a),
+            ).fetchone()
+        else:
+            existing = connection.execute(
+                """
+                SELECT id FROM general_relationships
+                WHERE id != ? AND person_a = ? AND person_b = ? AND type = ? AND directionality = ?
+                AND ((direction_from IS NULL AND ? IS NULL) OR direction_from = ?)
+                """,
+                (relationship_id, person_a, person_b, new_type, new_directionality, new_direction_from, new_direction_from),
+            ).fetchone()
+
+        if existing:
+            raise errors.ValidationError(
+                "That exact general relationship already exists between those people.",
+                code="DUPLICATE_FACT",
             )
-            connection.commit()
-        row = connection.execute(
+
+        connection.execute("BEGIN")
+        now = db.utc_now()
+        connection.execute(
+            """
+            UPDATE general_relationships
+            SET type = ?, directionality = ?, direction_from = ?,
+                label_a_to_b = ?, label_b_to_a = ?, notes = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                new_type,
+                new_directionality,
+                new_direction_from,
+                new_label_a_to_b,
+                new_label_b_to_a,
+                new_notes,
+                now,
+                relationship_id,
+            ),
+        )
+        connection.commit()
+        updated_row = connection.execute(
             "SELECT * FROM general_relationships WHERE id = ?", (relationship_id,)
         ).fetchone()
-        return dict(row)
+        return dict(updated_row)
+    except sqlite3.IntegrityError as exc:
+        connection.rollback()
+        pop_latest_snapshot()
+        raise errors.ValidationError(
+            "That relationship conflicts with existing constraints.",
+            code="FACT_CONSTRAINT",
+        ) from exc
     except Exception:
         connection.rollback()
         pop_latest_snapshot()
