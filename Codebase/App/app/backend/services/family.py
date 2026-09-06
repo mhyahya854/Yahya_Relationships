@@ -313,21 +313,46 @@ def delete_marriage(person_a: str, person_b: str) -> dict:
         connection.close()
 
 
+class _UnsetType:
+    def __repr__(self) -> str:
+        return "<UNSET>"
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _UnsetType) or type(other).__name__ == "_UnsetType"
+
+
+_UNSET = _UnsetType()
+
+
+def _is_unset(val: object) -> bool:
+    return isinstance(val, _UnsetType) or type(val).__name__ == "_UnsetType"
+
+
 def update_marriage(
     person_a: str,
     person_b: str,
     *,
-    status: str | None = None,
-    year: int | None = None,
-    children_status: str | None = None,
+    status: str | None | object = _UNSET,
+    year: int | None | object = _UNSET,
+    children_status: str | None | object = _UNSET,
 ) -> dict:
     spouse_a, spouse_b = sorted((person_a, person_b))
-    if status is not None and status not in MARRIAGE_STATUSES:
-        raise errors.ValidationError(f"Unsupported marriage status: {status!r}.")
-    if children_status not in (None, *CHILD_STATUSES):
-        raise errors.ValidationError(f"Unsupported children status: {children_status!r}.")
-    if year is not None and not 1800 <= int(year) <= 2100:
-        raise errors.ValidationError("Marriage year must be between 1800 and 2100.")
+    if not _is_unset(status):
+        if status is None or status not in MARRIAGE_STATUSES:
+            raise errors.ValidationError(f"Unsupported marriage status: {status!r}.")
+    if not _is_unset(children_status) and children_status is not None:
+        if children_status not in CHILD_STATUSES:
+            raise errors.ValidationError(f"Unsupported children status: {children_status!r}.")
+    if not _is_unset(year) and year is not None:
+        try:
+            y = int(year)
+            if not 1800 <= y <= 2100:
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise errors.ValidationError("Marriage year must be between 1800 and 2100.")
 
     _check_write_allowed()
     record_pre_mutation_snapshot(f"Updated marriage: {spouse_a} & {spouse_b}")
@@ -340,9 +365,9 @@ def update_marriage(
         if not row:
             raise errors.NotFoundError("Marriage fact not found.")
 
-        new_status = status if status is not None else row["status"]
-        new_year = year if year is not None else row["year"]
-        new_children_status = children_status if children_status is not None else row["children_status"]
+        new_status = status if not _is_unset(status) else row["status"]
+        new_year = (int(year) if year is not None else None) if not _is_unset(year) else row["year"]
+        new_children_status = children_status if not _is_unset(children_status) else row["children_status"]
 
         _begin(connection)
         connection.execute(

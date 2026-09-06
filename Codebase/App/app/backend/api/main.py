@@ -455,16 +455,25 @@ class GeneralRelationshipUpdate(BaseModel):
 
 @app.patch("/api/relationships/general/{relationship_id}")
 def api_update_general(relationship_id: int, payload: GeneralRelationshipUpdate) -> dict:
+    kwargs = {}
+    if "type" in payload.model_fields_set:
+        kwargs["type"] = payload.type
+    if "directionality" in payload.model_fields_set:
+        kwargs["directionality"] = payload.directionality
+    if "direction_from" in payload.model_fields_set:
+        kwargs["direction_from"] = payload.direction_from
+    if "label_a_to_b" in payload.model_fields_set:
+        kwargs["label_a_to_b"] = payload.label_a_to_b
+    if "label_b_to_a" in payload.model_fields_set:
+        kwargs["label_b_to_a"] = payload.label_b_to_a
+    if "notes" in payload.model_fields_set:
+        kwargs["notes"] = payload.notes
+
     return {
         "ok": True,
         "relationship": general.update_general_relationship(
             relationship_id,
-            type=payload.type,
-            directionality=payload.directionality,
-            direction_from=payload.direction_from,
-            label_a_to_b=payload.label_a_to_b,
-            label_b_to_a=payload.label_b_to_a,
-            notes=payload.notes,
+            **kwargs,
         ),
     }
 
@@ -565,14 +574,20 @@ class MarriageUpdate(BaseModel):
 
 @app.patch("/api/family/marriage")
 def api_update_marriage(payload: MarriageUpdate) -> dict:
+    kwargs = {}
+    if "status" in payload.model_fields_set:
+        kwargs["status"] = payload.status
+    if "year" in payload.model_fields_set:
+        kwargs["year"] = payload.year
+    if "children_status" in payload.model_fields_set:
+        kwargs["children_status"] = payload.children_status
+
     return {
         "ok": True,
         **family.update_marriage(
             payload.person_a,
             payload.person_b,
-            status=payload.status,
-            year=payload.year,
-            children_status=payload.children_status,
+            **kwargs,
         ),
     }
 

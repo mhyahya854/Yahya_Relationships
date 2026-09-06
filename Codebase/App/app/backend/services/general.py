@@ -167,15 +167,33 @@ def add_general_relationship(
         connection.close()
 
 
+class _UnsetType:
+    def __repr__(self) -> str:
+        return "<UNSET>"
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _UnsetType) or type(other).__name__ == "_UnsetType"
+
+
+_UNSET = _UnsetType()
+
+
+def _is_unset(val: object) -> bool:
+    return isinstance(val, _UnsetType) or type(val).__name__ == "_UnsetType"
+
+
 def update_general_relationship(
     relationship_id: int,
     *,
-    type: str | None = None,
-    directionality: str | None = None,
-    direction_from: str | None = None,
-    label_a_to_b: str | None = None,
-    label_b_to_a: str | None = None,
-    notes: str | None = None,
+    type: str | None | object = _UNSET,
+    directionality: str | None | object = _UNSET,
+    direction_from: str | None | object = _UNSET,
+    label_a_to_b: str | None | object = _UNSET,
+    label_b_to_a: str | None | object = _UNSET,
+    notes: str | None | object = _UNSET,
 ) -> dict:
     _check_write_allowed()
     record_pre_mutation_snapshot(f"Updated general relationship ID #{relationship_id}")
@@ -192,18 +210,54 @@ def update_general_relationship(
         person_a = row["person_a"]
         person_b = row["person_b"]
 
-        new_type = str(type).strip() if type is not None else row["type"]
-        if not new_type:
-            raise errors.ValidationError("A relationship type is required.")
+        if not _is_unset(type):
+            if type is None or not str(type).strip():
+                raise errors.ValidationError("A relationship type is required.")
+            new_type = str(type).strip()
+        else:
+            new_type = row["type"]
 
-        new_directionality = str(directionality).strip() if directionality is not None else row["directionality"]
-        if new_directionality not in ("symmetric", "directional"):
-            raise errors.ValidationError(f"Invalid directionality: {new_directionality!r}.")
+        if not _is_unset(directionality):
+            new_directionality = str(directionality).strip() if directionality is not None else row["directionality"]
+            if new_directionality not in ("symmetric", "directional"):
+                raise errors.ValidationError(f"Invalid directionality: {new_directionality!r}.")
+        else:
+            new_directionality = row["directionality"]
 
         if new_directionality == "symmetric":
             new_direction_from = None
+            if new_type != "custom":
+                canonical = _default_label(new_type)
+                if row["directionality"] == "directional":
+                    mutual = label_a_to_b if not _is_unset(label_a_to_b) and label_a_to_b else (
+                        label_b_to_a if not _is_unset(label_b_to_a) and label_b_to_a else canonical
+                    )
+                    new_label_a_to_b = mutual
+                    new_label_b_to_a = mutual
+                else:
+                    new_label_a_to_b = label_a_to_b if not _is_unset(label_a_to_b) else (row["label_a_to_b"] or canonical)
+                    new_label_b_to_a = label_b_to_a if not _is_unset(label_b_to_a) else (row["label_b_to_a"] or canonical)
+            else:
+                if not _is_unset(label_a_to_b) and not _is_unset(label_b_to_a):
+                    new_label_a_to_b = label_a_to_b
+                    new_label_b_to_a = label_b_to_a
+                elif not _is_unset(label_a_to_b) and label_a_to_b:
+                    new_label_a_to_b = label_a_to_b
+                    new_label_b_to_a = label_a_to_b
+                elif not _is_unset(label_b_to_a) and label_b_to_a:
+                    new_label_a_to_b = label_b_to_a
+                    new_label_b_to_a = label_b_to_a
+                elif row["directionality"] == "directional":
+                    if row["label_a_to_b"] and row["label_a_to_b"] == row["label_b_to_a"]:
+                        new_label_a_to_b = row["label_a_to_b"]
+                        new_label_b_to_a = row["label_a_to_b"]
+                    else:
+                        raise errors.ValidationError("Custom symmetric relationships require a mutual label.")
+                else:
+                    new_label_a_to_b = row["label_a_to_b"]
+                    new_label_b_to_a = row["label_b_to_a"]
         else:
-            if direction_from is not None:
+            if not _is_unset(direction_from) and direction_from is not None:
                 new_direction_from = direction_from
             else:
                 new_direction_from = row["direction_from"] or person_a
@@ -212,9 +266,17 @@ def update_general_relationship(
                     f"direction_from must be either {person_a} or {person_b}."
                 )
 
-        new_label_a_to_b = label_a_to_b if label_a_to_b is not None else row["label_a_to_b"]
-        new_label_b_to_a = label_b_to_a if label_b_to_a is not None else row["label_b_to_a"]
-        new_notes = notes if notes is not None else row["notes"]
+            new_label_a_to_b = label_a_to_b if not _is_unset(label_a_to_b) else row["label_a_to_b"]
+            new_label_b_to_a = label_b_to_a if not _is_unset(label_b_to_a) else row["label_b_to_a"]
+            if not new_label_a_to_b or not new_label_b_to_a:
+                raise errors.ValidationError(
+                    "Directional relationships need both a_to_b and b_to_a labels."
+                )
+
+        if not _is_unset(notes):
+            new_notes = notes.strip() if isinstance(notes, str) and notes.strip() else None
+        else:
+            new_notes = row["notes"]
 
         # Duplicate collision check against other records (id != relationship_id)
         if new_type == "custom":

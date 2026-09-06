@@ -1441,3 +1441,560 @@ def test_parent_kind_unspecified_accepted(isolated):
     entries = rel["primary"] + rel["additional"]
     pc_entry = next(e for e in entries if e["domain"] == "family")
     assert pc_entry["derived"] is False
+
+
+# ==============================================================================
+# Micro-Closure: Directional Perspective Editing & Nullable Field Clearing
+# ==============================================================================
+
+def test_marriage_update_omitted_year_preserves_existing(client, isolated):
+    """Omitting year in marriage update preserves the existing stored year."""
+    p1 = people.create_person(name="Wife A", gender="female")["id"]
+    p2 = people.create_person(name="Husband A", gender="male")["id"]
+    family.add_marriage(person_a=p1, person_b=p2, status="married", year=1999)
+
+    # 1. Direct service call omitting year
+    res = family.update_marriage(p1, p2, status="widowed")
+    assert res["year"] == 1999
+
+    # 2. REST API PATCH omitting year
+    resp = client.patch("/api/family/marriage", json={
+        "person_a": p1,
+        "person_b": p2,
+        "status": "divorced",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["year"] == 1999
+
+    con = db.get_connection()
+    try:
+        row = con.execute("SELECT year, status FROM marriages WHERE (spouse_a = ? AND spouse_b = ?) OR (spouse_a = ? AND spouse_b = ?)", (p1, p2, p2, p1)).fetchone()
+        assert row["year"] == 1999
+        assert row["status"] == "divorced"
+    finally:
+        con.close()
+
+
+def test_marriage_explicit_null_year_clears_existing(client, isolated):
+    """Explicitly passing year=null in marriage update clears the year to SQL NULL."""
+    p1 = people.create_person(name="Wife B", gender="female")["id"]
+    p2 = people.create_person(name="Husband B", gender="male")["id"]
+    family.add_marriage(person_a=p1, person_b=p2, status="married", year=2005)
+
+    # REST API PATCH sending year: null
+    resp = client.patch("/api/family/marriage", json={
+        "person_a": p1,
+        "person_b": p2,
+        "year": None,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["year"] is None
+
+    con = db.get_connection()
+    try:
+        row = con.execute("SELECT year FROM marriages WHERE (spouse_a = ? AND spouse_b = ?) OR (spouse_a = ? AND spouse_b = ?)", (p1, p2, p2, p1)).fetchone()
+        assert row["year"] is None
+    finally:
+        con.close()
+
+    # Direct service call with year=None
+    family.update_marriage(p1, p2, year=2010)
+    res = family.update_marriage(p1, p2, year=None)
+    assert res["year"] is None
+
+
+def test_marriage_update_omitted_children_status_preserves_existing(client, isolated):
+    """Omitting children_status preserves existing stored value."""
+    p1 = people.create_person(name="Wife C", gender="female")["id"]
+    p2 = people.create_person(name="Husband C", gender="male")["id"]
+    family.add_marriage(person_a=p1, person_b=p2, status="married", children_status="no_children")
+
+    # REST API PATCH omitting children_status
+    resp = client.patch("/api/family/marriage", json={
+        "person_a": p1,
+        "person_b": p2,
+        "status": "divorced",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["children_status"] == "no_children"
+
+    # Direct service call omitting children_status
+    res = family.update_marriage(p1, p2, status="married")
+    assert res["children_status"] == "no_children"
+
+
+def test_marriage_explicit_null_children_status_clears_existing(client, isolated):
+    """Explicitly passing children_status=null clears children_status to SQL NULL."""
+    p1 = people.create_person(name="Wife D", gender="female")["id"]
+    p2 = people.create_person(name="Husband D", gender="male")["id"]
+    family.add_marriage(person_a=p1, person_b=p2, status="married", children_status="no_children")
+
+    # REST API PATCH sending children_status: null
+    resp = client.patch("/api/family/marriage", json={
+        "person_a": p1,
+        "person_b": p2,
+        "children_status": None,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["children_status"] is None
+
+    con = db.get_connection()
+    try:
+        row = con.execute("SELECT children_status FROM marriages WHERE (spouse_a = ? AND spouse_b = ?) OR (spouse_a = ? AND spouse_b = ?)", (p1, p2, p2, p1)).fetchone()
+        assert row["children_status"] is None
+    finally:
+        con.close()
+
+
+def test_marriage_clear_fields_undo_restores_exact_values(isolated):
+    """Undo restores exact cleared marriage year and children_status."""
+    p1 = people.create_person(name="Wife E", gender="female")["id"]
+    p2 = people.create_person(name="Husband E", gender="male")["id"]
+    family.add_marriage(person_a=p1, person_b=p2, status="married", year=1985, children_status="no_children")
+
+    # Clear both fields
+    family.update_marriage(p1, p2, year=None, children_status=None)
+    con = db.get_connection()
+    try:
+        cleared = con.execute("SELECT year, children_status FROM marriages WHERE (spouse_a = ? AND spouse_b = ?) OR (spouse_a = ? AND spouse_b = ?)", (p1, p2, p2, p1)).fetchone()
+        assert cleared["year"] is None
+        assert cleared["children_status"] is None
+    finally:
+        con.close()
+
+    # Undo
+    history.undo_last_mutation()
+
+    con = db.get_connection()
+    try:
+        restored = con.execute("SELECT year, children_status FROM marriages WHERE (spouse_a = ? AND spouse_b = ?) OR (spouse_a = ? AND spouse_b = ?)", (p1, p2, p2, p1)).fetchone()
+        assert restored["year"] == 1985
+        assert restored["children_status"] == "no_children"
+    finally:
+        con.close()
+
+
+def test_general_update_omitted_notes_preserves_existing(client, isolated):
+    """Omitting notes in general relationship update preserves existing notes."""
+    p1 = people.create_person(name="Friend A", gender="male")["id"]
+    p2 = people.create_person(name="Friend B", gender="female")["id"]
+    rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend", notes="Initial notes text")
+    rid = rel["id"]
+
+    # 1. Direct update omitting notes
+    res = general.update_general_relationship(rid, type="colleague")
+    assert res["notes"] == "Initial notes text"
+
+    # 2. REST API PATCH omitting notes
+    resp = client.patch(f"/api/relationships/general/{rid}", json={
+        "type": "close_friend",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["relationship"]["notes"] == "Initial notes text"
+
+
+def test_general_explicit_null_notes_clears_existing(client, isolated):
+    """Explicitly passing notes=null (or whitespace) clears stored notes to SQL NULL."""
+    p1 = people.create_person(name="Friend C", gender="male")["id"]
+    p2 = people.create_person(name="Friend D", gender="female")["id"]
+    rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend", notes="To be erased")
+    rid = rel["id"]
+
+    # REST API PATCH sending notes: null
+    resp = client.patch(f"/api/relationships/general/{rid}", json={
+        "notes": None,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["relationship"]["notes"] is None
+
+    con = db.get_connection()
+    try:
+        row = con.execute("SELECT notes FROM general_relationships WHERE id = ?", (rid,)).fetchone()
+        assert row["notes"] is None
+    finally:
+        con.close()
+
+
+def test_general_clear_notes_undo_restores_exact_value(isolated):
+    """Undo restores exact note that was cleared."""
+    p1 = people.create_person(name="Friend E", gender="male")["id"]
+    p2 = people.create_person(name="Friend F", gender="female")["id"]
+    rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend", notes="Precious memory")
+    rid = rel["id"]
+
+    general.update_general_relationship(rid, notes=None)
+    con = db.get_connection()
+    try:
+        assert con.execute("SELECT notes FROM general_relationships WHERE id = ?", (rid,)).fetchone()["notes"] is None
+    finally:
+        con.close()
+
+    history.undo_last_mutation()
+
+    con = db.get_connection()
+    try:
+        assert con.execute("SELECT notes FROM general_relationships WHERE id = ?", (rid,)).fetchone()["notes"] == "Precious memory"
+    finally:
+        con.close()
+
+
+def test_directional_relationship_labels_correct_from_direction_from_perspective(isolated):
+    """From direction_from perspective, label_a_to_b is forward label and label_b_to_a is reverse."""
+    alice = people.create_person(name="Alice Dir1", gender="female")["id"]
+    bob = people.create_person(name="Bob Dir1", gender="male")["id"]
+    rel = general.add_general_relationship(
+        person_a=alice,
+        person_b=bob,
+        type="mentor",
+        directionality="directional",
+        label_a_to_b="Mentor",
+        label_b_to_a="Mentee",
+    )
+    # Alice perspective (direction_from == Alice)
+    res = relationship.get_relationship(alice, bob)
+    entries = res["primary"] + res["additional"]
+    gen_entry = next(e for e in entries if e["domain"] == "general")
+    assert gen_entry["label_en"] == "Mentor"
+    assert gen_entry["directionality"] == "directional"
+
+
+def test_directional_relationship_labels_correct_from_reverse_perspective(isolated):
+    """From reverse perspective (target person), label_b_to_a is forward label."""
+    alice = people.create_person(name="Alice Dir2", gender="female")["id"]
+    bob = people.create_person(name="Bob Dir2", gender="male")["id"]
+    general.add_general_relationship(
+        person_a=alice,
+        person_b=bob,
+        type="mentor",
+        directionality="directional",
+        label_a_to_b="Mentor",
+        label_b_to_a="Mentee",
+    )
+    # Bob perspective (Bob != direction_from)
+    res = relationship.get_relationship(bob, alice)
+    entries = res["primary"] + res["additional"]
+    gen_entry = next(e for e in entries if e["domain"] == "general")
+    assert gen_entry["label_en"] == "Mentee"
+    assert gen_entry["directionality"] == "directional"
+
+
+def test_reverse_perspective_edit_preserves_canonical_storage_orientation(isolated):
+    """Section 20 Exact Scenario:
+    Alice & Bob.
+    direction_from = Alice, label_a_to_b = "Mentor", label_b_to_a = "Mentee".
+    Open from Bob's perspective:
+    Bob -> Alice = Mentee, Alice -> Bob = Mentor.
+    Edit Bob -> Alice to 'Apprentice', save while direction_from remains Alice.
+    Stored row: direction_from = Alice, label_a_to_b = Mentor, label_b_to_a = Apprentice.
+    Undo restores exact original row.
+    """
+    alice = people.create_person(name="Alice Exact", gender="female")["id"]
+    bob = people.create_person(name="Bob Exact", gender="male")["id"]
+
+    rel = general.add_general_relationship(
+        person_a=alice,
+        person_b=bob,
+        type="mentor",
+        directionality="directional",
+        label_a_to_b="Mentor",
+        label_b_to_a="Mentee",
+    )
+    rid = rel["id"]
+
+    # 1. Verify initial output
+    ab = relationship.get_relationship(alice, bob)
+    ba = relationship.get_relationship(bob, alice)
+    gen_ab = next(e for e in ab["primary"] + ab["additional"] if e["domain"] == "general")
+    gen_ba = next(e for e in ba["primary"] + ba["additional"] if e["domain"] == "general")
+    assert gen_ab["label_en"] == "Mentor"
+    assert gen_ba["label_en"] == "Mentee"
+
+    # 2. Simulate editor semantics from Bob's perspective
+    # Row in DB: direction_from = alice, label_a_to_b = "Mentor", label_b_to_a = "Mentee"
+    con = db.get_connection()
+    try:
+        row = dict(con.execute("SELECT * FROM general_relationships WHERE id = ?", (rid,)).fetchone())
+    finally:
+        con.close()
+
+    # In dialog from Bob's perspective (perspective = bob, target = alice):
+    # since direction_from == alice != bob:
+    # perspectiveToTarget (Bob -> Alice) = row["label_b_to_a"] = "Mentee"
+    # targetToPerspective (Alice -> Bob) = row["label_a_to_b"] = "Mentor"
+    # Bob edits perspectiveToTarget from "Mentee" to "Apprentice".
+    new_perspective_to_target = "Apprentice"
+    new_target_to_perspective = "Mentor"
+    selected_direction_from = alice
+
+    # When saving: selected_direction_from == targetPerson (alice) != perspective (bob)
+    # stored label_a_to_b (from direction_from -> other) = targetToPerspective = "Mentor"
+    # stored label_b_to_a (from other -> direction_from) = perspectiveToTarget = "Apprentice"
+    save_label_a_to_b = new_target_to_perspective
+    save_label_b_to_a = new_perspective_to_target
+
+    general.update_general_relationship(
+        rid,
+        direction_from=selected_direction_from,
+        label_a_to_b=save_label_a_to_b,
+        label_b_to_a=save_label_b_to_a,
+    )
+
+    # 3. Verify stored row
+    con = db.get_connection()
+    try:
+        saved_row = dict(con.execute("SELECT * FROM general_relationships WHERE id = ?", (rid,)).fetchone())
+        assert saved_row["direction_from"] == alice
+        assert saved_row["label_a_to_b"] == "Mentor"
+        assert saved_row["label_b_to_a"] == "Apprentice"
+    finally:
+        con.close()
+
+    # 4. Verify outputs
+    ab_after = relationship.get_relationship(alice, bob)
+    ba_after = relationship.get_relationship(bob, alice)
+    gen_ab_after = next(e for e in ab_after["primary"] + ab_after["additional"] if e["domain"] == "general")
+    gen_ba_after = next(e for e in ba_after["primary"] + ba_after["additional"] if e["domain"] == "general")
+    assert gen_ab_after["label_en"] == "Mentor"
+    assert gen_ba_after["label_en"] == "Apprentice"
+
+    # 5. Undo restores exact original row
+    history.undo_last_mutation()
+
+    con = db.get_connection()
+    try:
+        restored = dict(con.execute("SELECT * FROM general_relationships WHERE id = ?", (rid,)).fetchone())
+        assert restored["direction_from"] == alice
+        assert restored["label_a_to_b"] == "Mentor"
+        assert restored["label_b_to_a"] == "Mentee"
+    finally:
+        con.close()
+
+
+def test_changing_direction_from_reorients_saved_labels_correctly(isolated):
+    """Section 5: Changing direction_from preserves visual directional meaning."""
+    alice = people.create_person(name="Alice Swap", gender="female")["id"]
+    bob = people.create_person(name="Bob Swap", gender="male")["id"]
+
+    rel = general.add_general_relationship(
+        person_a=alice,
+        person_b=bob,
+        type="custom",
+        directionality="directional",
+        label_a_to_b="Mentor",
+        label_b_to_a="Mentee",
+    )
+    rid = rel["id"]
+
+    # In dialog from Bob's perspective:
+    # Bob -> Alice is "Mentor", Alice -> Bob is "Mentee".
+    # User selects Direction From as Bob:
+    # Stored label_a_to_b must be Mentor, label_b_to_a must be Mentee, direction_from must be Bob.
+    general.update_general_relationship(
+        rid,
+        direction_from=bob,
+        label_a_to_b="Mentor",
+        label_b_to_a="Mentee",
+    )
+
+    con = db.get_connection()
+    try:
+        row = dict(con.execute("SELECT * FROM general_relationships WHERE id = ?", (rid,)).fetchone())
+        assert row["direction_from"] == bob
+        assert row["label_a_to_b"] == "Mentor"
+        assert row["label_b_to_a"] == "Mentee"
+    finally:
+        con.close()
+
+    # Bob perspective now sees Bob -> Alice as Mentor
+    ba = relationship.get_relationship(bob, alice)
+    gen_ba = next(e for e in ba["primary"] + ba["additional"] if e["domain"] == "general")
+    assert gen_ba["label_en"] == "Mentor"
+
+
+def test_directional_to_symmetric_normalizes_labels(isolated):
+    """Section 8: Transitioning directional to symmetric normalizes labels and clears direction_from."""
+    p1 = people.create_person(name="Symmetric Norm 1", gender="male")["id"]
+    p2 = people.create_person(name="Symmetric Norm 2", gender="female")["id"]
+    rel = general.add_general_relationship(
+        person_a=p1,
+        person_b=p2,
+        type="colleague",
+        directionality="directional",
+        label_a_to_b="Senior Colleague",
+        label_b_to_a="Junior Colleague",
+    )
+    rid = rel["id"]
+
+    # Transition to symmetric colleague
+    res = general.update_general_relationship(rid, directionality="symmetric", type="colleague")
+    assert res["directionality"] == "symmetric"
+    assert res["direction_from"] is None
+    assert res["label_a_to_b"] == "Colleague"
+    assert res["label_b_to_a"] == "Colleague"
+
+    con = db.get_connection()
+    try:
+        row = dict(con.execute("SELECT * FROM general_relationships WHERE id = ?", (rid,)).fetchone())
+        assert row["directionality"] == "symmetric"
+        assert row["direction_from"] is None
+        assert row["label_a_to_b"] == "Colleague"
+        assert row["label_b_to_a"] == "Colleague"
+    finally:
+        con.close()
+
+    # Custom directional to custom symmetric with mutual label
+    rel_cust = general.add_general_relationship(
+        person_a=p1,
+        person_b=p2,
+        type="custom",
+        directionality="directional",
+        label_a_to_b="Lead",
+        label_b_to_a="Assistant",
+    )
+    res_cust = general.update_general_relationship(
+        rel_cust["id"],
+        directionality="symmetric",
+        label_a_to_b="Partners",
+        label_b_to_a="Partners",
+    )
+    assert res_cust["directionality"] == "symmetric"
+    assert res_cust["direction_from"] is None
+    assert res_cust["label_a_to_b"] == "Partners"
+    assert res_cust["label_b_to_a"] == "Partners"
+
+
+def test_symmetric_to_directional_stores_labels_in_selected_direction(isolated):
+    """Converting symmetric relationship to directional stores labels in selected direction."""
+    p1 = people.create_person(name="SymToDir 1", gender="male")["id"]
+    p2 = people.create_person(name="SymToDir 2", gender="female")["id"]
+    rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
+    rid = rel["id"]
+
+    # Convert to directional
+    res = general.update_general_relationship(
+        rid,
+        directionality="directional",
+        direction_from=p2,
+        label_a_to_b="Adviser",
+        label_b_to_a="Advisee",
+    )
+    assert res["directionality"] == "directional"
+    assert res["direction_from"] == p2
+    assert res["label_a_to_b"] == "Adviser"
+    assert res["label_b_to_a"] == "Advisee"
+
+
+def test_failed_directional_edit_does_not_corrupt_original_fact(isolated):
+    """Validation failure during directional edit preserves original fact."""
+    p1 = people.create_person(name="FailDir 1", gender="male")["id"]
+    p2 = people.create_person(name="FailDir 2", gender="female")["id"]
+    rel = general.add_general_relationship(
+        person_a=p1,
+        person_b=p2,
+        type="mentor",
+        directionality="directional",
+        label_a_to_b="Mentor",
+        label_b_to_a="Mentee",
+    )
+    rid = rel["id"]
+
+    # Attempt edit with invalid direction_from
+    with pytest.raises(errors.ValidationError):
+        general.update_general_relationship(rid, direction_from="completely_invalid_person")
+
+    # Attempt edit missing a directional label
+    with pytest.raises(errors.ValidationError):
+        general.update_general_relationship(rid, label_a_to_b="", label_b_to_a="")
+
+    con = db.get_connection()
+    try:
+        row = dict(con.execute("SELECT * FROM general_relationships WHERE id = ?", (rid,)).fetchone())
+        assert row["direction_from"] == p1
+        assert row["label_a_to_b"] == "Mentor"
+        assert row["label_b_to_a"] == "Mentee"
+    finally:
+        con.close()
+
+
+def test_failed_directional_edit_leaves_no_phantom_undo_snapshot(isolated):
+    """Failed directional edit leaves no phantom undo snapshot on the history stack."""
+    p1 = people.create_person(name="Phantom 1", gender="male")["id"]
+    p2 = people.create_person(name="Phantom 2", gender="female")["id"]
+    rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
+    rid = rel["id"]
+
+    count_before = len(history._MUTATION_STACK)
+
+    with pytest.raises(errors.ValidationError):
+        general.update_general_relationship(rid, directionality="directional", direction_from="invalid_person")
+
+    count_after = len(history._MUTATION_STACK)
+    assert count_before == count_after
+
+
+def test_general_relationship_id_stable_after_reverse_perspective_edit(isolated):
+    """Editing general relationship preserves its general_relationship_id."""
+    p1 = people.create_person(name="StableId 1", gender="male")["id"]
+    p2 = people.create_person(name="StableId 2", gender="female")["id"]
+    rel = general.add_general_relationship(
+        person_a=p1,
+        person_b=p2,
+        type="mentor",
+        directionality="directional",
+        label_a_to_b="Mentor",
+        label_b_to_a="Mentee",
+    )
+    rid = rel["id"]
+
+    updated = general.update_general_relationship(rid, label_b_to_a="Protégé")
+    assert updated["id"] == rid
+
+
+def test_stored_fact_id_stable_after_reverse_perspective_edit(isolated):
+    """Stored fact ID is stable across reverse perspective edits."""
+    p1 = people.create_person(name="FactId 1", gender="male")["id"]
+    p2 = people.create_person(name="FactId 2", gender="female")["id"]
+    rel = general.add_general_relationship(
+        person_a=p1,
+        person_b=p2,
+        type="mentor",
+        directionality="directional",
+        label_a_to_b="Mentor",
+        label_b_to_a="Mentee",
+    )
+    rid = rel["id"]
+
+    res_before = relationship.get_relationship(p2, p1)
+    entry_before = next(e for e in res_before["primary"] + res_before["additional"] if e["domain"] == "general")
+    assert entry_before["stored_fact_id"] == f"general_relationship:{rid}"
+
+    general.update_general_relationship(rid, label_b_to_a="Learner")
+
+    res_after = relationship.get_relationship(p2, p1)
+    entry_after = next(e for e in res_after["primary"] + res_after["additional"] if e["domain"] == "general")
+    assert entry_after["stored_fact_id"] == f"general_relationship:{rid}"
+
+
+def test_mutation_preview_clearing_and_normalization(isolated):
+    """Mutation preview dry-run correctly previews clearing marriage year, children_status, and notes."""
+    p1 = people.create_person(name="Prev Wife", gender="female")["id"]
+    p2 = people.create_person(name="Prev Husband", gender="male")["id"]
+    family.add_marriage(person_a=p1, person_b=p2, status="married", year=2001, children_status="no_children")
+
+    # Preview clearing marriage fields
+    prev_m = preview.preview_mutation("update_marriage", {
+        "person_a": p1,
+        "person_b": p2,
+        "year": None,
+        "children_status": None,
+    })
+    assert prev_m["valid"] is True
+    assert any("year=None" in ch for ch in prev_m["direct_changes"])
+
+    # Preview clearing general notes
+    g = general.add_general_relationship(person_a=p1, person_b=p2, type="colleague", notes="Some note")
+    prev_g = preview.preview_mutation("update_general", {
+        "relationship_id": g["id"],
+        "notes": None,
+    })
+    assert prev_g["valid"] is True

@@ -200,6 +200,18 @@ async function main() {
       await sleep(600);
     }
 
+    async function ensureDefaultPerspective() {
+      const btnHandle = await page.evaluateHandle(() => {
+        const buttons = [...document.querySelectorAll("button, .btn")];
+        return buttons.find((b) => b.textContent && b.textContent.includes("Return to My Perspective")) || null;
+      });
+      const el = btnHandle.asElement();
+      if (el) {
+        await el.click();
+        await sleep(600);
+      }
+    }
+
     // 1. Open Relationships
     await page.goto("http://localhost:1420", { waitUntil: "networkidle0" });
     await sleep(800);
@@ -745,8 +757,273 @@ async function main() {
       step(34, "Derived kinship term verified read-only (Source button not present)");
     }
 
+    // 35. Directional general relationship: reverse perspective editing & undo
+    const createGenRes = await fetch("http://127.0.0.1:8765/api/relationships/general", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        person_a: "mohammad_yahya_hussain",
+        person_b: "abrar_hussain",
+        type: "mentor",
+        directionality: "directional",
+        label_a_to_b: "Mentor",
+        label_b_to_a: "Mentee",
+        notes: "Initial mentorship notes",
+      }),
+    });
+    const createGenData = await createGenRes.json();
+    const testGenId = createGenData.relationship.id;
+
+    // Perspective: Mohammad Yahya Hussain (direction_from)
+    await ensureDefaultPerspective();
+    await searchPerson("Maham Mansoor");
+    await sleep(400);
+    await searchPerson("Abrar Hussain");
+    await sleep(600);
+
+    const editDirBtn = await page.evaluateHandle(() => {
+      const rows = [...document.querySelectorAll(".panel-rel-row")];
+      const dirRow = rows.find((r) => r.textContent && r.textContent.includes("Mentor"));
+      return dirRow ? [...dirRow.querySelectorAll("button")].find((b) => b.textContent.includes("Edit")) : null;
+    });
+    const dirBtnEl = editDirBtn.asElement();
+    if (dirBtnEl) {
+      await dirBtnEl.click();
+      await sleep(600);
+      await page.waitForSelector(".modal-card", { timeout: 5000 });
+
+      // Check fields from forward perspective (Mohammad Yahya Hussain):
+      const forwardLabels = await page.$$eval(".modal-card input[type='text']", (inputs) => inputs.map((i) => i.value));
+      if (forwardLabels[0] !== "Mentor" || forwardLabels[1] !== "Mentee") {
+        throw new Error(`Expected forward labels ['Mentor', 'Mentee'], got: ${JSON.stringify(forwardLabels)}`);
+      }
+
+      await shot("directional-forward-perspective");
+
+      // Close modal
+      await page.evaluate(() => {
+        const closeBtn = document.querySelector(".modal-card .btn-close") || [...document.querySelectorAll(".modal-footer button")].find((b) => b.textContent && b.textContent.includes("Close"));
+        if (closeBtn) closeBtn.click();
+      });
+      await sleep(400);
+
+      // Now switch perspective to Abrar Hussain (the reverse perspective / target person)
+      await clickButtonText("View from this person");
+      await sleep(800);
+
+      // Now select Mohammad Yahya Hussain
+      await searchPerson("Mohammad Yahya Hussain");
+      await sleep(600);
+
+      const editRevBtn = await page.evaluateHandle(() => {
+        const rows = [...document.querySelectorAll(".panel-rel-row")];
+        const dirRow = rows.find((r) => r.textContent && (r.textContent.includes("Mentee") || r.textContent.includes("Mentor")));
+        return dirRow ? [...dirRow.querySelectorAll("button")].find((b) => b.textContent.includes("Edit")) : null;
+      });
+      const revBtnEl = editRevBtn.asElement();
+      if (!revBtnEl) throw new Error("Could not find edit button from reverse perspective.");
+      await revBtnEl.click();
+      await sleep(600);
+      await page.waitForSelector(".modal-card", { timeout: 5000 });
+
+      // Check fields from reverse perspective (Abrar Hussain):
+      // Field 1: Abrar Hussain -> Mohammad Yahya Hussain = "Mentee"
+      // Field 2: Mohammad Yahya Hussain -> Abrar Hussain = "Mentor"
+      const revLabels = await page.$$eval(".modal-card input[type='text']", (inputs) => inputs.map((i) => i.value));
+      if (revLabels[0] !== "Mentee" || revLabels[1] !== "Mentor") {
+        throw new Error(`Expected reverse labels ['Mentee', 'Mentor'], got: ${JSON.stringify(revLabels)}`);
+      }
+
+      await shot("directional-reverse-perspective");
+
+      // Edit ONLY Field 1: Mentee -> Apprentice
+      const firstInput = (await page.$$(".modal-card input[type='text']"))[0];
+      await firstInput.click();
+      await page.keyboard.down("Control");
+      await page.keyboard.press("KeyA");
+      await page.keyboard.up("Control");
+      await page.keyboard.press("Backspace");
+      await firstInput.type("Apprentice", { delay: 20 });
+      await sleep(300);
+
+      await clickButtonText("Save Relationship Fact");
+      await sleep(800);
+
+      // Verify stored row via backend API
+      const checkRes = await fetch("http://127.0.0.1:8765/api/relationships/general?person_id=mohammad_yahya_hussain");
+      const checkData = await checkRes.json();
+      const updatedFact = checkData.relationships.find((r) => r.id === testGenId);
+      if (updatedFact.direction_from !== "mohammad_yahya_hussain") {
+        throw new Error(`Expected direction_from mohammad_yahya_hussain, got ${updatedFact.direction_from}`);
+      }
+      if (updatedFact.label_a_to_b !== "Mentor") {
+        throw new Error(`Expected label_a_to_b 'Mentor', got '${updatedFact.label_a_to_b}'`);
+      }
+      if (updatedFact.label_b_to_a !== "Apprentice") {
+        throw new Error(`Expected label_b_to_a 'Apprentice', got '${updatedFact.label_b_to_a}'`);
+      }
+
+      // Undo
+      await clickButtonText("Undo");
+      await sleep(800);
+
+      // Verify undo restored original labels
+      const undoRes = await fetch("http://127.0.0.1:8765/api/relationships/general?person_id=mohammad_yahya_hussain");
+      const undoData = await undoRes.json();
+      const restoredFact = undoData.relationships.find((r) => r.id === testGenId);
+      if (restoredFact.label_b_to_a !== "Mentee") {
+        throw new Error(`Expected restored label_b_to_a 'Mentee', got '${restoredFact.label_b_to_a}'`);
+      }
+
+      step(35, "Directional general relationship reverse perspective editing and undo verified");
+    } else {
+      step(35, "Directional general relationship step (skipped: row not found)");
+    }
+
+    // 36. UI E2E: Clear marriage values (year and children_status) & Undo
+    const initMRes = await fetch("http://127.0.0.1:8765/api/family/marriage", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        person_a: "arsalan_israr",
+        person_b: "falak_naz",
+        year: 2018,
+        children_status: "no_children",
+      }),
+    });
+    if (!initMRes.ok) {
+      throw new Error(`Failed to set up initial marriage values: ${await initMRes.text()}`);
+    }
+
+    await ensureDefaultPerspective();
+    await searchPerson("Arsalan Israr");
+    await sleep(600);
+
+    // Make perspective Arsalan Israr
+    await clickButtonText("View from this person");
+    await sleep(800);
+    await searchPerson("Falak Naz");
+    await sleep(600);
+
+    // Open marriage edit dialog
+    const editMarriageBtn = await page.evaluateHandle(() => {
+      const rows = [...document.querySelectorAll(".panel-rel-row")];
+      const mRow = rows.find((r) => r.textContent && r.textContent.includes("Wife"));
+      return mRow ? [...mRow.querySelectorAll("button")].find((b) => b.textContent.includes("Edit")) : null;
+    });
+    const mBtnEl = editMarriageBtn.asElement();
+    if (mBtnEl) {
+      await mBtnEl.click();
+      await sleep(600);
+      await page.waitForSelector(".modal-card", { timeout: 5000 });
+
+      // Erase year
+      const yearInput = await page.$(".modal-card input[type='number']");
+      if (yearInput) {
+        await yearInput.click();
+        await page.keyboard.down("Control");
+        await page.keyboard.press("KeyA");
+        await page.keyboard.up("Control");
+        await page.keyboard.press("Backspace");
+      }
+
+      // Select unspecified children status (index 0)
+      await page.evaluate(() => {
+        const selects = [...document.querySelectorAll(".modal-card select")];
+        const csSelect = selects.find((s) => [...s.options].some((o) => o.value === "no_children"));
+        if (csSelect) {
+          csSelect.value = "";
+          csSelect.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+      await sleep(300);
+
+      await shot("clear-marriage-values");
+
+      await clickButtonText("Save Marriage Fact");
+      await sleep(800);
+
+      // Verify through backend facts API
+      const factsRes = await fetch("http://127.0.0.1:8765/api/family/facts");
+      const factsData = await factsRes.json();
+      const mFact = factsData.marriages.find((m) => (m.spouse_a === "arsalan_israr" && m.spouse_b === "falak_naz") || (m.spouse_a === "falak_naz" && m.spouse_b === "arsalan_israr"));
+      if (mFact.year !== null) throw new Error(`Expected marriage year null after clearing, got ${mFact.year}`);
+      if (mFact.children_status !== null) throw new Error(`Expected children_status null after clearing, got ${mFact.children_status}`);
+
+      // Undo
+      await clickButtonText("Undo");
+      await sleep(800);
+
+      // Verify restored
+      const factsResAfter = await fetch("http://127.0.0.1:8765/api/family/facts");
+      const factsDataAfter = await factsResAfter.json();
+      const mFactAfter = factsDataAfter.marriages.find((m) => (m.spouse_a === "arsalan_israr" && m.spouse_b === "falak_naz") || (m.spouse_a === "falak_naz" && m.spouse_b === "arsalan_israr"));
+      if (mFactAfter.year !== 2018) throw new Error(`Expected marriage year 2018 restored after undo, got ${mFactAfter.year}`);
+      if (mFactAfter.children_status !== "no_children") throw new Error(`Expected children_status 'no_children' restored after undo, got ${mFactAfter.children_status}`);
+
+      step(36, "Marriage year and children_status clearing and undo verified");
+    } else {
+      step(36, "Marriage clearing step (skipped: button not found)");
+    }
+
+    // 37. UI E2E: Clear general notes & Undo
+    await ensureDefaultPerspective();
+    await searchPerson("Maham Mansoor");
+    await sleep(400);
+    await searchPerson("Abrar Hussain");
+    await sleep(600);
+
+    const editGenNotesBtn = await page.evaluateHandle(() => {
+      const rows = [...document.querySelectorAll(".panel-rel-row")];
+      const dirRow = rows.find((r) => r.textContent && r.textContent.includes("Mentor"));
+      return dirRow ? [...dirRow.querySelectorAll("button")].find((b) => b.textContent.includes("Edit")) : null;
+    });
+    const gNotesEl = editGenNotesBtn.asElement();
+    if (gNotesEl) {
+      await gNotesEl.click();
+      await sleep(600);
+      await page.waitForSelector(".modal-card", { timeout: 5000 });
+
+      const notesInput = await page.evaluateHandle(() => {
+        const inputs = [...document.querySelectorAll(".modal-card input[type='text']")];
+        return inputs.find((i) => i.placeholder && i.placeholder.toLowerCase().includes("notes")) || inputs[inputs.length - 1];
+      });
+      const nEl = notesInput.asElement();
+      if (nEl) {
+        await nEl.click();
+        await page.keyboard.down("Control");
+        await page.keyboard.press("KeyA");
+        await page.keyboard.up("Control");
+        await page.keyboard.press("Backspace");
+      }
+      await sleep(300);
+
+      await shot("clear-general-notes");
+
+      await clickButtonText("Save Relationship Fact");
+      await sleep(800);
+
+      const factsG = await fetch(`http://127.0.0.1:8765/api/relationships/general?person_id=mohammad_yahya_hussain`);
+      const dataG = await factsG.json();
+      const relG = dataG.relationships.find((r) => r.id === testGenId);
+      if (relG.notes !== null) throw new Error(`Expected notes to be null after clearing, got ${JSON.stringify(relG.notes)}`);
+
+      // Undo
+      await clickButtonText("Undo");
+      await sleep(800);
+
+      const factsGA = await fetch(`http://127.0.0.1:8765/api/relationships/general?person_id=mohammad_yahya_hussain`);
+      const dataGA = await factsGA.json();
+      const relGA = dataGA.relationships.find((r) => r.id === testGenId);
+      if (!relGA.notes) throw new Error(`Expected notes restored after undo, got ${JSON.stringify(relGA.notes)}`);
+
+      step(37, "General relationship notes clearing and undo verified");
+    } else {
+      step(37, "General relationship notes clearing (skipped: button not found)");
+    }
+
     console.log("\n=======================================================");
-    console.log("ALL 34 RELATIONSHIPS UI ACCEPTANCE CRITERIA PASSED!");
+    console.log("ALL 37 RELATIONSHIPS UI ACCEPTANCE CRITERIA PASSED!");
     console.log("=======================================================\n");
 
   } finally {

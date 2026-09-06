@@ -178,18 +178,15 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                 person_a = params["person_a"]
                 person_b = params["person_b"]
                 spouse_a, spouse_b = sorted((person_a, person_b))
-                status = params.get("status")
-                year = params.get("year")
-                children_status = params.get("children_status")
                 row = connection.execute(
                     "SELECT * FROM marriages WHERE spouse_a = ? AND spouse_b = ?",
                     (spouse_a, spouse_b),
                 ).fetchone()
                 if not row:
                     raise errors.NotFoundError("Marriage fact not found.")
-                new_status = status if status is not None else row["status"]
-                new_year = year if year is not None else row["year"]
-                new_children_status = children_status if children_status is not None else row["children_status"]
+                new_status = params["status"] if "status" in params and params["status"] is not None else row["status"]
+                new_year = params["year"] if "year" in params else row["year"]
+                new_children_status = params["children_status"] if "children_status" in params else row["children_status"]
                 connection.execute(
                     """
                     UPDATE marriages
@@ -342,12 +339,25 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                 row = connection.execute("SELECT * FROM general_relationships WHERE id = ?", (rel_id,)).fetchone()
                 if not row:
                     raise errors.NotFoundError(f"General relationship #{rel_id} not found.")
-                new_type = params.get("type", row["type"])
-                new_directionality = params.get("directionality", row["directionality"])
-                new_direction_from = params.get("direction_from", row["direction_from"]) if new_directionality == "directional" else None
-                new_label_a = params.get("label_a_to_b", row["label_a_to_b"])
-                new_label_b = params.get("label_b_to_a", row["label_b_to_a"])
-                new_notes = params.get("notes", row["notes"])
+                new_type = params["type"] if "type" in params and params["type"] is not None else row["type"]
+                new_directionality = params["directionality"] if "directionality" in params and params["directionality"] is not None else row["directionality"]
+                if new_directionality == "symmetric":
+                    new_direction_from = None
+                    if new_type != "custom":
+                        from ...services.general import _default_label
+                        canonical = _default_label(new_type)
+                        new_label_a = canonical
+                        new_label_b = canonical
+                    else:
+                        mutual = params.get("label_a_to_b") or params.get("label_b_to_a") or row["label_a_to_b"]
+                        new_label_a = mutual
+                        new_label_b = mutual
+                else:
+                    new_direction_from = params["direction_from"] if "direction_from" in params else (row["direction_from"] or row["person_a"])
+                    new_label_a = params["label_a_to_b"] if "label_a_to_b" in params else row["label_a_to_b"]
+                    new_label_b = params["label_b_to_a"] if "label_b_to_a" in params else row["label_b_to_a"]
+
+                new_notes = params["notes"] if "notes" in params else row["notes"]
                 connection.execute(
                     """
                     UPDATE general_relationships

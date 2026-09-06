@@ -336,3 +336,59 @@ This final micro-closure completes stored-fact editing and UI enum completeness 
   - `Database/Main/family.db` SHA-256: `3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E` (verified unmodified).
   - All 35 canonical `journal.md` files verified byte-identical.
   - `git status Database/`: 100% clean.
+
+---
+
+## Directional Perspective & Nullable Field Closure
+
+### 1. Reverse-Perspective Directional Label Mapping
+- **Root Cause**: Previously, `EditRelationshipDialog` loaded raw stored database fields `label_a_to_b` and `label_b_to_a` directly into the dialog fields without checking the active viewer perspective. In a directional stored fact where `direction_from` was Person A, viewing/editing from Person B caused the controls captioned "B → A" and "A → B" to display inverted values. Saving from the reverse perspective accidentally swapped relationship semantics in the database.
+- **Perspective Mapping**: The dialog now calculates perspective-relative presentation values using `toPerspectiveLabels(...)`:
+  - If `direction_from == perspectivePerson.id`:
+    - `perspectiveToTarget` = stored `label_a_to_b` (forward direction: perspective → target)
+    - `targetToPerspective` = stored `label_b_to_a` (reverse direction: target → perspective)
+  - Else (`direction_from != perspectivePerson.id`):
+    - `perspectiveToTarget` = stored `label_b_to_a` (forward direction: perspective → target)
+    - `targetToPerspective` = stored `label_a_to_b` (reverse direction: target → perspective)
+- **Canonical Storage Orientation**: When saving, `toStoredDirectionalLabels(...)` maps the visually labelled inputs back into canonical storage orientation according to the selected `direction_from`:
+  - If `direction_from == perspectivePerson.id`:
+    - stored `label_a_to_b` = `perspectiveToTarget`
+    - stored `label_b_to_a` = `targetToPerspective`
+  - Else:
+    - stored `label_a_to_b` = `targetToPerspective`
+    - stored `label_b_to_a` = `perspectiveToTarget`
+
+### 2. Direction From Changes
+- When the user modifies `direction_from` during editing, the visual fields ("Perspective → Target" and "Target → Perspective") maintain their exact meaning. Saving correctly re-orients the stored fields relative to the newly chosen `direction_from` without silently reversing relationship meanings.
+
+### 3. Directional ↔ Symmetric Transitions & Deterministic Normalization
+- **Symmetric → Directional**: Requires a valid `direction_from` (defaulting to the active perspective person) and validates both directional labels in canonical orientation.
+- **Directional → Symmetric Normalization**:
+  - For standard relationships: Automatically normalizes stored labels to the canonical label for the selected relationship type.
+  - For custom relationships: Exposes a single explicit mutual custom label in the UI and normalizes both `label_a_to_b` and `label_b_to_a` to that value while clearing `direction_from` to `None`.
+  - Prevents stale, conflicting directional labels from remaining hidden inside symmetric records.
+
+### 4. Null-vs-Omitted Update Semantics
+- **Root Cause**: Backend PATCH services previously used `None` for both "omitted/unchanged" and "explicit null/clear value". Additionally, frontend payloads used short-circuiting like `notes: genNotes || undefined`, omitting emptied inputs instead of transmitting explicit `null`.
+- **Backend Architecture**:
+  - Implemented `_UnsetType` sentinel class and `_is_unset(val)` helper in services (`services/family.py`, `services/general.py`).
+  - FastAPI request models check `payload.model_fields_set` in routes (`/api/family/marriage`, `/api/relationships/general/{id}`) to differentiate between omitted keys (value preserved) and explicit `None`/`null` (cleared to SQL `NULL`).
+  - Mutation preview (`domain/mutations/preview.py`) updated to distinguish omitted vs explicit null for marriage and general relationship dry-runs.
+- **Marriage Field Clearing**:
+  - Erasing `year`: sends `year: null` → stored `year = NULL`.
+  - Selecting unspecified `children_status`: sends `children_status: null` → stored `children_status = NULL`.
+  - Undo restores the previous concrete year and children status.
+- **General Notes Clearing**:
+  - Erasing `notes`: sends `notes: null` → stored `notes = NULL`.
+  - Undo restores the previous notes string.
+
+### 5. Verification & Safety Baseline
+- **Focused Backend Hardening Tests**: 19 new tests in `Tests/Backend/test_relationships_hardening.py` (total 79 passed, 0 failed).
+- **Full Backend Pytest Suite**: 234 passed, 0 failed.
+- **Legacy Audit**: 35 people, 44 parent-child facts, 12 marriages, 10 sibling groups, 21 cousin paths (clean pass).
+- **Frontend Typecheck & Build**: `tsc -b` and `vite build` completed cleanly with zero errors.
+- **UI E2E Tests**: All 18 People UI tests and all 37 Relationships UI tests passed, validating reverse-perspective directional editing, marriage field clearing, and notes clearing with full single-step undo.
+- **Production Data Integrity**:
+  - `Database/Main/family.db` SHA-256: `3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E` (verified 100% unmodified).
+  - All 35 production journals verified byte-identical.
+  - `Database/` working tree: 100% clean.

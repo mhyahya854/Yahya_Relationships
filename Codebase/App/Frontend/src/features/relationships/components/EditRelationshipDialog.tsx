@@ -28,6 +28,80 @@ interface Props {
   onSaved: (desc: string) => void;
 }
 
+export interface PerspectiveDirectionalLabels {
+  perspectiveToTarget: string;
+  targetToPerspective: string;
+}
+
+export function toPerspectiveLabels(
+  fact: {
+    directionality: string;
+    direction_from?: string | null;
+    label_a_to_b?: string | null;
+    label_b_to_a?: string | null;
+  },
+  perspectivePersonId: string,
+): PerspectiveDirectionalLabels {
+  const isDirectional = fact.directionality === "directional";
+  if (!isDirectional) {
+    const mutual = fact.label_a_to_b || fact.label_b_to_a || "";
+    return {
+      perspectiveToTarget: mutual,
+      targetToPerspective: mutual,
+    };
+  }
+  if (fact.direction_from === perspectivePersonId) {
+    return {
+      perspectiveToTarget: fact.label_a_to_b || "",
+      targetToPerspective: fact.label_b_to_a || "",
+    };
+  }
+  return {
+    perspectiveToTarget: fact.label_b_to_a || "",
+    targetToPerspective: fact.label_a_to_b || "",
+  };
+}
+
+export function toStoredDirectionalLabels(params: {
+  perspectiveToTarget: string;
+  targetToPerspective: string;
+  directionFrom: string;
+  perspectivePersonId: string;
+  directionality: "symmetric" | "directional";
+  relType: string;
+}): { label_a_to_b: string | null; label_b_to_a: string | null } {
+  const {
+    perspectiveToTarget,
+    targetToPerspective,
+    directionFrom,
+    perspectivePersonId,
+    directionality,
+    relType,
+  } = params;
+
+  if (directionality === "symmetric") {
+    if (relType === "custom") {
+      const mutual = perspectiveToTarget.trim() || targetToPerspective.trim() || null;
+      return { label_a_to_b: mutual, label_b_to_a: mutual };
+    }
+    return { label_a_to_b: null, label_b_to_a: null };
+  }
+
+  const pToT = perspectiveToTarget.trim() || null;
+  const tToP = targetToPerspective.trim() || null;
+  if (directionFrom === perspectivePersonId) {
+    return {
+      label_a_to_b: pToT,
+      label_b_to_a: tToP,
+    };
+  } else {
+    return {
+      label_a_to_b: tToP,
+      label_b_to_a: pToT,
+    };
+  }
+}
+
 export const EditRelationshipDialog: React.FC<Props> = ({
   perspectivePerson,
   targetPerson,
@@ -50,8 +124,8 @@ export const EditRelationshipDialog: React.FC<Props> = ({
   const [genType, setGenType] = useState("close_friend");
   const [genDirectionality, setGenDirectionality] = useState<"symmetric" | "directional">("symmetric");
   const [genDirectionFrom, setGenDirectionFrom] = useState<string>(perspectivePerson.id);
-  const [labelAToB, setLabelAToB] = useState("");
-  const [labelBToA, setLabelBToA] = useState("");
+  const [perspectiveToTargetLabel, setPerspectiveToTargetLabel] = useState("");
+  const [targetToPerspectiveLabel, setTargetToPerspectiveLabel] = useState("");
   const [genNotes, setGenNotes] = useState("");
 
   // Parent-Child Form Fields
@@ -94,8 +168,9 @@ export const EditRelationshipDialog: React.FC<Props> = ({
           setGenType(match.type);
           setGenDirectionality(match.directionality);
           setGenDirectionFrom(match.direction_from || match.person_a);
-          setLabelAToB(match.label_a_to_b || "");
-          setLabelBToA(match.label_b_to_a || "");
+          const labels = toPerspectiveLabels(match, perspectivePerson.id);
+          setPerspectiveToTargetLabel(labels.perspectiveToTarget);
+          setTargetToPerspectiveLabel(labels.targetToPerspective);
           setGenNotes(match.notes || "");
         }
       } else if (entry.domain === "family") {
@@ -167,13 +242,32 @@ export const EditRelationshipDialog: React.FC<Props> = ({
     setLoading(true);
     setErrorMsg(null);
     try {
+      if (genDirectionality === "directional") {
+        if (!perspectiveToTargetLabel.trim() || !targetToPerspectiveLabel.trim()) {
+          throw new Error("Directional relationships require both labels.");
+        }
+      } else if (genType === "custom") {
+        if (!perspectiveToTargetLabel.trim()) {
+          throw new Error("Custom symmetric relationships require a mutual label.");
+        }
+      }
+
+      const storedLabels = toStoredDirectionalLabels({
+        perspectiveToTarget: perspectiveToTargetLabel,
+        targetToPerspective: targetToPerspectiveLabel,
+        directionFrom: genDirectionFrom,
+        perspectivePersonId: perspectivePerson.id,
+        directionality: genDirectionality,
+        relType: genType,
+      });
+
       await api.relationships.general.update(generalFact.id, {
         type: genType,
         directionality: genDirectionality,
         direction_from: genDirectionality === "directional" ? genDirectionFrom : null,
-        label_a_to_b: labelAToB || undefined,
-        label_b_to_a: labelBToA || undefined,
-        notes: genNotes || undefined,
+        label_a_to_b: storedLabels.label_a_to_b,
+        label_b_to_a: storedLabels.label_b_to_a,
+        notes: genNotes.trim() ? genNotes.trim() : null,
       });
       onSaved(`Updated general relationship between ${perspectivePerson.name} and ${targetPerson.name}`);
       onClose();
@@ -383,7 +477,7 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                   </div>
                 )}
 
-                {(genDirectionality === "directional" || genType === "custom") && (
+                {genDirectionality === "directional" && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <div className="form-group">
                       <label>{perspectivePerson.name} &rarr; {targetPerson.name} label</label>
@@ -391,8 +485,8 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                         type="text"
                         className="form-input"
                         placeholder="e.g. Mentor"
-                        value={labelAToB}
-                        onChange={(e) => setLabelAToB(e.target.value)}
+                        value={perspectiveToTargetLabel}
+                        onChange={(e) => setPerspectiveToTargetLabel(e.target.value)}
                       />
                     </div>
                     <div className="form-group">
@@ -401,10 +495,26 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                         type="text"
                         className="form-input"
                         placeholder="e.g. Mentee"
-                        value={labelBToA}
-                        onChange={(e) => setLabelBToA(e.target.value)}
+                        value={targetToPerspectiveLabel}
+                        onChange={(e) => setTargetToPerspectiveLabel(e.target.value)}
                       />
                     </div>
+                  </div>
+                )}
+
+                {genDirectionality === "symmetric" && genType === "custom" && (
+                  <div className="form-group">
+                    <label>Mutual Relationship Label</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. Co-founders"
+                      value={perspectiveToTargetLabel}
+                      onChange={(e) => {
+                        setPerspectiveToTargetLabel(e.target.value);
+                        setTargetToPerspectiveLabel(e.target.value);
+                      }}
+                    />
                   </div>
                 )}
 
