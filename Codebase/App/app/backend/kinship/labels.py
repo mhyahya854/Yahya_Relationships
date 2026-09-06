@@ -403,9 +403,17 @@ def normalize_family_entry(entry: dict) -> dict:
     first priority so semantic identity never depends on English display parsing.
     """
     structured = structured_family_semantic(entry)
+    stored_fact_kind = entry.get("stored_fact_kind")
+    kind = entry.get("kind") or entry.get("fact_kind")
+    if not stored_fact_kind and kind in ("parent_child", "marriage"):
+        stored_fact_kind = kind
+
     derived = entry.get("derived")
     if derived is None:
-        derived = True
+        if stored_fact_kind in ("parent_child", "marriage", "sibling_group"):
+            derived = False
+        else:
+            derived = True
 
     if structured is not None:
         type_key, canonical_en, canonical_ur, degree, removal, side = structured
@@ -419,6 +427,10 @@ def normalize_family_entry(entry: dict) -> dict:
             "degree": degree if degree is not None else entry.get("degree"),
             "removal": removal if removal is not None else entry.get("removal"),
             "derived": derived,
+            "stored_fact_kind": stored_fact_kind,
+            "stored_fact_id": entry.get("stored_fact_id"),
+            "kind": entry.get("kind"),
+            "role": entry.get("role"),
         }
 
     # Legacy fallback: parse English text when entry lacks structured metadata
@@ -470,6 +482,10 @@ def normalize_family_entry(entry: dict) -> dict:
         "degree": degree,
         "removal": removal,
         "derived": derived,
+        "stored_fact_kind": stored_fact_kind,
+        "stored_fact_id": entry.get("stored_fact_id"),
+        "kind": entry.get("kind"),
+        "role": entry.get("role"),
     }
 
 

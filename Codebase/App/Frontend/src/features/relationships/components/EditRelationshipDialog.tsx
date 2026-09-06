@@ -26,6 +26,7 @@ export const EditRelationshipDialog: React.FC<Props> = ({
   const [generalFact, setGeneralFact] = useState<GeneralRelationshipFact | null>(null);
   const [parentChildFact, setParentChildFact] = useState<ParentChildFact | null>(null);
   const [marriageFact, setMarriageFact] = useState<any | null>(null);
+  const [siblingGroupFact, setSiblingGroupFact] = useState<any | null>(null);
   const [sourcePaths, setSourcePaths] = useState<any[]>([]);
 
   // Form Fields
@@ -81,6 +82,16 @@ export const EditRelationshipDialog: React.FC<Props> = ({
         );
         if (mMatch) {
           setMarriageFact(mMatch);
+        }
+
+        // Check direct sibling group fact
+        const sgMatch = factsRes.sibling_groups?.find(
+          (g: any) =>
+            g.members?.includes(perspectivePerson.id) &&
+            g.members?.includes(targetPerson.id)
+        );
+        if (sgMatch) {
+          setSiblingGroupFact(sgMatch);
         }
 
         // Load Show Why source paths if derived
@@ -280,11 +291,25 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                 <p>Status: {marriageFact.status} {marriageFact.year ? `(Year: ${marriageFact.year})` : ""}</p>
               </div>
             )}
+
+            {/* EXPLICIT SIBLING GROUP FACT VIEW */}
+            {siblingGroupFact && (
+              <div className="preview-direct">
+                <h4>Sibling Group Fact</h4>
+                <p>
+                  Group ID: {siblingGroupFact.id}{" "}
+                  {siblingGroupFact.type ? `(${siblingGroupFact.type})` : ""}
+                </p>
+                <div className="muted small">
+                  Explicit sibling record in database with {siblingGroupFact.members?.length || 0} members.
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="modal-footer">
             {/* Delete button for explicit facts */}
-            {!entry.derived && (
+            {!entry.derived && (generalFact || parentChildFact || marriageFact) && (
               <button
                 className="btn btn-danger"
                 style={{ marginRight: "auto" }}

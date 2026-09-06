@@ -189,21 +189,36 @@ def _bind_paths_and_metadata(
             if not entry.get("explanation") and p0.get("explanation"):
                 entry["explanation"] = p0["explanation"]
 
-        # Tag stored direct facts accurately
-        if direct_pc and entry["domain"] == "family" and entry["relationship_type"] in ("father", "mother", "parent", "son", "daughter", "child"):
+        # Tag stored direct facts accurately based on structural provenance
+        is_family = entry.get("domain") == "family"
+        fact_kind = entry.get("stored_fact_kind") or entry.get("kind")
+        rel_type = entry.get("relationship_type", "")
+
+        is_pc_entry = fact_kind == "parent_child" or (
+            direct_pc is not None
+            and any(
+                k in rel_type
+                for k in ("father", "mother", "parent", "son", "daughter", "child")
+            )
+        )
+        if direct_pc and is_family and is_pc_entry:
             entry["derived"] = False
+            entry["stored_fact_kind"] = "parent_child"
             entry["kind"] = direct_pc.get("kind", "biological")
             entry["role"] = direct_pc.get("role", "parent")
-        elif direct_marriage and entry["domain"] == "family" and entry["relationship_type"] in ("husband", "wife"):
+        elif direct_marriage and is_family and (fact_kind == "marriage" or rel_type in ("husband", "wife")):
             entry["derived"] = False
+            entry["stored_fact_kind"] = "marriage"
             entry["status"] = direct_marriage.get("status", "married")
             entry["year"] = direct_marriage.get("year")
-        else:
-            rel_type = entry.get("relationship_type", "")
-            is_sibling_type = "brother" in rel_type or "sister" in rel_type
-            if direct_sibling and entry.get("domain") == "family" and is_sibling_type:
-                if direct_sibling.get("type") == "full":
-                    entry["derived"] = False
+        elif is_family and (fact_kind == "sibling" or "brother" in rel_type or "sister" in rel_type):
+            if direct_sibling:
+                entry["derived"] = False
+                entry["stored_fact_kind"] = "sibling_group"
+                entry["sibling_group_id"] = direct_sibling.get("id")
+            else:
+                entry["derived"] = True
+                entry["stored_fact_kind"] = None
 
 
 def get_relationship(

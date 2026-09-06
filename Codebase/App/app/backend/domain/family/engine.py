@@ -1628,9 +1628,23 @@ def _pair_relationship_entries(data, first, second, people_index):
     for marriage in data["marriages"]:
         if {marriage["person1"], marriage["person2"]} == {first, second}:
             if gender_of(second) == "female":
-                add("Wife", "بیوی", kind="marriage", target_gender="female")
+                add(
+                    "Wife",
+                    "بیوی",
+                    kind="marriage",
+                    target_gender="female",
+                    stored_fact_kind="marriage",
+                    derived=False,
+                )
             else:
-                add("Husband", "شوہر", kind="marriage", target_gender="male")
+                add(
+                    "Husband",
+                    "شوہر",
+                    kind="marriage",
+                    target_gender="male",
+                    stored_fact_kind="marriage",
+                    derived=False,
+                )
 
     child_gender_terms = {
         "male": ("Son", "بیٹا"),
@@ -1650,6 +1664,8 @@ def _pair_relationship_entries(data, first, second, people_index):
                 role=child_role,
                 target_gender=child_g,
                 suffix=kind if kind and kind != "biological" else None,
+                stored_fact_kind="parent_child",
+                derived=False,
             )
         if rel["parent"] == second and rel["child"] == first:
             role = rel.get("role")
@@ -1671,6 +1687,8 @@ def _pair_relationship_entries(data, first, second, people_index):
                 role=parent_role,
                 target_gender=gender,
                 suffix=kind if kind and kind != "biological" else None,
+                stored_fact_kind="parent_child",
+                derived=False,
             )
 
     def same_biological_parents(a, b):
@@ -1690,6 +1708,7 @@ def _pair_relationship_entries(data, first, second, people_index):
     ]
     sibling_added = False
     if shared_groups or same_biological_parents(first, second):
+        has_explicit_group = len(shared_groups) > 0
         explicit_full = any(group.get("type") == "full" for group in shared_groups)
         target_g = gender_of(second)
         if target_g == "female":
@@ -1705,6 +1724,8 @@ def _pair_relationship_entries(data, first, second, people_index):
             target_gender=target_g,
             explicit_full=explicit_full,
             sibling_type="full" if explicit_full else "biological",
+            stored_fact_kind="sibling_group" if has_explicit_group else None,
+            derived=not has_explicit_group,
         ):
             sibling_added = True
 

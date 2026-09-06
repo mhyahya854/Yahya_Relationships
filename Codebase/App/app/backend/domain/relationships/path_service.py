@@ -319,6 +319,7 @@ def _explicit_paths(
     groups = _shared_sibling_group(model, perspective_id, target_id)
     if shared_parents or groups:
         sibling_present = True
+        has_explicit_group = len(groups) > 0
         explicit_full = any(group.get("type") == "full" for group in groups)
         gender = _gender_of(people_index, target_id)
         if gender == "female":
@@ -331,6 +332,8 @@ def _explicit_paths(
             "target_gender": gender,
             "explicit_full": explicit_full,
             "sibling_type": "full" if explicit_full else "biological",
+            "stored_fact_kind": "sibling_group" if has_explicit_group else None,
+            "derived": not has_explicit_group,
         })
         if shared_parents:
             # Canonical proof: through one shared parent (mother preferred).
@@ -350,7 +353,7 @@ def _explicit_paths(
                         model=model,
                         people_index=people_index,
                         common_ancestors=shared_parents,
-                        derived=False,
+                        derived=not has_explicit_group,
                     )
                 )
         else:

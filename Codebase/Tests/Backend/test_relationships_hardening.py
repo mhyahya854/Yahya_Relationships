@@ -28,6 +28,7 @@ Exhaustively covers:
 from __future__ import annotations
 
 import copy
+import hashlib
 import shutil
 import sqlite3
 from pathlib import Path
@@ -37,7 +38,7 @@ import pytest
 from app.backend import config, db
 from app.backend.data_root import DataRootManager
 from app.backend.domain.family import engine as build_family
-from app.backend.domain.mutations import history
+from app.backend.domain.mutations import history, preview
 from app.backend.domain.relationships import graph as graph_service, path_service
 from app.backend.kinship import labels
 from app.backend.services import errors, family, general, people, relationship
@@ -546,18 +547,411 @@ def test_schema_v1_to_v2_migration_fixture(tmp_path):
     con3.close()
 
 
-def test_schema_version_mismatch_refuses_destructive_migration(tmp_path):
-    """If metadata and PRAGMA user_version disagree, migration must raise SchemaVersionMismatchError."""
-    mismatch_db = tmp_path / "mismatch.db"
+# ==============================================================================
+# 5. Migration Failure Injection Atomicity & Schema Mismatch Non-Mutation
+# ==============================================================================
+
+def _create_v1_fixture(db_path: Path) -> None:
+    con = sqlite3.connect(str(db_path))
+    con.execute("PRAGMA foreign_keys = ON")
+    build_family.create_sqlite_schema(con)
+    con.executescript(
+        """
+        CREATE TABLE groups (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL UNIQUE,
+          slug TEXT NOT NULL UNIQUE,
+          kind TEXT NOT NULL DEFAULT 'custom' CHECK (kind IN ('system', 'custom')),
+          display_order INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE person_groups (
+          person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+          group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+          is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0, 1)),
+          PRIMARY KEY (person_id, group_id)
+        );
+        CREATE TABLE general_relationships (
+          id INTEGER PRIMARY KEY,
+          person_a TEXT NOT NULL REFERENCES people(id),
+          person_b TEXT NOT NULL REFERENCES people(id),
+          type TEXT NOT NULL,
+          directionality TEXT NOT NULL DEFAULT 'symmetric',
+          direction_from TEXT,
+          label_a_to_b TEXT,
+          label_b_to_a TEXT,
+          notes TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          CHECK (person_a <> person_b),
+          CHECK (person_a < person_b),
+          UNIQUE (person_a, person_b, type, directionality, direction_from)
+        );
+        """
+    )
+    con.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_schema_version', '1')")
+    con.execute("PRAGMA user_version = 1")
+    con.execute("INSERT INTO people (id, name, display_order) VALUES ('p1', 'Person One', 0)")
+    con.execute("INSERT INTO people (id, name, display_order) VALUES ('p2', 'Person Two', 1)")
+    con.execute(
+        """
+        INSERT INTO general_relationships (id, person_a, person_b, type, directionality, direction_from, label_a_to_b, label_b_to_a, notes, created_at, updated_at)
+        VALUES (42, 'p1', 'p2', 'colleague', 'symmetric', NULL, 'Colleague', 'Colleague', 'Met at work', '2026-01-01', '2026-01-01')
+        """
+    )
+    con.execute(
+        """
+        INSERT INTO general_relationships (id, person_a, person_b, type, directionality, direction_from, label_a_to_b, label_b_to_a, notes, created_at, updated_at)
+        VALUES (43, 'p1', 'p2', 'mentor', 'directional', 'p1', 'Mentor', 'Mentee', 'Senior mentor', '2026-01-02', '2026-01-02')
+        """
+    )
+    con.commit()
+    con.close()
+
+
+@pytest.mark.parametrize(
+    "failpoint",
+    [
+        "before_create_v2_table",
+        "after_create_v2_table",
+        "after_copy_rows",
+        "after_drop_old_table",
+        "during_unique_index",
+        "before_metadata_version_update",
+        "after_version_bookkeeping",
+    ],
+)
+def test_migration_failure_injection_atomicity(tmp_path, failpoint):
+    """Deliberately fail migration at failpoint and verify complete atomic rollback."""
+    v1_db = tmp_path / f"v1_fail_{failpoint}.db"
+    _create_v1_fixture(v1_db)
+
+    db._MIGRATION_FAILPOINT = failpoint
+    try:
+        with pytest.raises(RuntimeError, match=f"Injected migration failure at failpoint: {failpoint}"):
+            db.migrate(v1_db)
+    finally:
+        db._MIGRATION_FAILPOINT = None
+
+    # Verify atomic rollback
+    con = sqlite3.connect(str(v1_db))
+    try:
+        tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        assert "general_relationships_v2" not in tables
+        assert "general_relationships" in tables
+
+        rows = con.execute("SELECT * FROM general_relationships ORDER BY id").fetchall()
+        assert len(rows) == 2
+        assert rows[0][0] == 42
+        assert rows[0][1] == "p1"
+        assert rows[0][2] == "p2"
+        assert rows[0][3] == "colleague"
+        assert rows[0][8] == "Met at work"
+
+        assert rows[1][0] == 43
+        assert rows[1][3] == "mentor"
+        assert rows[1][4] == "directional"
+        assert rows[1][5] == "p1"
+
+        meta_row = con.execute("SELECT value FROM metadata WHERE key = 'app_schema_version'").fetchone()
+        assert meta_row[0] == "1"
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 1
+
+        assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert con.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        con.close()
+
+    # Subsequent normal migration must succeed cleanly
+    db.migrate(v1_db)
+    con2 = sqlite3.connect(str(v1_db))
+    try:
+        assert con2.execute("SELECT value FROM metadata WHERE key = 'app_schema_version'").fetchone()[0] == "2"
+        assert con2.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert con2.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert con2.execute("PRAGMA foreign_key_check").fetchall() == []
+        rows2 = con2.execute("SELECT * FROM general_relationships ORDER BY id").fetchall()
+        assert len(rows2) == 2
+    finally:
+        con2.close()
+
+
+def test_schema_mismatch_refusal_is_strictly_non_mutating(tmp_path):
+    """If metadata and user_version disagree, migration raises without any mutation."""
+    mismatch_db = tmp_path / "mismatch_non_mutating.db"
     con = sqlite3.connect(str(mismatch_db))
     build_family.create_sqlite_schema(con)
     con.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_schema_version', '2')")
     con.execute("PRAGMA user_version = 1")
     con.commit()
+
+    before_schema = con.execute(
+        "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name"
+    ).fetchall()
+    before_tables = [
+        r[0]
+        for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        ).fetchall()
+    ]
+    before_metadata = con.execute("SELECT key, value FROM metadata ORDER BY key").fetchall()
+    before_user_ver = con.execute("PRAGMA user_version").fetchone()[0]
     con.close()
+
+    before_bytes = mismatch_db.read_bytes()
+    before_sha = hashlib.sha256(before_bytes).hexdigest()
 
     with pytest.raises(db.SchemaVersionMismatchError):
         db.migrate(mismatch_db)
+
+    con_after = sqlite3.connect(str(mismatch_db))
+    after_schema = con_after.execute(
+        "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name"
+    ).fetchall()
+    after_tables = [
+        r[0]
+        for r in con_after.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        ).fetchall()
+    ]
+    after_metadata = con_after.execute("SELECT key, value FROM metadata ORDER BY key").fetchall()
+    after_user_ver = con_after.execute("PRAGMA user_version").fetchone()[0]
+    con_after.close()
+
+    assert before_schema == after_schema
+    assert before_tables == after_tables
+    assert before_metadata == after_metadata
+    assert before_user_ver == after_user_ver
+    assert hashlib.sha256(mismatch_db.read_bytes()).hexdigest() == before_sha
+
+
+# ==============================================================================
+# 6. Parent-Child Stored vs Derived Test Matrix
+# ==============================================================================
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "biological",
+        "adopted",
+        "step",
+        "foster",
+        "guardian",
+        "unknown",
+        "unspecified",
+    ],
+)
+@pytest.mark.parametrize("direction", ["parent_to_child", "child_to_parent"])
+def test_parent_child_matrix_stored_classification(isolated, kind, direction):
+    """Direct row in parent_child is ALWAYS a stored fact (derived=False) regardless of kind."""
+    p_dad = people.create_person(name=f"Dad {kind}", gender="male")["id"]
+    p_child = people.create_person(name=f"Child {kind}", gender="female")["id"]
+
+    family.add_parent_child(parent_id=p_dad, child_id=p_child, role="father", kind=kind)
+
+    perspective, target = (p_dad, p_child) if direction == "parent_to_child" else (p_child, p_dad)
+    rel = relationship.get_relationship(perspective, target)
+
+    facts = family.family_facts()
+    matching_pc = [
+        pc for pc in facts["parent_child"]
+        if pc["parent_id"] == p_dad and pc["child_id"] == p_child
+    ]
+    assert len(matching_pc) == 1
+    assert matching_pc[0]["kind"] == kind
+
+    entries = rel["primary"] + rel["additional"]
+    pc_entries = [
+        e for e in entries
+        if e["domain"] == "family" and (
+            e.get("stored_fact_kind") == "parent_child" or
+            any(k in e["relationship_type"] for k in ("father", "mother", "parent", "son", "daughter", "child"))
+        )
+    ]
+    assert len(pc_entries) >= 1
+    entry = pc_entries[0]
+
+    if direction == "parent_to_child":
+        expected_sem = "daughter" if kind == "biological" else f"daughter_{kind}"
+    else:
+        expected_sem = "father" if kind == "biological" else f"father_{kind}"
+
+    assert entry["semantic_id"] == expected_sem
+    assert entry["relationship_type"] == expected_sem
+    assert entry["derived"] is False
+
+    paths_res = path_service.get_relationship_paths(perspective, target)
+    matching_paths = [
+        p for p in paths_res["paths"]
+        if p.get("semantic_id") == expected_sem or p.get("relationship_type") == expected_sem
+    ]
+    assert len(matching_paths) >= 1
+    path = matching_paths[0]
+    assert path["derived"] is False
+    assert len(path["nodes"]) == 2
+    assert [n["id"] for n in path["nodes"]] == [perspective, target]
+
+    prev_res = preview.preview_mutation(
+        "delete_parent_child",
+        {"parent_id": p_dad, "child_id": p_child},
+    )
+    assert prev_res["direct_changes"]
+    assert any("parent-child" in c.lower() for c in prev_res["direct_changes"])
+
+    assert len([e for e in entries if e["semantic_id"] == expected_sem]) == 1
+
+
+def test_explicit_named_parent_child_cases(isolated):
+    """Specifically assert father_adopted, mother_step, son_foster, daughter_guardian derived=False."""
+    dad = people.create_person(name="Adoptive Father", gender="male")["id"]
+    child1 = people.create_person(name="Adopted Child", gender="male")["id"]
+    family.add_parent_child(parent_id=dad, child_id=child1, role="father", kind="adopted")
+    rel1 = relationship.get_relationship(child1, dad)
+    e1 = next(e for e in rel1["primary"] if e["relationship_type"] == "father_adopted")
+    assert e1["derived"] is False
+
+    mom = people.create_person(name="Step Mother", gender="female")["id"]
+    child2 = people.create_person(name="Step Child", gender="male")["id"]
+    family.add_parent_child(parent_id=mom, child_id=child2, role="mother", kind="step")
+    rel2 = relationship.get_relationship(child2, mom)
+    e2 = next(e for e in rel2["primary"] if e["relationship_type"] == "mother_step")
+    assert e2["derived"] is False
+
+    foster_parent = people.create_person(name="Foster Parent", gender="female")["id"]
+    foster_son = people.create_person(name="Foster Son", gender="male")["id"]
+    family.add_parent_child(parent_id=foster_parent, child_id=foster_son, role="mother", kind="foster")
+    rel3 = relationship.get_relationship(foster_parent, foster_son)
+    e3 = next(e for e in rel3["primary"] if e["relationship_type"] == "son_foster")
+    assert e3["derived"] is False
+
+    guardian = people.create_person(name="Guardian Person", gender="male")["id"]
+    ward_daughter = people.create_person(name="Ward Daughter", gender="female")["id"]
+    family.add_parent_child(parent_id=guardian, child_id=ward_daughter, role="father", kind="guardian")
+    rel4 = relationship.get_relationship(guardian, ward_daughter)
+    e4 = next(e for e in rel4["primary"] if e["relationship_type"] == "daughter_guardian")
+    assert e4["derived"] is False
+
+
+# ==============================================================================
+# 7. Sibling Stored/Derived Test Matrix
+# ==============================================================================
+
+def test_sibling_stored_vs_derived_matrix(isolated):
+    """Test explicit full group, explicit default group, inferred biological, and inferred half."""
+    # Case 1 people
+    p_sib1 = people.create_person(name="Full Sib 1", gender="male")["id"]
+    p_sib2 = people.create_person(name="Full Sib 2", gender="female")["id"]
+
+    # Case 2 people
+    p_def1 = people.create_person(name="Def Sib 1", gender="male")["id"]
+    p_def2 = people.create_person(name="Def Sib 2", gender="female")["id"]
+
+    # Insert explicit groups
+    con = db.get_connection()
+    try:
+        con.execute(
+            "INSERT INTO sibling_groups (id, type, is_ordered, display_order) VALUES ('sg_full', 'full', 0, 0)"
+        )
+        con.execute(
+            "INSERT INTO sibling_group_members (group_id, person_id, member_order) VALUES ('sg_full', ?, 1)",
+            (p_sib1,),
+        )
+        con.execute(
+            "INSERT INTO sibling_group_members (group_id, person_id, member_order) VALUES ('sg_full', ?, 2)",
+            (p_sib2,),
+        )
+
+        con.execute(
+            "INSERT INTO sibling_groups (id, type, is_ordered, display_order) VALUES ('sg_default', NULL, 0, 1)"
+        )
+        con.execute(
+            "INSERT INTO sibling_group_members (group_id, person_id, member_order) VALUES ('sg_default', ?, 1)",
+            (p_def1,),
+        )
+        con.execute(
+            "INSERT INTO sibling_group_members (group_id, person_id, member_order) VALUES ('sg_default', ?, 2)",
+            (p_def2,),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    # Case 3: Biological sibling inferred from shared parent-child facts (NO explicit group) -> derived=True
+    dad_bio = people.create_person(name="Dad Bio", gender="male")["id"]
+    mom_bio = people.create_person(name="Mom Bio", gender="female")["id"]
+    p_bio1 = people.create_person(name="Bio Sib 1", gender="male")["id"]
+    p_bio2 = people.create_person(name="Bio Sib 2", gender="female")["id"]
+    family.add_parent_child(parent_id=dad_bio, child_id=p_bio1, role="father", kind="biological")
+    family.add_parent_child(parent_id=mom_bio, child_id=p_bio1, role="mother", kind="biological")
+    family.add_parent_child(parent_id=dad_bio, child_id=p_bio2, role="father", kind="biological")
+    family.add_parent_child(parent_id=mom_bio, child_id=p_bio2, role="mother", kind="biological")
+
+    # Case 4: Half sibling inferred from one shared biological parent (NO explicit group) -> derived=True
+    dad_half = people.create_person(name="Dad Half", gender="male")["id"]
+    p_half1 = people.create_person(name="Half Sib 1", gender="male")["id"]
+    p_half2 = people.create_person(name="Half Sib 2", gender="female")["id"]
+    family.add_parent_child(parent_id=dad_half, child_id=p_half1, role="father", kind="biological")
+    family.add_parent_child(parent_id=dad_half, child_id=p_half2, role="father", kind="biological")
+
+    # Verify Case 1: Explicit full group -> derived=False, path derived=False
+    rel1 = relationship.get_relationship(p_sib1, p_sib2)
+    e1 = next(e for e in rel1["primary"] if "sister" in e["relationship_type"])
+    assert e1["derived"] is False
+    path1 = path_service.get_relationship_paths(p_sib1, p_sib2)["paths"][0]
+    assert path1["derived"] is False
+
+    rel1_rev = relationship.get_relationship(p_sib2, p_sib1)
+    e1_rev = next(e for e in rel1_rev["primary"] if "brother" in e["relationship_type"])
+    assert e1_rev["derived"] is False
+    path1_rev = path_service.get_relationship_paths(p_sib2, p_sib1)["paths"][0]
+    assert path1_rev["derived"] is False
+
+    # Verify Case 2: Explicit group with type NULL/default -> derived=False, path derived=False
+    rel2 = relationship.get_relationship(p_def1, p_def2)
+    e2 = next(e for e in rel2["primary"] if "sister" in e["relationship_type"])
+    assert e2["derived"] is False
+    path2 = path_service.get_relationship_paths(p_def1, p_def2)["paths"][0]
+    assert path2["derived"] is False
+
+    rel2_rev = relationship.get_relationship(p_def2, p_def1)
+    e2_rev = next(e for e in rel2_rev["primary"] if "brother" in e["relationship_type"])
+    assert e2_rev["derived"] is False
+    path2_rev = path_service.get_relationship_paths(p_def2, p_def1)["paths"][0]
+    assert path2_rev["derived"] is False
+
+    # Verify Case 3: Inferred biological siblings -> derived=True, path derived=True
+    rel3 = relationship.get_relationship(p_bio1, p_bio2)
+    e3 = next(e for e in rel3["primary"] if "sister" in e["relationship_type"])
+    assert e3["derived"] is True
+    path3 = path_service.get_relationship_paths(p_bio1, p_bio2)["paths"][0]
+    assert path3["derived"] is True
+    # Proof path edges are stored parent_child facts
+    assert all(edge["type"] == "parent_child" for edge in path3["edges"])
+
+    rel3_rev = relationship.get_relationship(p_bio2, p_bio1)
+    e3_rev = next(e for e in rel3_rev["primary"] if "brother" in e["relationship_type"])
+    assert e3_rev["derived"] is True
+    path3_rev = path_service.get_relationship_paths(p_bio2, p_bio1)["paths"][0]
+    assert path3_rev["derived"] is True
+    assert all(edge["type"] == "parent_child" for edge in path3_rev["edges"])
+
+    # Verify Case 4: Inferred half siblings -> derived=True, path derived=True
+    rel4 = relationship.get_relationship(p_half1, p_half2)
+    entries4 = rel4["primary"] + rel4["additional"]
+    e4 = next(e for e in entries4 if "half_sister" in e["relationship_type"] or "sister" in e["relationship_type"])
+    assert e4["derived"] is True
+    paths4 = path_service.get_relationship_paths(p_half1, p_half2)["paths"]
+    half_path = next(p for p in paths4 if "half_sister" in p["relationship_type"] or "sister" in p["relationship_type"])
+    assert half_path["derived"] is True
+    assert all(edge["type"] == "parent_child" for edge in half_path["edges"])
+
+    rel4_rev = relationship.get_relationship(p_half2, p_half1)
+    entries4_rev = rel4_rev["primary"] + rel4_rev["additional"]
+    e4_rev = next(e for e in entries4_rev if "half_brother" in e["relationship_type"] or "brother" in e["relationship_type"])
+    assert e4_rev["derived"] is True
+    paths4_rev = path_service.get_relationship_paths(p_half2, p_half1)["paths"]
+    half_path_rev = next(p for p in paths4_rev if "half_brother" in p["relationship_type"] or "brother" in p["relationship_type"])
+    assert half_path_rev["derived"] is True
+    assert all(edge["type"] == "parent_child" for edge in half_path_rev["edges"])
 
 
 def test_temporary_copy_of_production_db_migration(tmp_path):

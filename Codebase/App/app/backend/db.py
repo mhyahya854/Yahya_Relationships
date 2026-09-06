@@ -70,6 +70,14 @@ def _apply_sql(connection: sqlite3.Connection, path: Path) -> None:
     connection.executescript(text)
 
 
+_MIGRATION_FAILPOINT: str | None = None
+
+
+def _check_migration_failpoint(name: str) -> None:
+    if _MIGRATION_FAILPOINT == name:
+        raise RuntimeError(f"Injected migration failure at failpoint: {name}")
+
+
 class SchemaVersionMismatchError(Exception):
     """Raised when metadata app_schema_version and PRAGMA user_version disagree."""
     pass
@@ -77,14 +85,17 @@ class SchemaVersionMismatchError(Exception):
 
 def get_current_schema_version(connection: sqlite3.Connection) -> int:
     """Read the current schema version using metadata and PRAGMA user_version authorities."""
-    row = connection.execute(
-        "SELECT value FROM metadata WHERE key = 'app_schema_version'"
+    meta_table = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='metadata'"
     ).fetchone()
-    meta_ver = (
-        int(row["value"])
-        if row and row["value"] is not None and str(row["value"]).strip().isdigit()
-        else None
-    )
+    meta_ver = None
+    if meta_table:
+        row = connection.execute(
+            "SELECT value FROM metadata WHERE key = 'app_schema_version'"
+        ).fetchone()
+        if row and row["value"] is not None and str(row["value"]).strip().isdigit():
+            meta_ver = int(row["value"])
+
     user_ver = connection.execute("PRAGMA user_version").fetchone()[0]
 
     # If both authorities report non-zero versions and they disagree, refuse to guess destructively
@@ -102,121 +113,55 @@ def get_current_schema_version(connection: sqlite3.Connection) -> int:
     return 1
 
 
-def _migrate_v1_to_v2(connection: sqlite3.Connection) -> None:
-    """Migrate general_relationships from schema v1 to v2.
+def _seed_groups_and_assignments(connection: sqlite3.Connection) -> None:
+    """Seed organisational groups and default family primary assignment."""
+    existing_groups = {
+        row["name"] for row in connection.execute("SELECT name FROM groups")
+    }
+    for index, (group_id, name, slug, kind) in enumerate(DEFAULT_GROUPS):
+        if name not in existing_groups:
+            connection.execute(
+                """
+                INSERT INTO groups (id, name, slug, kind, display_order)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (group_id, name, slug, kind, index),
+            )
 
-    Preserves all rows, columns, IDs, timestamps, notes, labels, and foreign keys.
-    Installs SQLite-level partial unique indexes for duplicate invariant enforcement.
-    """
-    _ensure_column(
-        connection,
-        "general_relationships",
-        "direction_from",
-        "ALTER TABLE general_relationships ADD COLUMN direction_from TEXT",
-    )
-
-    connection.execute(
-        """
-        CREATE TABLE general_relationships_v2 (
-          id INTEGER PRIMARY KEY,
-          person_a TEXT NOT NULL REFERENCES people(id),
-          person_b TEXT NOT NULL REFERENCES people(id),
-          type TEXT NOT NULL,
-          directionality TEXT NOT NULL DEFAULT 'symmetric'
-            CHECK (directionality IN ('symmetric', 'directional')),
-          direction_from TEXT,
-          label_a_to_b TEXT,
-          label_b_to_a TEXT,
-          notes TEXT,
-          created_at TEXT,
-          updated_at TEXT,
-          CHECK (person_a <> person_b),
-          CHECK (person_a < person_b),
-          CHECK (
-            (directionality = 'symmetric' AND direction_from IS NULL) OR
-            (directionality = 'directional' AND direction_from IN (person_a, person_b))
-          )
+    assigned = {
+        row["person_id"]
+        for row in connection.execute("SELECT person_id FROM person_groups")
+    }
+    family_row = connection.execute(
+        "SELECT id FROM groups WHERE id = 'family'"
+    ).fetchone()
+    family_group_id = family_row["id"] if family_row else "family"
+    people_ids = [
+        row["id"]
+        for row in connection.execute("SELECT id FROM people ORDER BY display_order")
+    ]
+    for person_id in people_ids:
+        if person_id in assigned:
+            continue
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO person_groups (person_id, group_id, is_primary)
+            VALUES (?, ?, 1)
+            """,
+            (person_id, family_group_id),
         )
-        """
-    )
-    connection.execute(
-        """
-        INSERT INTO general_relationships_v2 (
-          id, person_a, person_b, type, directionality, direction_from,
-          label_a_to_b, label_b_to_a, notes, created_at, updated_at
-        )
-        SELECT id, person_a, person_b, type,
-               COALESCE(directionality, 'symmetric'),
-               direction_from,
-               label_a_to_b, label_b_to_a, notes, created_at, updated_at
-        FROM general_relationships
-        """
-    )
-    connection.execute("DROP TABLE general_relationships")
-    connection.execute("ALTER TABLE general_relationships_v2 RENAME TO general_relationships")
-
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_general_relationships_person ON general_relationships(person_a, person_b)"
-    )
-    connection.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_symmetric_standard
-          ON general_relationships(person_a, person_b, type)
-          WHERE directionality = 'symmetric' AND type <> 'custom'
-        """
-    )
-    connection.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_symmetric_custom
-          ON general_relationships(person_a, person_b, COALESCE(label_a_to_b, ''), COALESCE(label_b_to_a, ''))
-          WHERE directionality = 'symmetric' AND type = 'custom'
-        """
-    )
-    connection.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_directional_standard
-          ON general_relationships(person_a, person_b, type, direction_from)
-          WHERE directionality = 'directional' AND type <> 'custom'
-        """
-    )
-    connection.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_directional_custom
-          ON general_relationships(person_a, person_b, direction_from, COALESCE(label_a_to_b, ''), COALESCE(label_b_to_a, ''))
-          WHERE directionality = 'directional' AND type = 'custom'
-        """
-    )
-
-    fk_violations = connection.execute("PRAGMA foreign_key_check").fetchall()
-    if fk_violations:
-        raise RuntimeError(f"Foreign key violation after v1->v2 migration: {fk_violations}")
 
 
-def migrate(
-    db_path: Path | None = None,
-    *,
-    mode: str = DatabaseOpenMode.OPEN_EXISTING,
-    create: bool = False,
-) -> None:
-    """Apply legacy + application schema and seed organisational defaults.
-
-    By default, only migrates an EXISTING database (mode=OPEN_EXISTING).
-    If the database file does not exist, refuses to create a blank database
-    unless explicit initialisation is requested (create=True or mode=INITIALIZE_NEW).
-    """
+def _bootstrap_new_database(connection: sqlite3.Connection) -> None:
+    """Initialize a brand-new empty database directly into schema v2."""
     from .domain.family import engine as build_family
 
-    connection = get_connection(db_path, mode=mode, create=create)
+    build_family.create_sqlite_schema(connection)
+    _apply_sql(connection, config.SCHEMA_PATH)
+
+    connection.isolation_level = None
+    connection.execute("BEGIN IMMEDIATE")
     try:
-        connection.execute("BEGIN")
-        build_family.create_sqlite_schema(connection)
-        _apply_sql(connection, config.SCHEMA_PATH)
-
-        current_ver = get_current_schema_version(connection)
-        if current_ver < 2:
-            _migrate_v1_to_v2(connection)
-
-        # Schema version bookkeeping.
         connection.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_schema_version', ?)",
             (str(config.APP_SCHEMA_VERSION),),
@@ -231,50 +176,237 @@ def migrate(
         )
         connection.execute(f"PRAGMA user_version = {int(config.APP_SCHEMA_VERSION)}")
 
-        # Seed organisational groups once.
-        existing_groups = {
-            row["name"] for row in connection.execute("SELECT name FROM groups")
-        }
-        for index, (group_id, name, slug, kind) in enumerate(DEFAULT_GROUPS):
-            if name not in existing_groups:
+        _seed_groups_and_assignments(connection)
+        connection.execute("COMMIT")
+    except Exception:
+        connection.execute("ROLLBACK")
+        raise
+
+
+def _migrate_v1_to_v2_atomic(connection: sqlite3.Connection) -> None:
+    """Migrate an existing schema v1 database to v2 in a single atomic transaction.
+
+    Never relies on executescript() inside the transaction.
+    Supports controlled failpoints to prove failure atomicity.
+    """
+    connection.isolation_level = None
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        # Ensure organizational tables exist
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS groups (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL UNIQUE,
+              slug TEXT NOT NULL UNIQUE,
+              kind TEXT NOT NULL DEFAULT 'custom'
+                CHECK (kind IN ('system', 'custom')),
+              display_order INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS person_groups (
+              person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+              group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+              is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0, 1)),
+              PRIMARY KEY (person_id, group_id)
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_person_groups_group ON person_groups(group_id)"
+        )
+
+        has_general_rel = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='general_relationships'"
+        ).fetchone()
+
+        if has_general_rel:
+            cols = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(general_relationships)")
+            }
+            if "direction_from" not in cols:
                 connection.execute(
-                    """
-                    INSERT INTO groups (id, name, slug, kind, display_order)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (group_id, name, slug, kind, index),
+                    "ALTER TABLE general_relationships ADD COLUMN direction_from TEXT"
                 )
 
-        # One canonical folder per person: assign previously unassigned
-        # people to the Family group as their primary group (Family is the
-        # natural home of the existing legacy people).
-        assigned = {
-            row["person_id"]
-            for row in connection.execute("SELECT person_id FROM person_groups")
-        }
-        family_row = connection.execute(
-            "SELECT id FROM groups WHERE id = 'family'"
-        ).fetchone()
-        family_group_id = family_row["id"] if family_row else "family"
-        people_ids = [
-            row["id"]
-            for row in connection.execute("SELECT id FROM people ORDER BY display_order")
-        ]
-        for person_id in people_ids:
-            if person_id in assigned:
-                continue
+            _check_migration_failpoint("before_create_v2_table")
+
             connection.execute(
                 """
-                INSERT OR IGNORE INTO person_groups (person_id, group_id, is_primary)
-                VALUES (?, ?, 1)
-                """,
-                (person_id, family_group_id),
+                CREATE TABLE general_relationships_v2 (
+                  id INTEGER PRIMARY KEY,
+                  person_a TEXT NOT NULL REFERENCES people(id),
+                  person_b TEXT NOT NULL REFERENCES people(id),
+                  type TEXT NOT NULL,
+                  directionality TEXT NOT NULL DEFAULT 'symmetric'
+                    CHECK (directionality IN ('symmetric', 'directional')),
+                  direction_from TEXT,
+                  label_a_to_b TEXT,
+                  label_b_to_a TEXT,
+                  notes TEXT,
+                  created_at TEXT,
+                  updated_at TEXT,
+                  CHECK (person_a <> person_b),
+                  CHECK (person_a < person_b),
+                  CHECK (
+                    (directionality = 'symmetric' AND direction_from IS NULL) OR
+                    (directionality = 'directional' AND direction_from IN (person_a, person_b))
+                  )
+                )
+                """
             )
 
-        connection.commit()
+            _check_migration_failpoint("after_create_v2_table")
+
+            connection.execute(
+                """
+                INSERT INTO general_relationships_v2 (
+                  id, person_a, person_b, type, directionality, direction_from,
+                  label_a_to_b, label_b_to_a, notes, created_at, updated_at
+                )
+                SELECT id, person_a, person_b, type,
+                       COALESCE(directionality, 'symmetric'),
+                       direction_from,
+                       label_a_to_b, label_b_to_a, notes, created_at, updated_at
+                FROM general_relationships
+                """
+            )
+
+            _check_migration_failpoint("after_copy_rows")
+
+            connection.execute("DROP TABLE general_relationships")
+
+            _check_migration_failpoint("after_drop_old_table")
+
+            connection.execute(
+                "ALTER TABLE general_relationships_v2 RENAME TO general_relationships"
+            )
+        else:
+            connection.execute(
+                """
+                CREATE TABLE general_relationships (
+                  id INTEGER PRIMARY KEY,
+                  person_a TEXT NOT NULL REFERENCES people(id),
+                  person_b TEXT NOT NULL REFERENCES people(id),
+                  type TEXT NOT NULL,
+                  directionality TEXT NOT NULL DEFAULT 'symmetric'
+                    CHECK (directionality IN ('symmetric', 'directional')),
+                  direction_from TEXT,
+                  label_a_to_b TEXT,
+                  label_b_to_a TEXT,
+                  notes TEXT,
+                  created_at TEXT,
+                  updated_at TEXT,
+                  CHECK (person_a <> person_b),
+                  CHECK (person_a < person_b),
+                  CHECK (
+                    (directionality = 'symmetric' AND direction_from IS NULL) OR
+                    (directionality = 'directional' AND direction_from IN (person_a, person_b))
+                  )
+                )
+                """
+            )
+
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_general_relationships_person ON general_relationships(person_a, person_b)"
+        )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_symmetric_standard
+              ON general_relationships(person_a, person_b, type)
+              WHERE directionality = 'symmetric' AND type <> 'custom'
+            """
+        )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_symmetric_custom
+              ON general_relationships(person_a, person_b, COALESCE(label_a_to_b, ''), COALESCE(label_b_to_a, ''))
+              WHERE directionality = 'symmetric' AND type = 'custom'
+            """
+        )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_directional_standard
+              ON general_relationships(person_a, person_b, type, direction_from)
+              WHERE directionality = 'directional' AND type <> 'custom'
+            """
+        )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_directional_custom
+              ON general_relationships(person_a, person_b, direction_from, COALESCE(label_a_to_b, ''), COALESCE(label_b_to_a, ''))
+              WHERE directionality = 'directional' AND type = 'custom'
+            """
+        )
+
+        _check_migration_failpoint("during_unique_index")
+        _check_migration_failpoint("before_metadata_version_update")
+
+        # Schema version bookkeeping
+        connection.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_schema_version', ?)",
+            (str(config.APP_SCHEMA_VERSION),),
+        )
+        connection.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_name', ?)",
+            (config.APP_NAME,),
+        )
+        connection.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_version', ?)",
+            (config.APP_VERSION,),
+        )
+        connection.execute(f"PRAGMA user_version = {int(config.APP_SCHEMA_VERSION)}")
+
+        _seed_groups_and_assignments(connection)
+
+        fk_violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        if fk_violations:
+            raise RuntimeError(f"Foreign key violation after v1->v2 migration: {fk_violations}")
+
+        _check_migration_failpoint("after_version_bookkeeping")
+
+        connection.execute("COMMIT")
     except Exception:
-        connection.rollback()
+        connection.execute("ROLLBACK")
         raise
+
+
+def migrate(
+    db_path: Path | None = None,
+    *,
+    mode: str = DatabaseOpenMode.OPEN_EXISTING,
+    create: bool = False,
+) -> None:
+    """Apply legacy + application schema and seed organisational defaults.
+
+    By default, only migrates an EXISTING database (mode=OPEN_EXISTING).
+    If the database file does not exist, refuses to create a blank database
+    unless explicit initialisation is requested (create=True or mode=INITIALIZE_NEW).
+    """
+    connection = get_connection(db_path, mode=mode, create=create)
+    try:
+        table_count = connection.execute(
+            "SELECT count(*) FROM sqlite_master WHERE type='table'"
+        ).fetchone()[0]
+
+        if table_count == 0:
+            _bootstrap_new_database(connection)
+            return
+
+        # EXISTING DATABASE:
+        # Pre-validation: detect schema-version mismatch BEFORE any mutation
+        current_ver = get_current_schema_version(connection)
+
+        if current_ver >= config.APP_SCHEMA_VERSION:
+            # Idempotent: already at target version, no destructive work
+            return
+
+        if current_ver < 2:
+            _migrate_v1_to_v2_atomic(connection)
     finally:
         connection.close()
 
