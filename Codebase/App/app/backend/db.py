@@ -70,6 +70,128 @@ def _apply_sql(connection: sqlite3.Connection, path: Path) -> None:
     connection.executescript(text)
 
 
+class SchemaVersionMismatchError(Exception):
+    """Raised when metadata app_schema_version and PRAGMA user_version disagree."""
+    pass
+
+
+def get_current_schema_version(connection: sqlite3.Connection) -> int:
+    """Read the current schema version using metadata and PRAGMA user_version authorities."""
+    row = connection.execute(
+        "SELECT value FROM metadata WHERE key = 'app_schema_version'"
+    ).fetchone()
+    meta_ver = (
+        int(row["value"])
+        if row and row["value"] is not None and str(row["value"]).strip().isdigit()
+        else None
+    )
+    user_ver = connection.execute("PRAGMA user_version").fetchone()[0]
+
+    # If both authorities report non-zero versions and they disagree, refuse to guess destructively
+    if meta_ver is not None and user_ver != 0 and meta_ver != user_ver:
+        raise SchemaVersionMismatchError(
+            f"Database schema version mismatch: metadata app_schema_version={meta_ver} "
+            f"disagrees with PRAGMA user_version={user_ver}."
+        )
+
+    if meta_ver is not None:
+        return meta_ver
+    if user_ver != 0:
+        return user_ver
+    # Legacy DB before version tracking
+    return 1
+
+
+def _migrate_v1_to_v2(connection: sqlite3.Connection) -> None:
+    """Migrate general_relationships from schema v1 to v2.
+
+    Preserves all rows, columns, IDs, timestamps, notes, labels, and foreign keys.
+    Installs SQLite-level partial unique indexes for duplicate invariant enforcement.
+    """
+    _ensure_column(
+        connection,
+        "general_relationships",
+        "direction_from",
+        "ALTER TABLE general_relationships ADD COLUMN direction_from TEXT",
+    )
+
+    connection.execute(
+        """
+        CREATE TABLE general_relationships_v2 (
+          id INTEGER PRIMARY KEY,
+          person_a TEXT NOT NULL REFERENCES people(id),
+          person_b TEXT NOT NULL REFERENCES people(id),
+          type TEXT NOT NULL,
+          directionality TEXT NOT NULL DEFAULT 'symmetric'
+            CHECK (directionality IN ('symmetric', 'directional')),
+          direction_from TEXT,
+          label_a_to_b TEXT,
+          label_b_to_a TEXT,
+          notes TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          CHECK (person_a <> person_b),
+          CHECK (person_a < person_b),
+          CHECK (
+            (directionality = 'symmetric' AND direction_from IS NULL) OR
+            (directionality = 'directional' AND direction_from IN (person_a, person_b))
+          )
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO general_relationships_v2 (
+          id, person_a, person_b, type, directionality, direction_from,
+          label_a_to_b, label_b_to_a, notes, created_at, updated_at
+        )
+        SELECT id, person_a, person_b, type,
+               COALESCE(directionality, 'symmetric'),
+               direction_from,
+               label_a_to_b, label_b_to_a, notes, created_at, updated_at
+        FROM general_relationships
+        """
+    )
+    connection.execute("DROP TABLE general_relationships")
+    connection.execute("ALTER TABLE general_relationships_v2 RENAME TO general_relationships")
+
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_general_relationships_person ON general_relationships(person_a, person_b)"
+    )
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_symmetric_standard
+          ON general_relationships(person_a, person_b, type)
+          WHERE directionality = 'symmetric' AND type <> 'custom'
+        """
+    )
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_symmetric_custom
+          ON general_relationships(person_a, person_b, COALESCE(label_a_to_b, ''), COALESCE(label_b_to_a, ''))
+          WHERE directionality = 'symmetric' AND type = 'custom'
+        """
+    )
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_directional_standard
+          ON general_relationships(person_a, person_b, type, direction_from)
+          WHERE directionality = 'directional' AND type <> 'custom'
+        """
+    )
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_directional_custom
+          ON general_relationships(person_a, person_b, direction_from, COALESCE(label_a_to_b, ''), COALESCE(label_b_to_a, ''))
+          WHERE directionality = 'directional' AND type = 'custom'
+        """
+    )
+
+    fk_violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+    if fk_violations:
+        raise RuntimeError(f"Foreign key violation after v1->v2 migration: {fk_violations}")
+
+
 def migrate(
     db_path: Path | None = None,
     *,
@@ -89,55 +211,10 @@ def migrate(
         connection.execute("BEGIN")
         build_family.create_sqlite_schema(connection)
         _apply_sql(connection, config.SCHEMA_PATH)
-        _ensure_column(
-            connection,
-            "general_relationships",
-            "direction_from",
-            "ALTER TABLE general_relationships ADD COLUMN direction_from TEXT",
-        )
 
-        # Migrate general_relationships constraint to allow multiple distinct types between same pair
-        table_sql = connection.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='general_relationships'"
-        ).fetchone()
-        if table_sql and "UNIQUE (person_a, person_b)" in table_sql[0]:
-            connection.execute(
-                """
-                CREATE TABLE general_relationships_v2 (
-                  id INTEGER PRIMARY KEY,
-                  person_a TEXT NOT NULL REFERENCES people(id),
-                  person_b TEXT NOT NULL REFERENCES people(id),
-                  type TEXT NOT NULL,
-                  directionality TEXT NOT NULL DEFAULT 'symmetric'
-                    CHECK (directionality IN ('symmetric', 'directional')),
-                  direction_from TEXT,
-                  label_a_to_b TEXT,
-                  label_b_to_a TEXT,
-                  notes TEXT,
-                  created_at TEXT,
-                  updated_at TEXT,
-                  CHECK (person_a <> person_b),
-                  CHECK (person_a < person_b),
-                  UNIQUE (person_a, person_b, type, directionality, direction_from)
-                )
-                """
-            )
-            connection.execute(
-                """
-                INSERT INTO general_relationships_v2 (
-                  id, person_a, person_b, type, directionality, direction_from,
-                  label_a_to_b, label_b_to_a, notes, created_at, updated_at
-                )
-                SELECT id, person_a, person_b, type, directionality, direction_from,
-                       label_a_to_b, label_b_to_a, notes, created_at, updated_at
-                FROM general_relationships
-                """
-            )
-            connection.execute("DROP TABLE general_relationships")
-            connection.execute("ALTER TABLE general_relationships_v2 RENAME TO general_relationships")
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_general_relationships_person ON general_relationships(person_a, person_b)"
-            )
+        current_ver = get_current_schema_version(connection)
+        if current_ver < 2:
+            _migrate_v1_to_v2(connection)
 
         # Schema version bookkeeping.
         connection.execute(

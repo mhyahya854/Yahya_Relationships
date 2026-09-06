@@ -165,13 +165,20 @@ def _path_payload(
         f"{edge['from']}:{edge['to']}:{edge['type']}:{edge['subtype']}"
         for edge in edges
     )
+    path_key = (
+        entry.get("stored_fact_id")
+        if (domain == "general" and entry.get("stored_fact_id"))
+        else entry["relationship_type"]
+    )
     return {
         "id": family_paths.canonical_path_id(
-            domain, entry["relationship_type"], node_ids, edge_signature
+            domain, path_key, node_ids, edge_signature
         ),
         "domain": domain,
         "relationship_type": entry["relationship_type"],
         "semantic_id": entry.get("semantic_id", entry["relationship_type"]),
+        "general_relationship_id": entry.get("general_relationship_id"),
+        "stored_fact_id": entry.get("stored_fact_id"),
         "label_en": entry["label_en"],
         "label_ur": entry["label_ur"],
         "side": side or "",
@@ -237,9 +244,18 @@ def _explicit_paths(
     for rel in model["parent_child"]:
         kind = rel.get("kind")
         if rel["parent"] == perspective_id and rel["child"] == target_id:
-            base = _child_label(_gender_of(people_index, target_id))
+            target_gender = _gender_of(people_index, target_id)
+            base = _child_label(target_gender)
             en, ur = _with_kind(base, kind)
-            entry = _normalise_entry(en, ur)
+            child_role = "son" if target_gender == "male" else ("daughter" if target_gender == "female" else "child")
+            entry = labels.normalize_family_entry({
+                "en": en,
+                "ur": ur,
+                "kind": "parent_child",
+                "role": child_role,
+                "target_gender": target_gender,
+                "suffix": kind if kind and kind != "biological" else None,
+            })
             paths.append(
                 _path_payload(
                     domain="family",
@@ -251,9 +267,18 @@ def _explicit_paths(
                 )
             )
         elif rel["parent"] == target_id and rel["child"] == perspective_id:
-            base = _parent_label(rel, _gender_of(people_index, target_id))
+            target_gender = _gender_of(people_index, target_id)
+            base = _parent_label(rel, target_gender)
             en, ur = _with_kind(base, kind)
-            entry = _normalise_entry(en, ur)
+            parent_role = rel.get("role") or ("mother" if target_gender == "female" else ("father" if target_gender == "male" else "parent"))
+            entry = labels.normalize_family_entry({
+                "en": en,
+                "ur": ur,
+                "kind": "parent_child",
+                "role": parent_role,
+                "target_gender": target_gender,
+                "suffix": kind if kind and kind != "biological" else None,
+            })
             paths.append(
                 _path_payload(
                     domain="family",
@@ -273,7 +298,11 @@ def _explicit_paths(
         }:
             gender = _gender_of(people_index, target_id)
             en = "Wife" if gender == "female" else "Husband"
-            entry = _normalise_entry(en)
+            entry = labels.normalize_family_entry({
+                "en": en,
+                "kind": "marriage",
+                "target_gender": gender,
+            })
             paths.append(
                 _path_payload(
                     domain="family",
@@ -296,7 +325,13 @@ def _explicit_paths(
             en = "Full sister" if explicit_full else "Sister"
         else:
             en = "Full brother" if explicit_full else "Brother"
-        entry = _normalise_entry(en)
+        entry = labels.normalize_family_entry({
+            "en": en,
+            "kind": "sibling",
+            "target_gender": gender,
+            "explicit_full": explicit_full,
+            "sibling_type": "full" if explicit_full else "biological",
+        })
         if shared_parents:
             # Canonical proof: through one shared parent (mother preferred).
             parents_by_gender = sorted(
@@ -459,7 +494,20 @@ def _derived_paths(
         node_ids = family_paths.concrete_path_nodes(record)
         if len(node_ids) - 1 > max_depth:
             continue
-        entry = _normalise_entry(en, ur)
+        target_g = _gender_of(people_index, target_id)
+        entry_data = {
+            "en": en,
+            "ur": ur,
+            "kind": record["kind"],
+            "side": side,
+            "degree": degree,
+            "removal": removal,
+            "distance": record.get("distance"),
+            "da": record.get("da"),
+            "db": record.get("db"),
+            "target_gender": target_g,
+        }
+        entry = labels.normalize_family_entry(entry_data)
         common = [
             ancestor
             for ancestor in record.get("common_ancestors", [])

@@ -234,3 +234,52 @@
 ## 21. Limitations & Future Work
 - Large-graph optimization (>500 nodes) is scheduled for a future dedicated performance phase.
 - Hermes chat integration remains untouched and pending its respective phase.
+
+---
+
+## 22. Phase 2 Final Semantic / Schema Hardening
+
+A surgical hardening pass closed four correctness gaps discovered during post-implementation audit:
+
+### 1. Sibling Stored/Derived Precedence Bug
+- **Issue**: `_bind_paths_and_metadata()` in `services/relationship.py` contained an operator precedence issue (`... and "brother" in ... or "sister" in ...`). When evaluating female targets with no direct sibling row, `direct_sibling` was `None` yet entered the branch, risking `AttributeError` on `direct_sibling.get(...)`.
+- **Fix**: Clarified boolean evaluation with explicit grouping (`is_sibling_type = "brother" in rel_type or "sister" in rel_type; if direct_sibling and entry.get("domain") == "family" and is_sibling_type:`).
+- **Verification**: Added `test_derived_female_sibling_without_explicit_group_does_not_crash` and `test_half_sibling_without_explicit_group_stays_derived` in `test_relationships_hardening.py`, proving derived sisters/half-sisters calculate without crashing and remain `derived=True`.
+
+### 2. Structured Family Semantic Identity (Removal of English Display Parsing)
+- **Issue**: Previously, `labels.py::normalize_family_entry()` derived `semantic_id` by re-parsing English display strings (e.g. regex on `"maternal second cousin once removed"`). Changing display wording or localization broke semantic identity.
+- **Fix**: Implemented `structured_family_semantic()` in `labels.py`. Canonical semantic IDs are now derived directly from structured kinship engine fields: `kind`, `side`, `degree`, `removal`, `distance`, `da`, `db`, `target_gender`, and `role`. English display parsing is strictly preserved as a fallback for unannotated legacy structures.
+- **Verification**: Added `test_semantic_id_unchanged_when_display_wording_altered`, `test_structured_cousin_semantic_identity`, and `test_structured_ancestor_collateral_semantic_identity`. Altering `entry["en"]` does not change `semantic_id`.
+
+### 3. General Relationship Stored-Fact & Graph Direction Identity
+- **Issue**: General relationships between a pair sharing the same type (e.g., $A \to B$ mentor and $B \to A$ mentor) previously collapsed to the same graph edge ID and proof path set (`general:{type}:{pA}:{pB}`).
+- **Fix**:
+  - Attached `general_relationship_id` and `stored_fact_id` (`general_relationship:{id}`) to general entries and paths.
+  - General graph edge IDs now incorporate the stored fact ID and maintain objective directionality (`source = direction_from`, `target = other`).
+  - Path proof binding binds by exact `general_relationship_id` / `stored_fact_id`.
+- **Duplicate Rules & SQLite DB-Level Enforcement**:
+  - SQLite treats `NULL != NULL` in standard UNIQUE constraints, which previously allowed duplicate symmetric rows with `direction_from IS NULL`.
+  - Installed 4 partial UNIQUE indexes in SQLite schema enforcing:
+    1. Standard symmetric: unique on `(person_a, person_b, type)` WHERE `directionality = 'symmetric' AND type != 'custom'`.
+    2. Custom symmetric: unique on `(person_a, person_b, label_a_to_b)` WHERE `directionality = 'symmetric' AND type = 'custom'`.
+    3. Standard directional: unique on `(person_a, person_b, type, direction_from)` WHERE `directionality = 'directional' AND type != 'custom'`.
+    4. Custom directional: unique on `(person_a, person_b, direction_from, label_a_to_b, label_b_to_a)` WHERE `directionality = 'directional' AND type = 'custom'`.
+- **Verification**: Verified distinct coexisting directional facts, distinct path/edge IDs, Show Why binding, deletion isolation, and undo restoration (`test_two_same_type_opposite_directional_relationships_remain_distinct`, `test_exact_stored_general_path_binding_by_row_id`, `test_direct_sql_duplicate_symmetric_relation_rejected_by_db`, etc.).
+
+### 4. Database Schema Version 2 Migration
+- **Issue**: Database schema changed without bumping schema version (`APP_SCHEMA_VERSION = 1`), and previous migrations relied on brittle SQL string matching.
+- **Fix**:
+  - Application version remains `0.5.0`; database schema version bumped to `2`.
+  - Added robust transactional migration `_migrate_v1_to_v2()` in `db.py` utilizing `PRAGMA table_info`, `PRAGMA index_list`, and metadata checking rather than raw SQL text matching.
+  - Verified atomic rollback on simulated migration failure, `PRAGMA foreign_key_check`, `PRAGMA integrity_check`, and idempotency.
+  - Added `SchemaVersionMismatchError` if metadata and `PRAGMA user_version` disagree.
+- **Verification**: Fixture migrations and copy-of-production migrations verified in `test_migration_v1_to_v2_data_preservation_and_idempotency`, `test_migration_with_copy_of_production_db`, and `test_schema_version_mismatch_behavior`.
+
+### Verification Summary
+- **Production DB Untouched**: `Database/Main/family.db` SHA-256 remains `3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E`.
+- **Journals**: All 35 journals 100% byte-identical.
+- **Backend Tests**: 168 passed (100% green).
+- **People UI E2E**: 18/18 checks passed.
+- **Relationships UI E2E**: 30/30 checks passed.
+- **Smoke Suite**: All checks passed.
+- **Typecheck & Frontend Build**: Clean pass.

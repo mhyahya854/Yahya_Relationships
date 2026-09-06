@@ -206,9 +206,6 @@ def get_graph_neighbors(
                 else row["person_a"]
             )
             neighbour_ids.append(other)
-            edge_defs.append(
-                _norm("general", row["type"], person_id, other)
-            )
 
     # Deduplicate while preserving deterministic order.
     seen_nodes = set(node_ids)
@@ -242,6 +239,8 @@ def get_graph_neighbors(
                         )
                         if candidate not in edge_defs:
                             edge_defs.append(candidate)
+
+    general_edges: list[dict] = []
     if "general" in active:
         connection = None
         try:
@@ -250,7 +249,7 @@ def get_graph_neighbors(
             connection = db.get_connection()
             rows = connection.execute(
                 """
-                SELECT person_a, person_b, type FROM general_relationships
+                SELECT * FROM general_relationships
                 """
             ).fetchall()
         finally:
@@ -259,9 +258,27 @@ def get_graph_neighbors(
         for row in rows:
             a, b = row["person_a"], row["person_b"]
             if {a, b} <= neighbour_set:
-                candidate = _norm("general", row["type"], a, b)
-                if candidate not in edge_defs:
-                    edge_defs.append(candidate)
+                directionality = row["directionality"]
+                if directionality == "directional" and row["direction_from"]:
+                    source = row["direction_from"]
+                    target = b if a == source else a
+                else:
+                    source, target = sorted((a, b))
+                edge_id = f"general:{row['type']}:{row['id']}:{source}:{target}"
+                general_edges.append(
+                    {
+                        "id": edge_id,
+                        "source": source,
+                        "target": target,
+                        "domain": "general",
+                        "type": "general",
+                        "subtype": row["type"],
+                        "general_relationship_id": row["id"],
+                        "stored_fact_id": f"general_relationship:{row['id']}",
+                        "directionality": directionality,
+                        "direction_from": row["direction_from"],
+                    }
+                )
 
     nodes = []
     for neighbour_id in ordered_nodes:
@@ -291,6 +308,11 @@ def get_graph_neighbors(
                 "subtype": subtype,
             }
         )
+    seen_gen_ids = set()
+    for g_edge in general_edges:
+        if g_edge["id"] not in seen_gen_ids:
+            seen_gen_ids.add(g_edge["id"])
+            edges.append(g_edge)
     return {
         "center": _person_brief(index[person_id]),
         "perspective": _person_brief(index[perspective_id]),

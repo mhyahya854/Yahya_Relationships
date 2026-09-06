@@ -1611,12 +1611,14 @@ def _pair_relationship_entries(data, first, second, people_index):
     entries = []
     seen = set()
 
-    def add(en, ur=None, group="primary"):
+    def add(en, ur=None, group="primary", **kwargs):
         key = (en, ur, group)
         if key in seen:
             return False
         seen.add(key)
-        entries.append({"en": en, "ur": ur, "group": group})
+        item = {"en": en, "ur": ur, "group": group}
+        item.update(kwargs)
+        entries.append(item)
         return True
 
     def gender_of(person_id):
@@ -1626,9 +1628,9 @@ def _pair_relationship_entries(data, first, second, people_index):
     for marriage in data["marriages"]:
         if {marriage["person1"], marriage["person2"]} == {first, second}:
             if gender_of(second) == "female":
-                add("Wife", "بیوی")
+                add("Wife", "بیوی", kind="marriage", target_gender="female")
             else:
-                add("Husband", "شوہر")
+                add("Husband", "شوہر", kind="marriage", target_gender="male")
 
     child_gender_terms = {
         "male": ("Son", "بیٹا"),
@@ -1638,21 +1640,38 @@ def _pair_relationship_entries(data, first, second, people_index):
         kind = rel.get("kind")
         suffix = f" ({kind})" if kind and kind != "biological" else ""
         if rel["parent"] == first and rel["child"] == second:
-            term = child_gender_terms.get(gender_of(second), ("Child", "بچہ"))
-            add(term[0] + suffix, term[1] if not suffix else None)
+            child_g = gender_of(second)
+            child_role = "son" if child_g == "male" else ("daughter" if child_g == "female" else "child")
+            term = child_gender_terms.get(child_g, ("Child", "بچہ"))
+            add(
+                term[0] + suffix,
+                term[1] if not suffix else None,
+                kind="parent_child",
+                role=child_role,
+                target_gender=child_g,
+                suffix=kind if kind and kind != "biological" else None,
+            )
         if rel["parent"] == second and rel["child"] == first:
             role = rel.get("role")
             gender = gender_of(second)
             if role in ("mother", "father"):
                 en = {"mother": "Mother", "father": "Father"}[role]
                 ur = {"mother": "والدہ", "father": "والد"}[role]
+                parent_role = role
             elif gender == "female":
-                en, ur = "Mother", "والدہ"
+                en, ur, parent_role = "Mother", "والدہ", "mother"
             elif gender == "male":
-                en, ur = "Father", "والد"
+                en, ur, parent_role = "Father", "والد", "father"
             else:
-                en, ur = "Parent", "والدین"
-            add(en + suffix, ur if not suffix else None)
+                en, ur, parent_role = "Parent", "والدین", "parent"
+            add(
+                en + suffix,
+                ur if not suffix else None,
+                kind="parent_child",
+                role=parent_role,
+                target_gender=gender,
+                suffix=kind if kind and kind != "biological" else None,
+            )
 
     def same_biological_parents(a, b):
         parents_a = sorted(
@@ -1672,13 +1691,21 @@ def _pair_relationship_entries(data, first, second, people_index):
     sibling_added = False
     if shared_groups or same_biological_parents(first, second):
         explicit_full = any(group.get("type") == "full" for group in shared_groups)
-        if gender_of(second) == "female":
+        target_g = gender_of(second)
+        if target_g == "female":
             en = "Full sister" if explicit_full else "Sister"
             ur = "سگی بہن" if explicit_full else "بہن"
         else:
             en = "Full brother" if explicit_full else "Brother"
             ur = "سگا بھائی" if explicit_full else "بھائی"
-        if add(en, ur):
+        if add(
+            en,
+            ur,
+            kind="sibling",
+            target_gender=target_g,
+            explicit_full=explicit_full,
+            sibling_type="full" if explicit_full else "biological",
+        ):
             sibling_added = True
 
     # --- derived paths -------------------------------------------------
@@ -1701,11 +1728,27 @@ def _pair_relationship_entries(data, first, second, people_index):
                 elif side == "paternal":
                     en = "Paternal " + en
                 ur = GRAND_ANCESTOR_UR.get((side, target_gender))
-                add(en, ur, "direct")
+                add(
+                    en,
+                    ur,
+                    "direct",
+                    kind="ancestor",
+                    distance=distance,
+                    side=side,
+                    target_gender=target_gender,
+                )
             else:
                 prefix = "great-" * (distance - 2)
                 base = "grandfather" if target_gender == "male" else "grandmother"
-                add(f"{prefix}{base}", None, "direct")
+                add(
+                    f"{prefix}{base}",
+                    None,
+                    "direct",
+                    kind="ancestor",
+                    distance=distance,
+                    side=side,
+                    target_gender=target_gender,
+                )
         elif record_kind == "descendant":
             distance = record["distance"]
             if distance == 1:
@@ -1719,19 +1762,36 @@ def _pair_relationship_entries(data, first, second, people_index):
                     ur = "پوتا" if child_gender == "male" else "نواسا"
                 else:
                     ur = "پوتی" if child_gender == "male" else "نواسی"
-                add(en, ur, "direct")
+                add(
+                    en,
+                    ur,
+                    "direct",
+                    kind="descendant",
+                    distance=distance,
+                    target_gender=target_gender,
+                    child_id=child_id,
+                )
             else:
                 prefix = "great-" * (distance - 2)
                 base = "grandson" if target_gender == "male" else "granddaughter"
-                add(f"{prefix}{base}", None, "direct")
+                add(
+                    f"{prefix}{base}",
+                    None,
+                    "direct",
+                    kind="descendant",
+                    distance=distance,
+                    target_gender=target_gender,
+                    child_id=record.get("child_id"),
+                )
         elif record_kind == "collateral":
             da, db, side = record["da"], record["db"], record["side"]
             if da == 1 and db == 1:
                 if not sibling_added:
-                    if gender_of(second) == "female":
-                        add("Half sister", None, "direct")
+                    target_g = gender_of(second)
+                    if target_g == "female":
+                        add("Half sister", None, "direct", kind="collateral", da=1, db=1, side=side, target_gender="female", sibling_type="half")
                     else:
-                        add("Half brother", None, "direct")
+                        add("Half brother", None, "direct", kind="collateral", da=1, db=1, side=side, target_gender="male", sibling_type="half")
                     sibling_added = True
             elif da == 1 and db >= 2:
                 depth = db - 1
@@ -1749,11 +1809,29 @@ def _pair_relationship_entries(data, first, second, people_index):
                             "بھانجا" if sibling_gender == "female" else "بھتیجا"
                             if sibling_gender == "male" else None
                         )
-                    add(en, ur, "direct")
+                    add(
+                        en,
+                        ur,
+                        "direct",
+                        kind="collateral",
+                        da=da,
+                        db=db,
+                        side=side,
+                        target_gender=target_gender,
+                    )
                 else:
                     prefix = "grand" if depth == 2 else f"great-" * (depth - 2) + "grand"
                     base = "niece" if target_gender == "female" else "nephew"
-                    add(f"{prefix}{base}", None, "direct")
+                    add(
+                        f"{prefix}{base}",
+                        None,
+                        "direct",
+                        kind="collateral",
+                        da=da,
+                        db=db,
+                        side=side,
+                        target_gender=target_gender,
+                    )
             elif db == 1 and da >= 2:
                 target_gender = gender_of(second)
                 if da == 2:
@@ -1764,7 +1842,16 @@ def _pair_relationship_entries(data, first, second, people_index):
                         en = "paternal " + en
                     en = en.capitalize()
                     ur = UNCLE_AUNT_UR.get((side, target_gender))
-                    add(en, ur, "direct")
+                    add(
+                        en,
+                        ur,
+                        "direct",
+                        kind="collateral",
+                        da=da,
+                        db=db,
+                        side=side,
+                        target_gender=target_gender,
+                    )
                 else:
                     prefix = "great-" * (da - 2)
                     base = "uncle" if target_gender == "male" else "aunt"
@@ -1774,7 +1861,16 @@ def _pair_relationship_entries(data, first, second, people_index):
                         en = f"{prefix}paternal {base}".capitalize()
                     else:
                         en = f"{prefix}{base}".capitalize()
-                    add(en, None, "direct")
+                    add(
+                        en,
+                        None,
+                        "direct",
+                        kind="collateral",
+                        da=da,
+                        db=db,
+                        side=side,
+                        target_gender=target_gender,
+                    )
             elif da >= 2 and db >= 2:
                 degree = min(da, db) - 1
                 if degree >= 1:
@@ -1782,7 +1878,18 @@ def _pair_relationship_entries(data, first, second, people_index):
                     side_text = f"{side} " if side in ("maternal", "paternal") else ""
                     en = side_text + _cousin_en(degree, removal)
                     ur = _cousin_ur(degree, removal)
-                    add(en, ur, "cousin")
+                    add(
+                        en,
+                        ur,
+                        "cousin",
+                        kind="collateral",
+                        da=da,
+                        db=db,
+                        side=side,
+                        degree=degree,
+                        removal=removal,
+                        target_gender=gender_of(second),
+                    )
     return entries
 
 

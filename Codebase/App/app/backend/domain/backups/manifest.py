@@ -40,7 +40,7 @@ def build_backup_manifest(
                 "SELECT value FROM metadata WHERE key = 'app_schema_version'"
             ).fetchone()
             if s_row:
-                schema_ver = int(s_row["value"])
+                schema_ver = int(s_row[0])
             conn.close()
         except Exception:
             pass

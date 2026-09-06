@@ -46,11 +46,15 @@ export const EditRelationshipDialog: React.FC<Props> = ({
     try {
       if (entry.domain === "general" && !entry.derived) {
         const genRes = await api.relationships.general.list(perspectivePerson.id);
-        const match = genRes.relationships.find(
-          (r) =>
+        const match = genRes.relationships.find((r) => {
+          if (entry.general_relationship_id) {
+            return r.id === entry.general_relationship_id;
+          }
+          return (
             (r.person_a === perspectivePerson.id && r.person_b === targetPerson.id) ||
             (r.person_b === perspectivePerson.id && r.person_a === targetPerson.id)
-        );
+          );
+        });
         if (match) {
           setGeneralFact(match);
           setGenNotes(match.notes || "");

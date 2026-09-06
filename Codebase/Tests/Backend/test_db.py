@@ -25,7 +25,7 @@ def test_migration_schema_and_seeding(isolated):
         "fact_sources",
     ):
         assert table in tables
-    assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
     assert connection.execute("SELECT COUNT(*) FROM groups").fetchone()[0] == 7
     assert connection.execute("SELECT COUNT(*) FROM person_groups").fetchone()[0] == 35
     assert (

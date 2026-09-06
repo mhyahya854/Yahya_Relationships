@@ -100,6 +100,8 @@ export interface RelationshipEntry {
   explanation?: string;
   directionality?: string;
   reverse_label_en?: string | null;
+  general_relationship_id?: number;
+  stored_fact_id?: string;
 }
 
 export interface RelationshipResultDto {

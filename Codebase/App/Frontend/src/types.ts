@@ -50,6 +50,8 @@ export interface RelationshipEntry {
   directionality?: string;
   reverse_label_en?: string | null;
   notes?: string | null;
+  general_relationship_id?: number;
+  stored_fact_id?: string;
 }
 
 export interface RelationshipResult {

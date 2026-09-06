@@ -142,12 +142,27 @@ def _bind_paths_and_metadata(
     )
 
     for idx, entry in enumerate(entries):
-        entry["id"] = f"{target_id}:{entry['relationship_type']}:{idx}"
+        if entry.get("domain") == "general" and entry.get("general_relationship_id") is not None:
+            entry["id"] = f"{target_id}:general:{entry['general_relationship_id']}"
+        else:
+            entry["id"] = f"{target_id}:{entry['relationship_type']}:{idx}"
         matching: list[dict] = []
         for p in all_paths:
             if p["domain"] == entry["domain"]:
                 if entry["domain"] == "general":
-                    if p["relationship_type"] == entry["relationship_type"]:
+                    if (
+                        entry.get("general_relationship_id") is not None
+                        and p.get("general_relationship_id") is not None
+                    ):
+                        if p["general_relationship_id"] == entry["general_relationship_id"]:
+                            matching.append(p)
+                    elif (
+                        entry.get("stored_fact_id") is not None
+                        and p.get("stored_fact_id") is not None
+                    ):
+                        if p["stored_fact_id"] == entry["stored_fact_id"]:
+                            matching.append(p)
+                    elif p["relationship_type"] == entry["relationship_type"]:
                         matching.append(p)
                 else:
                     if p["relationship_type"] == entry["relationship_type"]:
@@ -183,9 +198,12 @@ def _bind_paths_and_metadata(
             entry["derived"] = False
             entry["status"] = direct_marriage.get("status", "married")
             entry["year"] = direct_marriage.get("year")
-        elif direct_sibling and entry["domain"] == "family" and "brother" in entry["relationship_type"] or "sister" in entry["relationship_type"]:
-            if direct_sibling.get("type") == "full":
-                entry["derived"] = False
+        else:
+            rel_type = entry.get("relationship_type", "")
+            is_sibling_type = "brother" in rel_type or "sister" in rel_type
+            if direct_sibling and entry.get("domain") == "family" and is_sibling_type:
+                if direct_sibling.get("type") == "full":
+                    entry["derived"] = False
 
 
 def get_relationship(

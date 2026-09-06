@@ -36,8 +36,27 @@ CREATE TABLE IF NOT EXISTS general_relationships (
   updated_at TEXT,
   CHECK (person_a <> person_b),
   CHECK (person_a < person_b),
-  UNIQUE (person_a, person_b, type, directionality, direction_from)
+  CHECK (
+    (directionality = 'symmetric' AND direction_from IS NULL) OR
+    (directionality = 'directional' AND direction_from IN (person_a, person_b))
+  )
 );
 
 CREATE INDEX IF NOT EXISTS idx_general_relationships_person
   ON general_relationships(person_a, person_b);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_symmetric_standard
+  ON general_relationships(person_a, person_b, type)
+  WHERE directionality = 'symmetric' AND type <> 'custom';
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_symmetric_custom
+  ON general_relationships(person_a, person_b, COALESCE(label_a_to_b, ''), COALESCE(label_b_to_a, ''))
+  WHERE directionality = 'symmetric' AND type = 'custom';
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_directional_standard
+  ON general_relationships(person_a, person_b, type, direction_from)
+  WHERE directionality = 'directional' AND type <> 'custom';
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_directional_custom
+  ON general_relationships(person_a, person_b, direction_from, COALESCE(label_a_to_b, ''), COALESCE(label_b_to_a, ''))
+  WHERE directionality = 'directional' AND type = 'custom';

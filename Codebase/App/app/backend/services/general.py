@@ -98,14 +98,26 @@ def add_general_relationship(
                 code="SELF_RELATIONSHIP",
             )
         rel_type = str(type).strip()
-        existing = connection.execute(
-            """
-            SELECT id FROM general_relationships
-            WHERE person_a = ? AND person_b = ? AND type = ? AND directionality = ?
-            AND ((direction_from IS NULL AND ? IS NULL) OR direction_from = ?)
-            """,
-            (person_low, person_high, rel_type, directionality, direction_from, direction_from),
-        ).fetchone()
+        if rel_type == "custom":
+            existing = connection.execute(
+                """
+                SELECT id FROM general_relationships
+                WHERE person_a = ? AND person_b = ? AND type = 'custom' AND directionality = ?
+                AND ((direction_from IS NULL AND ? IS NULL) OR direction_from = ?)
+                AND COALESCE(label_a_to_b, '') = COALESCE(?, '')
+                AND COALESCE(label_b_to_a, '') = COALESCE(?, '')
+                """,
+                (person_low, person_high, directionality, direction_from, direction_from, label_a_to_b, label_b_to_a),
+            ).fetchone()
+        else:
+            existing = connection.execute(
+                """
+                SELECT id FROM general_relationships
+                WHERE person_a = ? AND person_b = ? AND type = ? AND directionality = ?
+                AND ((direction_from IS NULL AND ? IS NULL) OR direction_from = ?)
+                """,
+                (person_low, person_high, rel_type, directionality, direction_from, direction_from),
+            ).fetchone()
         if existing:
             raise errors.ValidationError(
                 "That exact general relationship already exists between those people.",

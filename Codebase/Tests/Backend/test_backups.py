@@ -18,7 +18,7 @@ def test_backup_contains_database_journals_and_manifest(isolated):
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     assert payload["kind"] == "people-relationships-backup"
     assert payload["label"] == "test-backup"
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     paths = {entry["path"] for entry in payload["files"]}
     assert "data/family.db" in paths
     assert any(path.endswith("mohammad_yahya_hussain/journal.md") for path in paths)

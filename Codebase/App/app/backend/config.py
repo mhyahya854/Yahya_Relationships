@@ -53,7 +53,7 @@ if not SCHEMA_PATH.exists() and IS_FROZEN:
 
 APP_NAME = "People Relationships"
 APP_VERSION = "0.5.0"
-APP_SCHEMA_VERSION = 1
+APP_SCHEMA_VERSION = 2
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = int(os.environ.get("PR_BACKEND_PORT", "8765"))
