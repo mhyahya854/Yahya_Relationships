@@ -43,13 +43,39 @@ def _relation_to(model: dict, index: dict, perspective_id: str, target_id: str):
         return None
     pair = legacy._viewer_pair(model, perspective_id, target_id, index)
     items = pair.get("main") or []
-    if not items:
-        return None
-    first = items[0]
-    return {
-        "label_en": first.get("en"),
-        "label_ur": first.get("ur"),
-    }
+    if items:
+        first = items[0]
+        return {
+            "label_en": first.get("en"),
+            "label_ur": first.get("ur"),
+        }
+    # Check general relationships if no family connection
+    try:
+        from ... import db
+        con = db.get_connection()
+        try:
+            p_low, p_high = sorted((perspective_id, target_id))
+            row = con.execute(
+                "SELECT * FROM general_relationships WHERE person_a = ? AND person_b = ? LIMIT 1",
+                (p_low, p_high),
+            ).fetchone()
+            if row:
+                from ...kinship import labels
+                gen_entry = labels.normalize_general_entry(
+                    row,
+                    from_person=perspective_id,
+                    label_a_to_b=row["label_a_to_b"],
+                    label_b_to_a=row["label_b_to_a"],
+                )
+                return {
+                    "label_en": gen_entry["label_en"],
+                    "label_ur": None,
+                }
+        finally:
+            con.close()
+    except Exception:
+        pass
+    return None
 
 
 def get_graph_neighbors(

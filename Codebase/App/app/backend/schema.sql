@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS general_relationships (
   updated_at TEXT,
   CHECK (person_a <> person_b),
   CHECK (person_a < person_b),
-  UNIQUE (person_a, person_b)
+  UNIQUE (person_a, person_b, type, directionality, direction_from)
 );
 
 CREATE INDEX IF NOT EXISTS idx_general_relationships_person

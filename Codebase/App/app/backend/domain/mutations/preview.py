@@ -110,6 +110,29 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                     f"Remove parent-child relationship between {parent_name} and {child_name}."
                 )
 
+            elif action == "update_parent_child":
+                parent_id = params["parent_id"]
+                child_id = params["child_id"]
+                role = params.get("role")
+                kind = params.get("kind")
+                row = connection.execute(
+                    "SELECT role, kind FROM parent_child WHERE parent_id = ? AND child_id = ?",
+                    (parent_id, child_id),
+                ).fetchone()
+                if not row:
+                    raise errors.NotFoundError("Parent-child fact not found.")
+                new_role = role if role is not None else row["role"]
+                new_kind = kind if kind is not None else row["kind"]
+                connection.execute(
+                    "UPDATE parent_child SET role = ?, kind = ? WHERE parent_id = ? AND child_id = ?",
+                    (new_role, new_kind, parent_id, child_id),
+                )
+                parent_name = idx_before.get(parent_id, {}).get("name", parent_id)
+                child_name = idx_before.get(child_id, {}).get("name", child_id)
+                direct_changes.append(
+                    f"Update parent-child between {parent_name} and {child_name} to {new_kind} ({new_role})."
+                )
+
             elif action == "add_marriage":
                 person_a = params["person_a"]
                 person_b = params["person_b"]
@@ -150,6 +173,36 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                 name_a = idx_before.get(spouse_a, {}).get("name", spouse_a)
                 name_b = idx_before.get(spouse_b, {}).get("name", spouse_b)
                 direct_changes.append(f"Remove marriage between {name_a} and {name_b}.")
+
+            elif action == "update_marriage":
+                person_a = params["person_a"]
+                person_b = params["person_b"]
+                spouse_a, spouse_b = sorted((person_a, person_b))
+                status = params.get("status")
+                year = params.get("year")
+                children_status = params.get("children_status")
+                row = connection.execute(
+                    "SELECT * FROM marriages WHERE spouse_a = ? AND spouse_b = ?",
+                    (spouse_a, spouse_b),
+                ).fetchone()
+                if not row:
+                    raise errors.NotFoundError("Marriage fact not found.")
+                new_status = status if status is not None else row["status"]
+                new_year = year if year is not None else row["year"]
+                new_children_status = children_status if children_status is not None else row["children_status"]
+                connection.execute(
+                    """
+                    UPDATE marriages
+                    SET status = ?, year = ?, children_status = ?
+                    WHERE spouse_a = ? AND spouse_b = ?
+                    """,
+                    (new_status, new_year, new_children_status, spouse_a, spouse_b),
+                )
+                name_a = idx_before.get(spouse_a, {}).get("name", spouse_a)
+                name_b = idx_before.get(spouse_b, {}).get("name", spouse_b)
+                direct_changes.append(
+                    f"Update marriage between {name_a} and {name_b}: status={new_status}, year={new_year}."
+                )
 
             elif action == "add_sibling_group":
                 member_ids = params.get("member_ids", [])
@@ -266,15 +319,17 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
             for pair, items in map_after.items():
                 pid_a, pid_b = pair
                 before_items = map_before.get(pair, [])
-                before_labels = {item["en"] for item in before_items}
+                before_keys = {(item.get("type"), item["en"]) for item in before_items}
                 for item in items:
-                    if item["en"] not in before_labels:
+                    if (item.get("type"), item["en"]) not in before_keys:
                         derived_added.append(
                             {
                                 "person_a_id": pid_a,
                                 "person_a_name": idx_after.get(pid_a, {}).get("name", pid_a),
                                 "person_b_id": pid_b,
                                 "person_b_name": idx_after.get(pid_b, {}).get("name", pid_b),
+                                "relationship_type": item.get("type"),
+                                "semantic_id": item.get("type"),
                                 "label_en": item["en"],
                                 "label_ur": item.get("ur"),
                             }
@@ -284,15 +339,17 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
             for pair, items in map_before.items():
                 pid_a, pid_b = pair
                 after_items = map_after.get(pair, [])
-                after_labels = {item["en"] for item in after_items}
+                after_keys = {(item.get("type"), item["en"]) for item in after_items}
                 for item in items:
-                    if item["en"] not in after_labels:
+                    if (item.get("type"), item["en"]) not in after_keys:
                         derived_removed.append(
                             {
                                 "person_a_id": pid_a,
                                 "person_a_name": idx_before.get(pid_a, {}).get("name", pid_a),
                                 "person_b_id": pid_b,
                                 "person_b_name": idx_before.get(pid_b, {}).get("name", pid_b),
+                                "relationship_type": item.get("type"),
+                                "semantic_id": item.get("type"),
                                 "label_en": item["en"],
                                 "label_ur": item.get("ur"),
                             }

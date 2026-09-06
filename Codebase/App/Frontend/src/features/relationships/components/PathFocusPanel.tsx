@@ -6,6 +6,7 @@ export function PathFocusPanel({
   perspectiveName,
   target,
   totalForLabel,
+  activeIndex = 0,
   onSelectPath,
   onExit,
 }: {
@@ -14,6 +15,7 @@ export function PathFocusPanel({
   perspectiveName: string;
   target: { id: string; name: string };
   totalForLabel: number;
+  activeIndex?: number;
   onSelectPath: (index: number) => void;
   onExit: () => void;
 }) {
@@ -21,7 +23,9 @@ export function PathFocusPanel({
   return (
     <div className="path-focus-panel">
       <div className="path-focus-head">
-        <div className="rel-section-title">Path focus</div>
+        <div className="rel-section-title">
+          Path Proof {totalForLabel > 1 ? `(${activeIndex + 1} of ${totalForLabel})` : ""}
+        </div>
         <button type="button" className="btn btn-ghost" onClick={onExit}>
           Exit path (Esc)
         </button>
@@ -68,7 +72,9 @@ export function PathFocusPanel({
         )}
       </dl>
       <div className="path-explanation">
-        {path.domain === "general" ? (
+        {path.explanation ? (
+          <p>{path.explanation}</p>
+        ) : path.domain === "general" ? (
           <p>
             {target.name} is directly connected to {perspectiveName} by the
             recorded relationship “{entry.label_en}”. No family derivation is
@@ -93,23 +99,46 @@ export function PathFocusPanel({
         )}
       </div>
       {totalForLabel > 1 && (
-        <div className="path-alternatives">
-          <div className="muted small">
-            {totalForLabel} valid path{totalForLabel > 1 ? "s" : ""} for this
-            relationship:
-          </div>
-          {Array.from({ length: Math.min(totalForLabel, 5) }, (_, index) => index).map(
-            (index) => (
+        <div className="path-alternatives" style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <span className="muted small font-medium">
+              Path {activeIndex + 1} of {totalForLabel}
+            </span>
+            <div style={{ display: "flex", gap: 4 }}>
               <button
                 type="button"
-                key={index}
                 className="btn btn-ghost"
-                onClick={() => onSelectPath(index)}
+                disabled={activeIndex <= 0}
+                onClick={() => onSelectPath(activeIndex - 1)}
+                title="Previous Path"
               >
-                Path {index + 1}
+                ← Prev
               </button>
-            ),
-          )}
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={activeIndex >= totalForLabel - 1}
+                onClick={() => onSelectPath(activeIndex + 1)}
+                title="Next Path"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {Array.from({ length: totalForLabel }, (_, index) => index).map(
+              (index) => (
+                <button
+                  type="button"
+                  key={index}
+                  className={`btn ${index === activeIndex ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => onSelectPath(index)}
+                >
+                  Path {index + 1}
+                </button>
+              ),
+            )}
+          </div>
         </div>
       )}
     </div>

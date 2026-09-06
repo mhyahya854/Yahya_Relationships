@@ -87,7 +87,7 @@ function buildFlowEdges(
 }
 
 function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | null }) {
-  const { perspectiveId, perspectivePerson, setPerspective, returnToDefault } =
+  const { perspectiveId, defaultId, perspectivePerson, setPerspective, returnToDefault } =
     usePerspective();
   const graph = useRelationshipGraph();
   const { fitView } = useReactFlow();
@@ -208,6 +208,7 @@ function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | 
     (person: Person) => {
       setSelected(person);
       setFocus(null);
+      graph.exitPath();
       graph.ensureVisible({
         id: person.id,
         name: person.name,
@@ -235,10 +236,17 @@ function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | 
           perspectiveId,
           selected.id,
         );
-        const needle = entry.label_en.trim().toLowerCase();
-        const matching = response.paths.filter(
-          (path) => path.label_en.trim().toLowerCase() === needle,
-        );
+        let matching: RelationshipPath[] = [];
+        if (entry.path_ids && entry.path_ids.length > 0) {
+          const pathIdSet = new Set(entry.path_ids);
+          matching = response.paths.filter((p) => pathIdSet.has(p.id));
+        }
+        if (!matching.length && (entry.semantic_id || entry.relationship_type)) {
+          const semId = entry.semantic_id || entry.relationship_type;
+          matching = response.paths.filter(
+            (p) => (p.semantic_id || p.relationship_type) === semId,
+          );
+        }
         const paths = matching.length ? matching : response.paths;
         if (!paths.length) {
           setRelationshipError(
@@ -420,8 +428,19 @@ function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | 
     <div className="view relationships-view">
       <div className="view-head relationships-head">
         <div>
-          <h1>Relationships</h1>
-          <p className="muted">
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <h1 style={{ margin: 0 }}>Relationships</h1>
+            {defaultId && perspectiveId !== defaultId && (
+              <Button
+                kind="ghost"
+                onClick={() => void returnToDefault()}
+                title="Return to default perspective person"
+              >
+                ↺ Return to My Perspective
+              </Button>
+            )}
+          </div>
+          <p className="muted" style={{ marginTop: 4 }}>
             Diagram-first navigation from <strong>{perspectiveName}</strong>’s perspective.
           </p>
         </div>
@@ -499,6 +518,7 @@ function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | 
               perspectiveName={perspectiveName}
               target={selected}
               totalForLabel={focus.paths.length}
+              activeIndex={focus.pathIndex}
               onSelectPath={selectFocusedPath}
               onExit={exitPathMode}
             />
@@ -706,23 +726,49 @@ function EntryGroup({
       {entries.map((entry, index) => (
         <div
           className="panel-rel-row"
-          key={`${entry.relationship_type}-${index}`}
-          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}
+          key={`${entry.relationship_type}-${entry.semantic_id || ""}-${index}`}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+            padding: "8px 0",
+            borderBottom: "1px solid #f1f5f9",
+          }}
         >
-          <div className="panel-rel-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span>{entry.label_en}</span>
-            <span className={`badge-fact ${entry.derived ? "badge-derived" : "badge-explicit"}`}>
-              {entry.derived ? "derived" : "explicit"}
-            </span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+            <div className="panel-rel-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+              <span style={{ fontWeight: 600 }}>{entry.label_en}</span>
+              <span
+                className={`badge-fact ${entry.derived ? "badge-derived" : "badge-explicit"}`}
+                title={entry.derived ? "Derived from stored family facts" : "Directly stored factual data"}
+              >
+                {entry.derived ? "derived" : "stored fact"}
+              </span>
+              {entry.side && entry.side !== "unspecified" && (
+                <span className="badge-fact" style={{ background: "#e0e7ff", color: "#3730a3" }}>
+                  {entry.side}
+                </span>
+              )}
+              {entry.kind && entry.kind !== "direct" && (
+                <span className="badge-fact" style={{ background: "#fef3c7", color: "#92400e" }}>
+                  {entry.kind}
+                </span>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              <Button kind="ghost" onClick={() => onEditEntry(entry)}>
+                {entry.derived ? "Source" : "Edit"}
+              </Button>
+              <Button kind="ghost" onClick={() => onShowWhy(entry)}>
+                Why
+              </Button>
+            </div>
           </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            <Button kind="ghost" onClick={() => onEditEntry(entry)}>
-              {entry.derived ? "Source" : "Edit"}
-            </Button>
-            <Button kind="ghost" onClick={() => onShowWhy(entry)}>
-              Why
-            </Button>
-          </div>
+          {entry.label_ur && (
+            <div className="relation-ur" dir="rtl" lang="ur" style={{ fontSize: 13, color: "#64748b" }}>
+              {entry.label_ur}
+            </div>
+          )}
         </div>
       ))}
     </div>

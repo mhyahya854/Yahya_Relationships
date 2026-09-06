@@ -7,7 +7,7 @@ are never inferred transitively.
 import sqlite3
 
 from .. import db
-from ..domain.mutations.history import record_pre_mutation_snapshot
+from ..domain.mutations.history import pop_latest_snapshot, record_pre_mutation_snapshot
 from . import errors
 
 SYMMETRIC_TYPES = {
@@ -97,16 +97,18 @@ def add_general_relationship(
                 "A person cannot have a relationship with themselves.",
                 code="SELF_RELATIONSHIP",
             )
+        rel_type = str(type).strip()
         existing = connection.execute(
             """
             SELECT id FROM general_relationships
-            WHERE person_a = ? AND person_b = ?
+            WHERE person_a = ? AND person_b = ? AND type = ? AND directionality = ?
+            AND ((direction_from IS NULL AND ? IS NULL) OR direction_from = ?)
             """,
-            (person_low, person_high),
+            (person_low, person_high, rel_type, directionality, direction_from, direction_from),
         ).fetchone()
         if existing:
             raise errors.ValidationError(
-                "A general relationship already exists between those people.",
+                "That exact general relationship already exists between those people.",
                 code="DUPLICATE_FACT",
             )
         connection.execute("BEGIN")
@@ -122,7 +124,7 @@ def add_general_relationship(
             (
                 person_low,
                 person_high,
-                str(type).strip(),
+                rel_type,
                 directionality,
                 direction_from,
                 label_a_to_b,
@@ -140,12 +142,14 @@ def add_general_relationship(
         return dict(row)
     except sqlite3.IntegrityError as exc:
         connection.rollback()
+        pop_latest_snapshot()
         raise errors.ValidationError(
             "That relationship conflicts with existing constraints.",
             code="FACT_CONSTRAINT",
         ) from exc
     except Exception:
         connection.rollback()
+        pop_latest_snapshot()
         raise
     finally:
         connection.close()
@@ -202,6 +206,7 @@ def update_general_relationship(
         return dict(row)
     except Exception:
         connection.rollback()
+        pop_latest_snapshot()
         raise
     finally:
         connection.close()
@@ -227,6 +232,7 @@ def delete_general_relationship(relationship_id: int) -> dict:
         return {"ok": True, "deleted_id": relationship_id}
     except Exception:
         connection.rollback()
+        pop_latest_snapshot()
         raise
     finally:
         connection.close()

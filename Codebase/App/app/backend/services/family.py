@@ -9,7 +9,7 @@ legacy builder uses. Derived kinship terms are never stored.
 import sqlite3
 
 from .. import db
-from ..domain.mutations.history import record_pre_mutation_snapshot
+from ..domain.mutations.history import pop_latest_snapshot, record_pre_mutation_snapshot
 from ..model import _model_from_connection, run_family_audits, validate_model
 from . import errors
 
@@ -116,12 +116,14 @@ def add_parent_child(
         }
     except sqlite3.IntegrityError as exc:
         connection.rollback()
+        pop_latest_snapshot()
         raise errors.ValidationError(
             "That parent-child fact conflicts with existing constraints.",
             code="FACT_CONSTRAINT",
         ) from exc
     except Exception:
         connection.rollback()
+        pop_latest_snapshot()
         raise
     finally:
         connection.close()
@@ -149,6 +151,7 @@ def delete_parent_child(parent_id: str, child_id: str) -> dict:
         return {"ok": True, "deleted": f"{parent_id}|{child_id}"}
     except Exception:
         connection.rollback()
+        pop_latest_snapshot()
         raise
     finally:
         connection.close()
@@ -184,6 +187,7 @@ def update_parent_child(parent_id: str, child_id: str, *, role: str | None = Non
         return {"ok": True, "parent_id": parent_id, "child_id": child_id, "role": new_role, "kind": new_kind}
     except Exception:
         connection.rollback()
+        pop_latest_snapshot()
         raise
     finally:
         connection.close()
@@ -266,12 +270,14 @@ def add_marriage(
         }
     except sqlite3.IntegrityError as exc:
         connection.rollback()
+        pop_latest_snapshot()
         raise errors.ValidationError(
             "That marriage conflicts with existing constraints.",
             code="FACT_CONSTRAINT",
         ) from exc
     except Exception:
         connection.rollback()
+        pop_latest_snapshot()
         raise
     finally:
         connection.close()
@@ -300,6 +306,7 @@ def delete_marriage(person_a: str, person_b: str) -> dict:
         return {"ok": True, "deleted": f"{spouse_a}|{spouse_b}"}
     except Exception:
         connection.rollback()
+        pop_latest_snapshot()
         raise
     finally:
         connection.close()
@@ -357,6 +364,7 @@ def update_marriage(
         }
     except Exception:
         connection.rollback()
+        pop_latest_snapshot()
         raise
     finally:
         connection.close()
@@ -446,12 +454,14 @@ def add_sibling_group(
         return {"ok": True, "id": group_id, "members": members}
     except sqlite3.IntegrityError as exc:
         connection.rollback()
+        pop_latest_snapshot()
         raise errors.ValidationError(
             "That sibling group conflicts with existing constraints.",
             code="FACT_CONSTRAINT",
         ) from exc
     except Exception:
         connection.rollback()
+        pop_latest_snapshot()
         raise
     finally:
         connection.close()
@@ -476,6 +486,7 @@ def delete_sibling_group(group_id: str) -> dict:
         return {"ok": True, "deleted": group_id}
     except Exception:
         connection.rollback()
+        pop_latest_snapshot()
         raise
     finally:
         connection.close()

@@ -33,11 +33,20 @@ export interface Group {
 }
 
 export interface RelationshipEntry {
+  id?: string;
   domain: "family" | "general";
   relationship_type: string;
+  semantic_id?: string;
+  path_ids?: string[];
   label_en: string;
   label_ur: string | null;
   derived: boolean;
+  kind?: string | null;
+  side?: string;
+  degree?: number | null;
+  removal?: number | null;
+  common_ancestors?: Array<{ id: string; name: string; is_virtual?: boolean }>;
+  explanation?: string;
   directionality?: string;
   reverse_label_en?: string | null;
   notes?: string | null;

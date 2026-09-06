@@ -56,18 +56,34 @@ KNOWN_LABELS = {
         "Paternal grandmother",
         "دادی",
     ),
+    "great-grandfather": ("great_grandfather", "Great-grandfather", None),
+    "great-grandmother": ("great_grandmother", "Great-grandmother", None),
+    "maternal great-grandfather": ("maternal_great_grandfather", "Maternal great-grandfather", None),
+    "maternal great-grandmother": ("maternal_great_grandmother", "Maternal great-grandmother", None),
+    "paternal great-grandfather": ("paternal_great_grandfather", "Paternal great-grandfather", None),
+    "paternal great-grandmother": ("paternal_great_grandmother", "Paternal great-grandmother", None),
     "grandson": ("grandson", "Grandson", "پوتا"),
     "granddaughter": ("granddaughter", "Granddaughter", "پوتی"),
+    "great-grandson": ("great_grandson", "Great-grandson", None),
+    "great-granddaughter": ("great_granddaughter", "Great-granddaughter", None),
     "maternal uncle": ("maternal_uncle", "Maternal uncle", "ماموں"),
     "paternal uncle": ("paternal_uncle", "Paternal uncle", "چچا"),
     "uncle": ("uncle", "Uncle", "چچا"),
     "maternal aunt": ("maternal_aunt", "Maternal aunt", "خالہ"),
     "paternal aunt": ("paternal_aunt", "Paternal aunt", "پھوپھی"),
     "aunt": ("aunt", "Aunt", "پھوپھی"),
+    "great-uncle": ("great_uncle", "Great-uncle", None),
+    "great-aunt": ("great_aunt", "Great-aunt", None),
+    "maternal great-uncle": ("maternal_great_uncle", "Maternal great-uncle", None),
+    "maternal great-aunt": ("maternal_great_aunt", "Maternal great-aunt", None),
+    "paternal great-uncle": ("paternal_great_uncle", "Paternal great-uncle", None),
+    "paternal great-aunt": ("paternal_great_aunt", "Paternal great-aunt", None),
     "nephew": ("nephew", "Nephew", "بھانجا"),
     "niece": ("niece", "Niece", "بھانجی"),
     "grandnephew": ("grandnephew", "Grandnephew", None),
     "grandniece": ("grandniece", "Grandniece", None),
+    "great-grandnephew": ("great_grandnephew", "Great-grandnephew", None),
+    "great-grandniece": ("great_grandniece", "Great-grandniece", None),
 }
 
 
@@ -86,8 +102,11 @@ def _side_of(en: str) -> tuple[str, str]:
     return en, ""
 
 
-def _cousin_type(phrase: str) -> tuple[str, str] | None:
-    """Parse 'maternal second cousin once removed' style phrases."""
+def _cousin_type(phrase: str) -> tuple[str, str, int, int, str] | None:
+    """Parse 'maternal second cousin once removed' style phrases.
+
+    Returns: (type_key, display, degree, removal, side)
+    """
     normalized = " ".join(phrase.lower().split())
     if "cousin" not in normalized:
         return None
@@ -122,9 +141,10 @@ def _cousin_type(phrase: str) -> tuple[str, str] | None:
         degree = int(head)
     if degree is None:
         return None
-    type_key = f"{side}_cousin_degree_{degree}" if side else f"cousin_degree_{degree}"
-    if removal:
-        type_key += f"_removed_{removal}"
+
+    # Stable canonical semantic key with explicit degree and removal
+    side_prefix = f"{side}_" if side else ""
+    type_key = f"{side_prefix}cousin_degree_{degree}_removed_{removal}"
     suffix = "s" if phrase.strip().endswith("s") else ""
     display = " ".join(
         part
@@ -136,7 +156,7 @@ def _cousin_type(phrase: str) -> tuple[str, str] | None:
         )
         if part
     )
-    return type_key, display
+    return type_key, display, degree, removal, side
 
 
 def _ordinal_en(degree: int) -> str:
@@ -166,7 +186,8 @@ def _removal_en(removal: int) -> str:
 
 
 def normalize_family_entry(entry: dict) -> dict:
-    """Attach ``relationship_type`` to one engine relationship entry.
+    """Attach ``relationship_type``, ``semantic_id``, and structured metadata
+    to one engine relationship entry.
 
     The engine remains authoritative for the label strings; this function is
     a pure deterministic display/indexing layer.
@@ -174,33 +195,57 @@ def normalize_family_entry(entry: dict) -> dict:
     en = entry.get("en") or ""
     ur = entry.get("ur")
     base_en, suffix = _strip_suffix(en)
-    stripped, side = _side_of(base_en)
+    stripped, explicit_side = _side_of(base_en)
     type_key = None
     canonical_en = base_en
     canonical_ur = ur
+    side: str | None = explicit_side or None
+    degree: int | None = None
+    removal: int | None = None
+
+    # Check known labels first
     known = KNOWN_LABELS.get(base_en.lower())
     if known is None:
         known = KNOWN_LABELS.get(stripped.lower())
     if known is not None:
         type_key, canonical_en, canonical_ur = known
+        if "maternal" in base_en.lower():
+            side = "maternal"
+        elif "paternal" in base_en.lower():
+            side = "paternal"
     else:
         cousin = _cousin_type(base_en)
         if cousin is not None:
-            type_key, canonical_en = cousin
+            type_key, canonical_en, degree, removal, cousin_side = cousin
+            if cousin_side:
+                side = cousin_side
+
     if type_key is None:
-        slug = re.sub(r"[^a-z0-9]+", "_", base_en.lower()).strip("_")
-        type_key = f"family_custom_{slug or 'unknown'}"
+        # Generational great- prefixes
+        norm_clean = base_en.lower().replace("-", "_")
+        slug = re.sub(r"[^a-z0-9]+", "_", norm_clean).strip("_")
+        type_key = f"family_{slug or 'unknown'}"
         canonical_en = base_en
     if suffix:
         type_key = f"{type_key}_{suffix}"
     if not canonical_ur and suffix:
         canonical_ur = None
+
+    derived = entry.get("derived")
+    if derived is None:
+        # Explicit primary parent/marriage/self are not derived; cousins and generational blood roles are derived
+        derived = entry.get("group") not in ("primary",) if "group" in entry else True
+
     return {
         "domain": "family",
         "relationship_type": type_key,
+        "semantic_id": type_key,
         "label_en": canonical_en + (f" ({suffix})" if suffix else ""),
         "label_ur": canonical_ur,
-        "derived": True,
+        "side": side,
+        "degree": degree,
+        "removal": removal,
+        "derived": derived,
     }
 
 
@@ -219,9 +264,11 @@ def normalize_general_entry(
     else:
         label = label_a_to_b or label_b_to_a
         reverse_label = label
+    type_key = row["type"]
     return {
         "domain": "general",
-        "relationship_type": row["type"],
+        "relationship_type": type_key,
+        "semantic_id": f"general_{type_key}",
         "label_en": label,
         "label_ur": None,
         "derived": False,

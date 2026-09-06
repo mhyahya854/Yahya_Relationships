@@ -171,6 +171,7 @@ def _path_payload(
         ),
         "domain": domain,
         "relationship_type": entry["relationship_type"],
+        "semantic_id": entry.get("semantic_id", entry["relationship_type"]),
         "label_en": entry["label_en"],
         "label_ur": entry["label_ur"],
         "side": side or "",
@@ -481,7 +482,9 @@ def _derived_paths(
     paths.sort(
         key=lambda path: (
             path["distance"],
-            path["label_en"].casefold(),
+            path["degree"] if path["degree"] is not None else 99,
+            path["removal"] if path["removal"] is not None else 99,
+            path["relationship_type"],
             [node["id"] for node in path["nodes"]],
         )
     )
@@ -565,6 +568,8 @@ def get_relationship_paths(
             f"{max_depth}.",
             code="NO_RELATIONSHIP_PATH",
         )
+    for path in all_paths:
+        path["explanation"] = path_explanation(path, perspective, target)
     truncated = len(all_paths) > max_paths
     return {
         "perspective": perspective,

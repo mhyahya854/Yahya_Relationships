@@ -96,6 +96,49 @@ def migrate(
             "ALTER TABLE general_relationships ADD COLUMN direction_from TEXT",
         )
 
+        # Migrate general_relationships constraint to allow multiple distinct types between same pair
+        table_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='general_relationships'"
+        ).fetchone()
+        if table_sql and "UNIQUE (person_a, person_b)" in table_sql[0]:
+            connection.execute(
+                """
+                CREATE TABLE general_relationships_v2 (
+                  id INTEGER PRIMARY KEY,
+                  person_a TEXT NOT NULL REFERENCES people(id),
+                  person_b TEXT NOT NULL REFERENCES people(id),
+                  type TEXT NOT NULL,
+                  directionality TEXT NOT NULL DEFAULT 'symmetric'
+                    CHECK (directionality IN ('symmetric', 'directional')),
+                  direction_from TEXT,
+                  label_a_to_b TEXT,
+                  label_b_to_a TEXT,
+                  notes TEXT,
+                  created_at TEXT,
+                  updated_at TEXT,
+                  CHECK (person_a <> person_b),
+                  CHECK (person_a < person_b),
+                  UNIQUE (person_a, person_b, type, directionality, direction_from)
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO general_relationships_v2 (
+                  id, person_a, person_b, type, directionality, direction_from,
+                  label_a_to_b, label_b_to_a, notes, created_at, updated_at
+                )
+                SELECT id, person_a, person_b, type, directionality, direction_from,
+                       label_a_to_b, label_b_to_a, notes, created_at, updated_at
+                FROM general_relationships
+                """
+            )
+            connection.execute("DROP TABLE general_relationships")
+            connection.execute("ALTER TABLE general_relationships_v2 RENAME TO general_relationships")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_general_relationships_person ON general_relationships(person_a, person_b)"
+            )
+
         # Schema version bookkeeping.
         connection.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_schema_version', ?)",

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../../../api";
 import type { GeneralRelationshipFact, MutationPreviewResult, ParentChildFact, Person, RelationshipEntry } from "../../../types";
 import { MutationPreviewDialog } from "../../mutations/components/MutationPreviewDialog";
+import { relationshipsApi } from "../api";
 
 interface Props {
   perspectivePerson: Person;
@@ -80,8 +81,14 @@ export const EditRelationshipDialog: React.FC<Props> = ({
 
         // Load Show Why source paths if derived
         if (entry.derived) {
-          const pathRes = await api.relationships.get(perspectivePerson.id, targetPerson.id);
-          setSourcePaths(pathRes.primary || []);
+          const pathRes = await relationshipsApi.paths(perspectivePerson.id, targetPerson.id);
+          const pIds = entry.path_ids || [];
+          const matched = pathRes.paths.filter(
+            (p) =>
+              pIds.includes(p.id) ||
+              (p.semantic_id || p.relationship_type) === (entry.semantic_id || entry.relationship_type)
+          );
+          setSourcePaths(matched.length ? matched : pathRes.paths);
         }
       }
     } catch (err: unknown) {
@@ -199,16 +206,18 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                 </p>
 
                 <div style={{ marginTop: 12, padding: "8px 12px", background: "#ffffff", borderRadius: 6, border: "1px solid #d0deec" }}>
-                  <strong>Source facts:</strong>
+                  <strong>Underlying lineage & stored fact path{sourcePaths.length > 1 ? "s" : ""}:</strong>
                   <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 12.5 }}>
-                    <li>Family graph connection: {perspectivePerson.name} &rarr; {targetPerson.name}</li>
                     {sourcePaths.map((p, idx) => (
-                      <li key={idx}>{p.label_en} ({p.domain})</li>
+                      <li key={idx} style={{ marginBottom: 4 }}>
+                        <strong>{p.label_en}</strong>: {p.nodes.map((n: any) => n.name).join(" → ")}
+                        {p.explanation && <div className="muted tiny" style={{ marginTop: 1 }}>{p.explanation}</div>}
+                      </li>
                     ))}
                   </ul>
                 </div>
                 <div style={{ marginTop: 10, fontSize: 12 }} className="muted">
-                  To edit this derived relationship, edit or add explicit parent-child or marriage facts.
+                  To change this derived relationship, edit or remove the underlying stored parent-child or marriage facts shown above.
                 </div>
               </div>
             )}

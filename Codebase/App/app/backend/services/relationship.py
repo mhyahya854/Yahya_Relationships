@@ -66,49 +66,17 @@ def _engine_pair(model: dict, first: str, second: str) -> dict:
     return {"main": main, "additional": cousins}
 
 
-def _cousin_rank(en: str) -> tuple:
+def _cousin_rank(item: any) -> tuple:
     """Deterministic rank for cousin display: (degree, removal, side order)."""
-    text = " ".join(en.lower().split())
-    degree = 99
-    for word in (
-        "first",
-        "second",
-        "third",
-        "fourth",
-        "fifth",
-        "sixth",
-        "seventh",
-        "eighth",
-        "ninth",
-        "tenth",
-    ):
-        if text.startswith(word) or f" {word} " in f" {text} ":
-            degree = {
-                "first": 1,
-                "second": 2,
-                "third": 3,
-                "fourth": 4,
-                "fifth": 5,
-                "sixth": 6,
-                "seventh": 7,
-                "eighth": 8,
-                "ninth": 9,
-                "tenth": 10,
-            }[word]
-            break
-    removal = 0
-    if "once removed" in text:
-        removal = 1
-    elif "twice removed" in text:
-        removal = 2
+    if isinstance(item, dict):
+        norm = labels.normalize_family_entry(item)
     else:
-        import re as _re
-
-        match = _re.search(r"(\d+) times removed", text)
-        if match:
-            removal = int(match.group(1))
-    side = 1 if "maternal" in text else (2 if "paternal" in text else 3)
-    return (degree, removal, side)
+        norm = labels.normalize_family_entry({"en": str(item)})
+    degree = norm.get("degree") if norm.get("degree") is not None else 99
+    removal = norm.get("removal") if norm.get("removal") is not None else 0
+    side_val = norm.get("side")
+    side_order = 1 if side_val == "maternal" else (2 if side_val == "paternal" else 3)
+    return (degree, removal, side_order)
 
 
 def _family_entries(pair: dict) -> tuple[list[dict], list[dict]]:
@@ -139,6 +107,87 @@ def _general_entries(
     return entries
 
 
+def _bind_paths_and_metadata(
+    entries: list[dict],
+    all_paths: list[dict],
+    model: dict,
+    perspective_id: str,
+    target_id: str,
+) -> None:
+    # Direct fact lookup
+    direct_pc = next(
+        (
+            rel
+            for rel in model.get("parent_child", [])
+            if (rel["parent"] == perspective_id and rel["child"] == target_id)
+            or (rel["parent"] == target_id and rel["child"] == perspective_id)
+        ),
+        None,
+    )
+    direct_marriage = next(
+        (
+            m
+            for m in model.get("marriages", [])
+            if {m["person1"], m["person2"]} == {perspective_id, target_id}
+        ),
+        None,
+    )
+    direct_sibling = next(
+        (
+            g
+            for g in model.get("sibling_groups", [])
+            if perspective_id in g["members"] and target_id in g["members"]
+        ),
+        None,
+    )
+
+    for idx, entry in enumerate(entries):
+        entry["id"] = f"{target_id}:{entry['relationship_type']}:{idx}"
+        matching: list[dict] = []
+        for p in all_paths:
+            if p["domain"] == entry["domain"]:
+                if entry["domain"] == "general":
+                    if p["relationship_type"] == entry["relationship_type"]:
+                        matching.append(p)
+                else:
+                    if p["relationship_type"] == entry["relationship_type"]:
+                        matching.append(p)
+                    elif (
+                        entry.get("degree") is not None
+                        and p.get("degree") == entry.get("degree")
+                        and (entry.get("removal") or 0) == (p.get("removal") or 0)
+                        and (not entry.get("side") or entry.get("side") == p.get("side"))
+                    ):
+                        matching.append(p)
+
+        entry["path_ids"] = [p["id"] for p in matching]
+        if matching:
+            p0 = matching[0]
+            if not entry.get("side") and p0.get("side"):
+                entry["side"] = p0["side"]
+            if entry.get("degree") is None and p0.get("degree") is not None:
+                entry["degree"] = p0["degree"]
+            if entry.get("removal") is None and p0.get("removal") is not None:
+                entry["removal"] = p0["removal"]
+            if not entry.get("common_ancestors") and p0.get("common_ancestors"):
+                entry["common_ancestors"] = p0["common_ancestors"]
+            if not entry.get("explanation") and p0.get("explanation"):
+                entry["explanation"] = p0["explanation"]
+
+        # Tag stored direct facts accurately
+        if direct_pc and entry["domain"] == "family" and entry["relationship_type"] in ("father", "mother", "parent", "son", "daughter", "child"):
+            entry["derived"] = False
+            entry["kind"] = direct_pc.get("kind", "biological")
+            entry["role"] = direct_pc.get("role", "parent")
+        elif direct_marriage and entry["domain"] == "family" and entry["relationship_type"] in ("husband", "wife"):
+            entry["derived"] = False
+            entry["status"] = direct_marriage.get("status", "married")
+            entry["year"] = direct_marriage.get("year")
+        elif direct_sibling and entry["domain"] == "family" and "brother" in entry["relationship_type"] or "sister" in entry["relationship_type"]:
+            if direct_sibling.get("type") == "full":
+                entry["derived"] = False
+
+
 def get_relationship(
     perspective_person_id: str, target_person_id: str
 ) -> dict:
@@ -146,6 +195,18 @@ def get_relationship(
     model = load_model()
     perspective = _person_brief(model, perspective_person_id)
     target = _person_brief(model, target_person_id)
+
+    if perspective_person_id == target_person_id:
+        self_entry = labels.normalize_family_entry({"en": "Self", "ur": "خود", "derived": False})
+        self_entry["id"] = f"{target_person_id}:self:0"
+        self_entry["path_ids"] = []
+        return {
+            "perspective": perspective,
+            "target": target,
+            "primary": [self_entry],
+            "additional": [],
+        }
+
     pair = _engine_pair(model, perspective_person_id, target_person_id)
     family_primary, family_additional = _family_entries(pair)
 
@@ -158,6 +219,21 @@ def get_relationship(
         )
     finally:
         connection.close()
+
+    # Load proof paths to bind objective evidence to each entry
+    from ..domain.relationships import path_service
+    all_paths: list[dict] = []
+    try:
+        paths_res = path_service.get_relationship_paths(
+            perspective_person_id, target_person_id, max_depth=15, max_paths=50
+        )
+        all_paths = paths_res.get("paths", [])
+    except Exception:
+        all_paths = []
+
+    _bind_paths_and_metadata(family_primary, all_paths, model, perspective_person_id, target_person_id)
+    _bind_paths_and_metadata(family_additional, all_paths, model, perspective_person_id, target_person_id)
+    _bind_paths_and_metadata(general_primary, all_paths, model, perspective_person_id, target_person_id)
 
     # Explicit general relationships surface first; direct family facts and
     # derived direct blood roles come next; cousin paths remain additional.
