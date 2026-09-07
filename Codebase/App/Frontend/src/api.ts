@@ -82,12 +82,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const body = (payload ?? {}) as {
       error?: { code?: string; message?: string; [key: string]: unknown };
+      code?: string;
+      message?: string;
+      detail?: unknown;
     };
+    const errorBody = body.error ?? body;
     throw new ApiError(
-      body.error?.message ?? `Request failed (${response.status})`,
-      body.error?.code ?? "HTTP_ERROR",
+      errorBody.message ?? `Request failed (${response.status})`,
+      errorBody.code ?? "HTTP_ERROR",
       response.status,
-      (body.error ?? {}) as Record<string, unknown>,
+      errorBody as Record<string, unknown>,
     );
   }
   return payload as T;
@@ -316,7 +320,12 @@ export const api = {
     save: (
       personId: string,
       content: string,
-      expected: { modified_ns?: string | null; sha256?: string | null },
+      expected: {
+        exists?: boolean;
+        modified_ns?: string | null;
+        sha256?: string | null;
+        force?: boolean;
+      },
     ) =>
       request<{ ok: boolean } & Journal>(
         `/api/people/${encodeURIComponent(personId)}/journal`,
@@ -324,8 +333,10 @@ export const api = {
           method: "PUT",
           body: JSON.stringify({
             content,
+            expected_exists: expected.exists ?? null,
             expected_modified_ns: expected.modified_ns ?? null,
             expected_sha256: expected.sha256 ?? null,
+            force: expected.force ?? false,
           }),
         },
       ),

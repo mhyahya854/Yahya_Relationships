@@ -53,17 +53,28 @@ export function Modal({
   children,
   onClose,
   wide,
+  closeOnEscape = false,
 }: {
   title: ReactNode;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  closeOnEscape?: boolean;
 }) {
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div
+      className="modal-backdrop"
+      onMouseDown={onClose}
+      onKeyDown={(event) => {
+        if (closeOnEscape && event.key === "Escape") onClose();
+      }}
+    >
       <div
         className={`modal ${wide ? "modal-wide" : ""}`}
         onMouseDown={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={typeof title === "string" ? title : "Dialog"}
       >
         <div className="modal-head">
           <h2>{title}</h2>

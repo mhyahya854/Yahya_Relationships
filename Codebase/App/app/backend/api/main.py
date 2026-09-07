@@ -790,8 +790,10 @@ def api_read_journal(person_id: str) -> dict:
 
 class JournalSave(BaseModel):
     content: str
+    expected_exists: bool
     expected_modified_ns: str | None = None
     expected_sha256: str | None = None
+    force: bool = False
 
 
 @app.put("/api/people/{person_id}/journal")
@@ -799,8 +801,10 @@ def api_save_journal(person_id: str, payload: JournalSave) -> dict:
     result = journals.save_journal(
         person_id,
         payload.content,
+        expected_exists=payload.expected_exists,
         expected_modified_ns=payload.expected_modified_ns,
         expected_sha256=payload.expected_sha256,
+        force=payload.force,
         origin="user",
     )
     return {"ok": True, **result}

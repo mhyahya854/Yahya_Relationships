@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError } from "../api";
-import { Markdown } from "../markdown";
-import type { CompareResult, Journal, Person, PersonProfileData, RelationshipResult } from "../types";
+import { api } from "../api";
+import type { CompareResult, Person, PersonProfileData, RelationshipResult } from "../types";
+import { JournalEditor } from "../features/journals/JournalEditor";
 import {
   Avatar,
   Button,
@@ -124,11 +124,8 @@ export function PersonProfile({
   const [error, setError] = useState<unknown>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "relationships" | "journal">("overview");
 
-  // Embedded Journal editing state
-  const [journalMode, setJournalMode] = useState<"view" | "edit">("view");
-  const [journalDraft, setJournalDraft] = useState("");
-  const [journalInfo, setJournalInfo] = useState<string | null>(null);
-  const [journalError, setJournalError] = useState<unknown>(null);
+  const [journalDirty, setJournalDirty] = useState(false);
+  const [pendingTab, setPendingTab] = useState<"overview" | "relationships" | null>(null);
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -136,7 +133,6 @@ export function PersonProfile({
     try {
       const res = await api.people.profile(person.id, perspectiveId || undefined);
       setProfileData(res.profile);
-      setJournalDraft(res.profile.journal.content);
     } catch (err: unknown) {
       setError(err);
     } finally {
@@ -148,48 +144,12 @@ export function PersonProfile({
     void loadProfile();
   }, [loadProfile]);
 
-  const handleSaveJournal = async () => {
-    if (!profileData) return;
-    try {
-      const updated = await api.journals.save(person.id, journalDraft, {
-        modified_ns: profileData.journal.modified_ns,
-        sha256: profileData.journal.sha256,
-      });
-      setProfileData({ ...profileData, journal: updated });
-      setJournalDraft(updated.content);
-      setJournalMode("view");
-      setJournalInfo("Saved to journal.md");
-      setJournalError(null);
-      setTimeout(() => setJournalInfo(null), 2500);
-    } catch (err: unknown) {
-      if (err instanceof ApiError && err.code === "JOURNAL_CONFLICT") {
-        setJournalError(
-          new Error(
-            "journal.md was modified on disk by an external editor. Reload to merge changes before saving."
-          )
-        );
-        void loadProfile();
-      } else {
-        setJournalError(err);
-      }
+  const selectTab = (next: "overview" | "relationships" | "journal") => {
+    if (activeTab === "journal" && next !== "journal" && journalDirty) {
+      setPendingTab(next);
+      return;
     }
-  };
-
-  const handleAppendJournal = async () => {
-    const text = window.prompt(`New journal note for ${person.name}:`);
-    if (!text || !text.trim()) return;
-    try {
-      const updated = await api.journals.append(person.id, text.trim());
-      if (profileData) {
-        setProfileData({ ...profileData, journal: updated });
-      }
-      setJournalDraft(updated.content);
-      setJournalInfo("Entry appended.");
-      setJournalError(null);
-      setTimeout(() => setJournalInfo(null), 2500);
-    } catch (err: unknown) {
-      setJournalError(err);
-    }
+    setActiveTab(next);
   };
 
   const facts: Array<[string, string]> = [];
@@ -307,21 +267,21 @@ export function PersonProfile({
         <button
           type="button"
           className={`tab profile-tab ${activeTab === "overview" ? "active" : ""}`}
-          onClick={() => setActiveTab("overview")}
+          onClick={() => selectTab("overview")}
         >
           Overview &amp; Facts
         </button>
         <button
           type="button"
           className={`tab profile-tab ${activeTab === "relationships" ? "active" : ""}`}
-          onClick={() => setActiveTab("relationships")}
+          onClick={() => selectTab("relationships")}
         >
           Relationships
         </button>
         <button
           type="button"
           className={`tab profile-tab ${activeTab === "journal" ? "active" : ""}`}
-          onClick={() => setActiveTab("journal")}
+          onClick={() => selectTab("journal")}
         >
           Journal {profileData?.journal ? (profileData.journal.exists === false ? "⚠" : (profileData.journal.content?.trim() ? "✓" : "")) : ""}
         </button>
@@ -526,87 +486,31 @@ export function PersonProfile({
 
           {/* TAB 3: JOURNAL */}
           {activeTab === "journal" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div className="journal-toolbar" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                {journalMode === "view" ? (
-                  <>
-                    <Button onClick={() => setJournalMode("edit")}>Edit Journal</Button>
-                    <Button onClick={() => void handleAppendJournal()}>Append Note</Button>
-                  </>
-                ) : (
-                  <>
-                    <Button kind="primary" onClick={() => void handleSaveJournal()}>
-                      Save to journal.md
-                    </Button>
-                    <Button onClick={() => setJournalMode("view")}>Cancel</Button>
-                  </>
-                )}
-                <Button onClick={() => void loadProfile()} title="Reload from disk">
-                  Reload from disk
-                </Button>
-                <span className="muted tiny journal-path" style={{ marginLeft: "auto" }}>
-                  {profileData.journal.path}
-                </span>
-              </div>
-
-              {profileData.journal.exists === false && (
-                <div
-                  className="journal-missing-warning"
-                  style={{
-                    padding: "14px 18px",
-                    background: "#fffbeb",
-                    border: "1px solid #f59e0b",
-                    borderRadius: 8,
-                    color: "#92400e",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700 }}>
-                    <span style={{ fontSize: 16 }}>⚠</span>
-                    <span>journal.md could not be found for this person.</span>
-                  </div>
-                  <div className="tiny" style={{ color: "#78350f" }}>
-                    The canonical Markdown journal file is missing on disk. Reading this profile will not recreate it automatically.
-                  </div>
-                </div>
-              )}
-
-              {journalError ? <ErrorNote error={journalError} /> : null}
-              {journalInfo && <div className="info-note">{journalInfo}</div>}
-
-              {journalMode === "edit" ? (
-                <textarea
-                  className="journal-editor"
-                  style={{ minHeight: 240, width: "100%", padding: 12, borderRadius: 8, border: "1px solid var(--line-strong)" }}
-                  value={journalDraft}
-                  onChange={(e) => setJournalDraft(e.target.value)}
-                  spellCheck={false}
-                  placeholder="Write Markdown notes about this person..."
-                />
-              ) : profileData.journal.content.trim() ? (
-                <div className="journal-view" style={{ padding: "12px 16px", background: "#fafbfc", borderRadius: 8, border: "1px solid var(--line)" }}>
-                  <Markdown text={profileData.journal.content} />
-                </div>
-              ) : (
-                <div className="empty-state" style={{ padding: 24, textAlign: "center" }}>
-                  <p className="muted" style={{ margin: "0 0 12px" }}>
-                    {profileData.journal.exists === false
-                      ? `Journal file is missing from disk for ${person.name}.`
-                      : `No journal prose recorded yet for ${person.name}.`}
-                  </p>
-                  <Button kind="primary" onClick={() => setJournalMode("edit")}>
-                    {profileData.journal.exists === false ? "Create Journal" : "Write First Entry"}
-                  </Button>
-                </div>
-              )}
-
-              <div className="muted tiny journal-hint">
-                Canonical source: <code>journal.md</code>. Edits in external editors (VS Code, Obsidian, Notepad) are preserved upon reloading.
-              </div>
-            </div>
+            <JournalEditor
+              person={person}
+              initialJournal={profileData.journal}
+              onDirtyChange={setJournalDirty}
+            />
           )}
+        </div>
+      )}
+      {pendingTab && (
+        <div className="journal-inline-dialog" role="alertdialog" aria-modal="true" aria-label="Unsaved Journal changes">
+          <h3>Unsaved Journal changes</h3>
+          <p>Switching tabs will discard the current Journal draft.</p>
+          <div className="journal-dialog-actions">
+            <Button kind="primary" onClick={() => setPendingTab(null)}>Keep Editing</Button>
+            <Button
+              kind="danger"
+              onClick={() => {
+                setJournalDirty(false);
+                setActiveTab(pendingTab);
+                setPendingTab(null);
+              }}
+            >
+              Discard
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -656,131 +560,26 @@ export function JournalModal({
   person: Person;
   onClose: () => void;
 }) {
-  const [journal, setJournal] = useState<Journal | null>(null);
-  const [mode, setMode] = useState<"view" | "edit">("view");
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState<unknown>(null);
-  const [info, setInfo] = useState<string | null>(null);
-
-  async function load() {
-    try {
-      const result = await api.journals.get(person.id);
-      setJournal(result);
-      setDraft(result.content);
-      setError(null);
-    } catch (err) {
-      setError(err);
-    }
-  }
-
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [person.id]);
-
-  async function appendEntry() {
-    const text = window.prompt("New journal entry for " + person.name);
-    if (!text || !text.trim()) return;
-    try {
-      const result = await api.journals.append(person.id, text.trim());
-      setJournal(result);
-      setDraft(result.content);
-      setInfo("Entry appended.");
-      setError(null);
-      setTimeout(() => setInfo(null), 2500);
-    } catch (err) {
-      setError(err);
-    }
-  }
-
-  async function save() {
-    try {
-      const result = await api.journals.save(person.id, draft, {
-        modified_ns: journal?.modified_ns,
-        sha256: journal?.sha256,
-      });
-      setJournal(result);
-      setDraft(result.content);
-      setMode("view");
-      setInfo("Saved to journal.md");
-      setError(null);
-      setTimeout(() => setInfo(null), 2500);
-    } catch (err) {
-      if (err instanceof ApiError && err.code === "JOURNAL_CONFLICT") {
-        setError(
-          new Error(
-            "journal.md changed on disk since it was opened (external edit). " +
-              "Reload to see the new content, then merge manually and save again."
-          )
-        );
-        await load();
-      } else {
-        setError(err);
-      }
-    }
-  }
+  const [dirty, setDirty] = useState(false);
+  const [closeGuardOpen, setCloseGuardOpen] = useState(false);
+  const requestClose = () => {
+    if (dirty) setCloseGuardOpen(true);
+    else onClose();
+  };
 
   return (
-    <Modal title={`Journal — ${person.name}`} onClose={onClose} wide>
-      <div className="journal-toolbar">
-        {mode === "view" ? (
-          <>
-            <Button onClick={() => setMode("edit")}>Edit</Button>
-            <Button onClick={() => void appendEntry()}>Append entry</Button>
-          </>
-        ) : (
-          <>
-            <Button kind="primary" onClick={() => void save()}>
-              Save
-            </Button>
-            <Button onClick={() => setMode("view")}>Cancel</Button>
-          </>
-        )}
-        <Button onClick={() => void load()} title="Reload journal.md from disk">
-          Reload from disk
-        </Button>
-        <span className="muted tiny journal-path">{journal?.path ?? "…"}</span>
-      </div>
-      {journal && journal.exists === false && (
-        <div
-          className="journal-missing-warning"
-          style={{
-            padding: "10px 14px",
-            background: "#fffbeb",
-            border: "1px solid #f59e0b",
-            borderRadius: 6,
-            color: "#92400e",
-            fontSize: 13,
-            fontWeight: 600,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          <span>⚠</span>
-          <span>journal.md could not be found on disk for this person.</span>
+    <Modal title={`Journal — ${person.name}`} onClose={requestClose} wide closeOnEscape>
+      <JournalEditor person={person} onDirtyChange={setDirty} />
+      {closeGuardOpen && (
+        <div className="journal-inline-dialog" role="alertdialog" aria-modal="true" aria-label="Unsaved Journal changes">
+          <h3>Unsaved Journal changes</h3>
+          <p>Closing now will discard the current Journal draft.</p>
+          <div className="journal-dialog-actions">
+            <Button kind="primary" onClick={() => setCloseGuardOpen(false)}>Keep Editing</Button>
+            <Button kind="danger" onClick={onClose}>Discard</Button>
+          </div>
         </div>
       )}
-      {error ? <ErrorNote error={error} /> : null}
-      {info && <div className="info-note">{info}</div>}
-      {journal &&
-        (mode === "edit" ? (
-          <textarea
-            className="journal-editor"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            spellCheck={false}
-          />
-        ) : (
-          <div className="journal-view">
-            <Markdown text={journal.content} />
-          </div>
-        ))}
-      <div className="muted tiny journal-hint">
-        journal.md is the source of truth. Edits made in VS Code, Obsidian or
-        Notepad become visible after “Reload from disk”; the app never silently
-        overwrites an external change.
-      </div>
     </Modal>
   );
 }

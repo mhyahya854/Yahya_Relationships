@@ -980,6 +980,56 @@ textarea.text-input {
   margin-bottom: 10px;
 }
 
+.journal-experience {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.journal-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.journal-status {
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--line);
+}
+
+.journal-status.saved {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.journal-status.unsaved,
+.journal-status.changed {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+
+.journal-blocked,
+.journal-missing-warning,
+.journal-changed-warning {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  background: #fffbeb;
+  color: #78350f;
+  border: 1px solid #f59e0b;
+}
+
+.journal-editor-label {
+  display: block;
+}
+
 .journal-path {
   margin-left: auto;
   max-width: 420px;
@@ -1012,6 +1062,82 @@ textarea.text-input {
 
 .journal-hint {
   margin-top: 8px;
+}
+
+.journal-preview {
+  border-style: dashed;
+}
+
+.journal-inline-dialog,
+.journal-conflict {
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.16);
+}
+
+.journal-inline-dialog h3,
+.journal-conflict h3 {
+  margin: 0 0 8px;
+}
+
+.journal-inline-dialog label,
+.journal-conflict label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.journal-inline-dialog input,
+.journal-inline-dialog textarea,
+.journal-conflict textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 9px;
+  font: inherit;
+}
+
+.journal-inline-dialog textarea,
+.journal-conflict textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.journal-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.journal-conflict-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 760px) {
+  .journal-conflict-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .markdown h1 {

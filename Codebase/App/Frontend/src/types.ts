@@ -76,7 +76,8 @@ export interface Journal {
   content: string;
   modified_ns: string | null;
   sha256: string | null;
-  exists?: boolean;
+  exists: boolean;
+  saved?: boolean;
 }
 
 export interface SearchResult {
