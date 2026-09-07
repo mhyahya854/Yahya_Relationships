@@ -616,6 +616,7 @@ export function PersonProfile({
 export function useRelationship(
   perspectiveId: string | null,
   targetId: string | null,
+  refreshKey?: number | string,
 ) {
   const [result, setResult] = useState<RelationshipResult | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -643,7 +644,7 @@ export function useRelationship(
     return () => {
       cancelled = true;
     };
-  }, [perspectiveId, targetId]);
+  }, [perspectiveId, targetId, refreshKey]);
 
   return { result, error, loading };
 }

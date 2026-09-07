@@ -79,7 +79,11 @@ def isolated(tmp_path, monkeypatch):
     if not legacy_config.exists():
         (tmp_path / "Database" / "Config").mkdir(parents=True, exist_ok=True)
 
+    from app.backend.domain.mutations.history import _MUTATION_STACK
+    _MUTATION_STACK.clear()
+
     yield tmp_path
+    _MUTATION_STACK.clear()
     DataRootManager.set_override_root(None)
 
 

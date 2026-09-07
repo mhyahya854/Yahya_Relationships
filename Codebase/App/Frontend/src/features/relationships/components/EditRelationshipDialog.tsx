@@ -26,6 +26,7 @@ interface Props {
   entry: RelationshipEntry;
   onClose: () => void;
   onSaved: (desc: string) => void;
+  initialDeleteMode?: boolean;
 }
 
 export interface PerspectiveDirectionalLabels {
@@ -108,6 +109,7 @@ export const EditRelationshipDialog: React.FC<Props> = ({
   entry,
   onClose,
   onSaved,
+  initialDeleteMode = false,
 }) => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -181,45 +183,53 @@ export const EditRelationshipDialog: React.FC<Props> = ({
         });
         setPeopleMap(pMap);
 
-        // Check direct parent-child fact
-        const pcMatch = factsRes.parent_child.find(
-          (pc) =>
-            (pc.parent_id === perspectivePerson.id && pc.child_id === targetPerson.id) ||
-            (pc.child_id === perspectivePerson.id && pc.parent_id === targetPerson.id)
-        );
-        if (pcMatch) {
-          setParentChildFact(pcMatch);
-          setParentRole(pcMatch.role);
-          setParentKind(pcMatch.kind);
-        }
+        if (!entry.derived) {
+          const kind = entry.stored_fact_kind;
 
-        // Check direct marriage fact
-        const mMatch = factsRes.marriages.find(
-          (m) =>
-            (m.spouse_a === perspectivePerson.id && m.spouse_b === targetPerson.id) ||
-            (m.spouse_b === perspectivePerson.id && m.spouse_a === targetPerson.id)
-        );
-        if (mMatch) {
-          setMarriageFact(mMatch);
-          setMarriageStatus(mMatch.status || "married");
-          setMarriageYear(mMatch.year ? String(mMatch.year) : "");
-          setMarriageChildrenStatus(mMatch.children_status || "");
-        }
+          // Check direct parent-child fact
+          if (!kind || kind === "parent_child") {
+            const pcMatch = factsRes.parent_child.find(
+              (pc) =>
+                (pc.parent_id === perspectivePerson.id && pc.child_id === targetPerson.id) ||
+                (pc.child_id === perspectivePerson.id && pc.parent_id === targetPerson.id)
+            );
+            if (pcMatch) {
+              setParentChildFact(pcMatch);
+              setParentRole(pcMatch.role);
+              setParentKind(pcMatch.kind);
+            }
+          }
 
-        // Check direct sibling group fact
-        const sgMatch = factsRes.sibling_groups?.find(
-          (g) =>
-            g.members?.includes(perspectivePerson.id) &&
-            g.members?.includes(targetPerson.id)
-        );
-        if (sgMatch) {
-          setSiblingGroupFact(sgMatch);
-          setSiblingType(sgMatch.type || "");
-          setSiblingOrdered(Boolean(sgMatch.ordered));
-        }
+          // Check direct marriage fact
+          if (!kind || kind === "marriage") {
+            const mMatch = factsRes.marriages.find(
+              (m) =>
+                (m.spouse_a === perspectivePerson.id && m.spouse_b === targetPerson.id) ||
+                (m.spouse_b === perspectivePerson.id && m.spouse_a === targetPerson.id)
+            );
+            if (mMatch) {
+              setMarriageFact(mMatch);
+              setMarriageStatus(mMatch.status || "married");
+              setMarriageYear(mMatch.year ? String(mMatch.year) : "");
+              setMarriageChildrenStatus(mMatch.children_status || "");
+            }
+          }
 
-        // Load Show Why source paths if derived
-        if (entry.derived) {
+          // Check direct sibling group fact
+          if (!kind || kind === "sibling_group") {
+            const sgMatch = factsRes.sibling_groups?.find(
+              (g) =>
+                g.members?.includes(perspectivePerson.id) &&
+                g.members?.includes(targetPerson.id)
+            );
+            if (sgMatch) {
+              setSiblingGroupFact(sgMatch);
+              setSiblingType(sgMatch.type || "");
+              setSiblingOrdered(Boolean(sgMatch.ordered));
+            }
+          }
+        } else {
+          // Load Show Why source paths if derived
           const pathRes = await relationshipsApi.paths(perspectivePerson.id, targetPerson.id);
           const pIds = entry.path_ids || [];
           const matched = pathRes.paths.filter(
@@ -236,6 +246,28 @@ export const EditRelationshipDialog: React.FC<Props> = ({
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (initialDeleteMode && !entry.derived && !previewResult && !pendingDeleteAction) {
+      if (generalFact) {
+        handleDeletePreview("delete_general", { relationship_id: generalFact.id });
+      } else if (parentChildFact) {
+        handleDeletePreview("delete_parent_child", {
+          parent_id: parentChildFact.parent_id,
+          child_id: parentChildFact.child_id,
+        });
+      } else if (marriageFact) {
+        handleDeletePreview("delete_marriage", {
+          person_a: marriageFact.spouse_a,
+          person_b: marriageFact.spouse_b,
+        });
+      } else if (siblingGroupFact) {
+        handleDeletePreview("delete_sibling_group", {
+          group_id: siblingGroupFact.id,
+        });
+      }
+    }
+  }, [initialDeleteMode, entry.derived, generalFact, parentChildFact, marriageFact, siblingGroupFact, previewResult, pendingDeleteAction]);
 
   const handleSaveGeneral = async () => {
     if (!generalFact) return;
@@ -694,25 +726,25 @@ export const EditRelationshipDialog: React.FC<Props> = ({
               Close
             </button>
 
-            {generalFact && (
+            {!entry.derived && generalFact && (
               <button className="btn btn-primary" onClick={handleSaveGeneral} disabled={loading}>
                 {loading ? "Saving..." : "Save Relationship Fact"}
               </button>
             )}
 
-            {parentChildFact && (
+            {!entry.derived && parentChildFact && (
               <button className="btn btn-primary" onClick={handleSaveParentChild} disabled={loading}>
                 {loading ? "Saving..." : "Save Parent Fact"}
               </button>
             )}
 
-            {marriageFact && (
+            {!entry.derived && marriageFact && (
               <button className="btn btn-primary" onClick={handleSaveMarriage} disabled={loading}>
                 {loading ? "Saving..." : "Save Marriage Fact"}
               </button>
             )}
 
-            {siblingGroupFact && (
+            {!entry.derived && siblingGroupFact && (
               <button className="btn btn-primary" onClick={handleSaveSiblingGroup} disabled={loading}>
                 {loading ? "Saving..." : "Save Sibling Group Fact"}
               </button>
@@ -724,7 +756,13 @@ export const EditRelationshipDialog: React.FC<Props> = ({
       {previewResult && (
         <MutationPreviewDialog
           preview={previewResult}
-          onCancel={() => setPreviewResult(null)}
+          onCancel={() => {
+            setPreviewResult(null);
+            setPendingDeleteAction(null);
+            if (initialDeleteMode) {
+              onClose();
+            }
+          }}
           onConfirm={handleConfirmDelete}
           loading={loading}
         />

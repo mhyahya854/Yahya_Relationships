@@ -2,7 +2,14 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../../../api";
 import type { MutationPreviewResult, Person } from "../../../types";
 import { MutationPreviewDialog } from "../../mutations/components/MutationPreviewDialog";
-import { GENERAL_TYPES, MARRIAGE_STATUSES, PARENT_KINDS, PARENT_ROLES } from "../constants";
+import {
+  GENERAL_TYPES,
+  MARRIAGE_CHILDREN_STATUSES,
+  MARRIAGE_STATUSES,
+  PARENT_KINDS,
+  PARENT_ROLES,
+  SIBLING_GROUP_TYPES,
+} from "../constants";
 
 interface Props {
   sourcePerson: Person;
@@ -30,6 +37,9 @@ export const AddRelationshipDialog: React.FC<Props> = ({
   const [sourceIsParent, setSourceIsParent] = useState<boolean>(true);
   const [marriageStatus, setMarriageStatus] = useState<string>("married");
   const [marriageYear, setMarriageYear] = useState<string>("");
+  const [marriageChildrenStatus, setMarriageChildrenStatus] = useState<string>("");
+  const [siblingType, setSiblingType] = useState<string>("");
+  const [siblingOrdered, setSiblingOrdered] = useState<boolean>(false);
 
   // General State
   const [genType, setGenType] = useState<string>("close_friend");
@@ -86,6 +96,7 @@ export const AddRelationshipDialog: React.FC<Props> = ({
             person_b: targetId,
             status: marriageStatus,
             year: marriageYear ? parseInt(marriageYear, 10) : null,
+            children_status: marriageChildrenStatus || null,
           },
         };
       } else if (familyType === "sibling") {
@@ -93,8 +104,8 @@ export const AddRelationshipDialog: React.FC<Props> = ({
           action: "add_sibling_group",
           params: {
             member_ids: [sourcePerson.id, targetId],
-            type_: "full",
-            ordered: false,
+            type_: siblingType || undefined,
+            ordered: siblingOrdered,
           },
         };
       }
@@ -160,10 +171,11 @@ export const AddRelationshipDialog: React.FC<Props> = ({
             person_b: targetId,
             status: marriageStatus,
             year: marriageYear ? parseInt(marriageYear, 10) : undefined,
+            children_status: marriageChildrenStatus || undefined,
           });
           onSaved(`Added marriage between ${sourcePerson.name} and ${targetPerson.name}`);
         } else if (familyType === "sibling") {
-          await api.family.addSiblingGroup([sourcePerson.id, targetId], "full", false);
+          await api.family.addSiblingGroup([sourcePerson.id, targetId], siblingType || null, siblingOrdered);
           onSaved(`Added sibling fact between ${sourcePerson.name} and ${targetPerson.name}`);
         }
       } else {
@@ -319,30 +331,76 @@ export const AddRelationshipDialog: React.FC<Props> = ({
                 )}
 
                 {familyType === "marriage" && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      <div className="form-group">
+                        <label>Status</label>
+                        <select
+                          className="form-select"
+                          value={marriageStatus}
+                          onChange={(e) => setMarriageStatus(e.target.value)}
+                        >
+                          {MARRIAGE_STATUSES.map((s) => (
+                            <option key={s.value} value={s.value}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Marriage Year (Optional)</label>
+                        <input
+                          type="number"
+                          className="form-input"
+                          placeholder="e.g. 1998"
+                          value={marriageYear}
+                          onChange={(e) => setMarriageYear(e.target.value)}
+                        />
+                      </div>
+                    </div>
                     <div className="form-group">
-                      <label>Status</label>
+                      <label>Children Status</label>
                       <select
                         className="form-select"
-                        value={marriageStatus}
-                        onChange={(e) => setMarriageStatus(e.target.value)}
+                        value={marriageChildrenStatus}
+                        onChange={(e) => setMarriageChildrenStatus(e.target.value)}
                       >
-                        {MARRIAGE_STATUSES.map((s) => (
-                          <option key={s.value} value={s.value}>
-                            {s.label}
+                        {MARRIAGE_CHILDREN_STATUSES.map((cs) => (
+                          <option key={cs.value} value={cs.value}>
+                            {cs.label}
                           </option>
                         ))}
                       </select>
                     </div>
+                  </div>
+                )}
+
+                {familyType === "sibling" && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "center" }}>
                     <div className="form-group">
-                      <label>Marriage Year (Optional)</label>
+                      <label>Sibling Group Type</label>
+                      <select
+                        className="form-select"
+                        value={siblingType}
+                        onChange={(e) => setSiblingType(e.target.value)}
+                      >
+                        {SIBLING_GROUP_TYPES.map((st) => (
+                          <option key={st.value} value={st.value}>
+                            {st.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 22 }}>
                       <input
-                        type="number"
-                        className="form-input"
-                        placeholder="e.g. 1998"
-                        value={marriageYear}
-                        onChange={(e) => setMarriageYear(e.target.value)}
+                        type="checkbox"
+                        id="add-sibling-ordered-cb"
+                        checked={siblingOrdered}
+                        onChange={(e) => setSiblingOrdered(e.target.checked)}
                       />
+                      <label htmlFor="add-sibling-ordered-cb" style={{ margin: 0, cursor: "pointer" }}>
+                        Ordered (birth sequence)
+                      </label>
                     </div>
                   </div>
                 )}

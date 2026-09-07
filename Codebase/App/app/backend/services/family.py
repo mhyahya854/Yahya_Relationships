@@ -203,6 +203,8 @@ def add_marriage(
     children_status: str | None = None,
     origin: str = "user",
 ) -> dict:
+    if children_status == "":
+        children_status = None
     if status not in MARRIAGE_STATUSES:
         raise errors.ValidationError(f"Unsupported marriage status: {status!r}.")
     if children_status not in (None, *CHILD_STATUSES):
@@ -343,8 +345,10 @@ def update_marriage(
     if not _is_unset(status):
         if status is None or status not in MARRIAGE_STATUSES:
             raise errors.ValidationError(f"Unsupported marriage status: {status!r}.")
-    if not _is_unset(children_status) and children_status is not None:
-        if children_status not in CHILD_STATUSES:
+    if not _is_unset(children_status):
+        if children_status == "":
+            children_status = None
+        if children_status is not None and children_status not in CHILD_STATUSES:
             raise errors.ValidationError(f"Unsupported children status: {children_status!r}.")
     if not _is_unset(year) and year is not None:
         try:
@@ -412,6 +416,8 @@ def add_sibling_group(
         raise errors.ValidationError(
             "A sibling group cannot repeat a person.", code="SIBLING_GROUP_REPEAT"
         )
+    if type_ == "":
+        type_ = None
     if type_ not in (None, "full"):
         raise errors.ValidationError(
             f"Unsupported sibling-group type: {type_!r}."

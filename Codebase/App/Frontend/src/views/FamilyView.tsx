@@ -5,6 +5,7 @@ import { JournalModal, useRelationship } from "../components/PersonDetail";
 import { usePerspective } from "../state";
 import type { Group, Person, RelationshipEntry } from "../types";
 import { AddRelationshipDialog } from "../features/relationships/components/AddRelationshipDialog";
+import { EditRelationshipDialog } from "../features/relationships/components/EditRelationshipDialog";
 import { PersonEditorModal } from "../features/people/components/PersonEditorModal";
 import { UndoBar } from "../features/mutations/components/UndoBar";
 import mermaid from "mermaid";
@@ -88,6 +89,9 @@ export function FamilyView({
   // Editor Dialog States (preserved for seamless workflow)
   const [showAddFact, setShowAddFact] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
+  const [editingEntry, setEditingEntry] = useState<RelationshipEntry | null>(null);
+  const [initialDeleteMode, setInitialDeleteMode] = useState<boolean>(false);
+  const [relRefreshKey, setRelRefreshKey] = useState<number>(0);
   const [undoNotice, setUndoNotice] = useState<string | null>(null);
 
   const handleSelectPerson = (person: Person | null) => {
@@ -162,6 +166,7 @@ export function FamilyView({
     if (currentFocusId) {
       await loadFamilyData(currentFocusId);
     }
+    setRelRefreshKey((k) => k + 1);
   };
 
   const handleUndo = async () => {
@@ -173,6 +178,7 @@ export function FamilyView({
         if (currentFocusId) {
           await loadFamilyData(currentFocusId);
         }
+        setRelRefreshKey((k) => k + 1);
       }
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Undo failed");
@@ -290,9 +296,28 @@ export function FamilyView({
   const selectedRelationship = useRelationship(
     selected ? currentFocusId : null,
     selected ? selected.id : null,
+    relRefreshKey,
   );
 
   const isDefaultFocus = currentFocusId === (defaultFocusId || defaultId || "mohammad_yahya_hussain");
+
+  const focusPersonObj =
+    people.find((p) => p.id === currentFocusId) ||
+    (focusPerson
+      ? ({
+          ...focusPerson,
+          aliases: [],
+          groups: [],
+          folder: null,
+          note_en: null,
+          note_ur: null,
+          photo_path: null,
+          marital_status: null,
+        } as unknown as Person)
+      : null);
+
+  const primaryEntry = selectedRelationship.result?.primary?.[0] ?? null;
+  const isPrimaryStored = Boolean(primaryEntry && primaryEntry.derived === false);
 
   return (
     <div className="view">
@@ -500,7 +525,21 @@ export function FamilyView({
             ) : selectedRelationship.result ? (
               <>
                 <div className="rel-section-title">Primary Relationship</div>
-                <RelationshipListDetailed entries={selectedRelationship.result.primary} />
+                <RelationshipListDetailed
+                  entries={selectedRelationship.result.primary}
+                  onEditEntry={(entry) => {
+                    setInitialDeleteMode(false);
+                    setEditingEntry(entry);
+                  }}
+                  onDeleteEntry={(entry) => {
+                    setInitialDeleteMode(true);
+                    setEditingEntry(entry);
+                  }}
+                  onInspectProof={(entry) => {
+                    setInitialDeleteMode(false);
+                    setEditingEntry(entry);
+                  }}
+                />
 
                 {/* Multi-path relationships */}
                 {selectedRelationship.result.additional.length > 0 && (
@@ -513,7 +552,21 @@ export function FamilyView({
                     <div className="muted tiny" style={{ marginBottom: 6 }}>
                       This relative is related through multiple genealogical branches:
                     </div>
-                    <RelationshipListDetailed entries={selectedRelationship.result.additional} />
+                    <RelationshipListDetailed
+                      entries={selectedRelationship.result.additional}
+                      onEditEntry={(entry) => {
+                        setInitialDeleteMode(false);
+                        setEditingEntry(entry);
+                      }}
+                      onDeleteEntry={(entry) => {
+                        setInitialDeleteMode(true);
+                        setEditingEntry(entry);
+                      }}
+                      onInspectProof={(entry) => {
+                        setInitialDeleteMode(false);
+                        setEditingEntry(entry);
+                      }}
+                    />
                   </div>
                 )}
               </>
@@ -550,6 +603,39 @@ export function FamilyView({
             {/* Fact Editor Actions */}
             <div className="row-actions" style={{ marginTop: 8, borderTop: "1px solid var(--line)", paddingTop: 8 }}>
               <Button onClick={() => setShowAddFact(true)}>+ Add Family Fact</Button>
+              <Button
+                disabled={!isPrimaryStored}
+                onClick={() => {
+                  if (primaryEntry) {
+                    setInitialDeleteMode(false);
+                    setEditingEntry(primaryEntry);
+                  }
+                }}
+                title={
+                  isPrimaryStored
+                    ? "Edit stored family fact"
+                    : "Derived relationships cannot be edited directly; edit the underlying stored facts"
+                }
+              >
+                Edit Stored Fact
+              </Button>
+              <Button
+                kind="danger"
+                disabled={!isPrimaryStored}
+                onClick={() => {
+                  if (primaryEntry) {
+                    setInitialDeleteMode(true);
+                    setEditingEntry(primaryEntry);
+                  }
+                }}
+                title={
+                  isPrimaryStored
+                    ? "Remove stored family fact"
+                    : "Derived relationships cannot be removed directly; remove the underlying stored facts"
+                }
+              >
+                Remove Stored Fact
+              </Button>
               <Button onClick={() => setEditingPerson(selected)}>Edit Person</Button>
             </div>
           </aside>
@@ -561,6 +647,20 @@ export function FamilyView({
           sourcePerson={selected}
           peopleList={people}
           onClose={() => setShowAddFact(false)}
+          onSaved={handleSavedMutation}
+        />
+      )}
+
+      {editingEntry && selected && focusPersonObj && (
+        <EditRelationshipDialog
+          perspectivePerson={focusPersonObj}
+          targetPerson={selected}
+          entry={editingEntry}
+          initialDeleteMode={initialDeleteMode}
+          onClose={() => {
+            setEditingEntry(null);
+            setInitialDeleteMode(false);
+          }}
           onSaved={handleSavedMutation}
         />
       )}
@@ -590,7 +690,17 @@ export function FamilyView({
   );
 }
 
-function RelationshipListDetailed({ entries }: { entries: RelationshipEntry[] }) {
+function RelationshipListDetailed({
+  entries,
+  onEditEntry,
+  onDeleteEntry,
+  onInspectProof,
+}: {
+  entries: RelationshipEntry[];
+  onEditEntry?: (entry: RelationshipEntry) => void;
+  onDeleteEntry?: (entry: RelationshipEntry) => void;
+  onInspectProof?: (entry: RelationshipEntry) => void;
+}) {
   return (
     <div className="relation-list">
       {entries.map((entry, index) => {
@@ -610,7 +720,17 @@ function RelationshipListDetailed({ entries }: { entries: RelationshipEntry[] })
         }
 
         return (
-          <div className="relation-card-item" key={index} style={{ marginBottom: 6 }}>
+          <div
+            className="relation-card-item"
+            key={index}
+            style={{
+              marginBottom: 8,
+              padding: "8px 10px",
+              background: "var(--card-bg, #fff)",
+              border: "1px solid var(--line, #e5e7eb)",
+              borderRadius: 8,
+            }}
+          >
             <div className="relation-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span className="relation-en" style={{ fontWeight: 600 }}>{entry.label_en}</span>
               {entry.label_ur && (
@@ -631,6 +751,46 @@ function RelationshipListDetailed({ entries }: { entries: RelationshipEntry[] })
                 {provenanceLabel}
               </span>
             </div>
+            {isStored ? (
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                {onEditEntry && (
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    style={{ fontSize: 11.5, padding: "2px 8px" }}
+                    onClick={() => onEditEntry(entry)}
+                  >
+                    Edit Stored Fact
+                  </button>
+                )}
+                {onDeleteEntry && (
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    style={{ fontSize: 11.5, padding: "2px 8px" }}
+                    onClick={() => onDeleteEntry(entry)}
+                  >
+                    Remove Stored Fact
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div style={{ marginTop: 4 }}>
+                <div className="muted tiny" style={{ marginBottom: 4 }}>
+                  This relationship is derived from underlying family facts.
+                </div>
+                {onInspectProof && (
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    style={{ fontSize: 11.5, padding: "2px 8px" }}
+                    onClick={() => onInspectProof(entry)}
+                  >
+                    Inspect Proof
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         );
       })}

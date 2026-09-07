@@ -548,7 +548,7 @@ def api_marriage(payload: MarriageCreate) -> dict:
             person_b=payload.person_b,
             status=payload.status,
             year=payload.year,
-            children_status=payload.children_status,
+            children_status=payload.children_status or None,
             origin="user",
         ),
     }
@@ -580,7 +580,7 @@ def api_update_marriage(payload: MarriageUpdate) -> dict:
     if "year" in payload.model_fields_set:
         kwargs["year"] = payload.year
     if "children_status" in payload.model_fields_set:
-        kwargs["children_status"] = payload.children_status
+        kwargs["children_status"] = payload.children_status or None
 
     return {
         "ok": True,
@@ -604,7 +604,7 @@ def api_create_sibling_group(payload: SiblingGroupCreate) -> dict:
         "ok": True,
         **family.add_sibling_group(
             member_ids=payload.member_ids,
-            type_=payload.type_,
+            type_=payload.type_ or None,
             ordered=payload.ordered,
             origin="user",
         ),

@@ -134,11 +134,13 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                 )
 
             elif action == "add_marriage":
-                person_a = params["person_a"]
-                person_b = params["person_b"]
+                person_a = params.get("person_a") or params.get("spouse_a")
+                person_b = params.get("person_b") or params.get("spouse_b")
                 status = params.get("status", "married")
                 year = params.get("year")
-                children_status = params.get("children_status")
+                children_status = params.get("children_status") or None
+                if not person_a or not person_b:
+                    raise errors.ValidationError("Both spouses must be specified.")
                 if person_a not in idx_before or person_b not in idx_before:
                     raise errors.NotFoundError("Unknown spouse ID.")
                 if person_a == person_b:
@@ -161,8 +163,10 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                 direct_changes.append(f"Add marriage between {name_a} and {name_b}.")
 
             elif action == "delete_marriage":
-                person_a = params["person_a"]
-                person_b = params["person_b"]
+                person_a = params.get("person_a") or params.get("spouse_a")
+                person_b = params.get("person_b") or params.get("spouse_b")
+                if not person_a or not person_b:
+                    raise errors.ValidationError("Both spouses must be specified.")
                 spouse_a, spouse_b = sorted((person_a, person_b))
                 cursor = connection.execute(
                     "DELETE FROM marriages WHERE spouse_a = ? AND spouse_b = ?",
@@ -175,8 +179,10 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                 direct_changes.append(f"Remove marriage between {name_a} and {name_b}.")
 
             elif action == "update_marriage":
-                person_a = params["person_a"]
-                person_b = params["person_b"]
+                person_a = params.get("person_a") or params.get("spouse_a")
+                person_b = params.get("person_b") or params.get("spouse_b")
+                if not person_a or not person_b:
+                    raise errors.ValidationError("Both spouses must be specified.")
                 spouse_a, spouse_b = sorted((person_a, person_b))
                 row = connection.execute(
                     "SELECT * FROM marriages WHERE spouse_a = ? AND spouse_b = ?",
@@ -186,7 +192,7 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                     raise errors.NotFoundError("Marriage fact not found.")
                 new_status = params["status"] if "status" in params and params["status"] is not None else row["status"]
                 new_year = params["year"] if "year" in params else row["year"]
-                new_children_status = params["children_status"] if "children_status" in params else row["children_status"]
+                new_children_status = (params["children_status"] or None) if "children_status" in params else row["children_status"]
                 connection.execute(
                     """
                     UPDATE marriages
@@ -202,8 +208,8 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                 )
 
             elif action == "add_sibling_group":
-                member_ids = params.get("member_ids", [])
-                type_ = params.get("type_")
+                member_ids = params.get("member_ids") or params.get("members") or []
+                type_ = params.get("type_") or params.get("type") or None
                 ordered = bool(params.get("ordered", False))
                 if len(member_ids) < 2:
                     raise errors.ValidationError("Sibling group requires at least 2 members.")
@@ -253,7 +259,7 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                         (group_id,),
                     ).fetchall()
                 ]
-                new_type = type_ if type_ is not None else row["type"]
+                new_type = (type_ or None) if type_ is not None else row["type"]
                 if new_type == "full" and len(members) != 2:
                     raise errors.ValidationError("Full-sibling facts need exactly two members.", code="FULL_SIBLING_SIZE")
                 new_ordered = ordered if ordered is not None else bool(row["is_ordered"])

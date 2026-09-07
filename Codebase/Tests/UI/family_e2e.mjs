@@ -654,7 +654,7 @@ async function main() {
 
     await clickButtonText("View Profile");
     await sleep(1000);
-    await page.waitForSelector(".modal h2", { timeout: 5000 });
+    await page.waitForSelector(".modal h2", { timeout: 15000 });
     const closeProfBtn = await page.$(".modal-head button");
     if (closeProfBtn) await closeProfBtn.click();
     await sleep(500);
@@ -758,7 +758,468 @@ async function main() {
     step(37, "Returning from Relationships preserves Family focus");
 
     // -----------------------------------------------------------------------
-    // 38. Rendered hostile-name Mermaid DOM is inert
+    // 38. Derived relationship displays "Derived Kinship Term" and "Inspect Proof"
+    // -----------------------------------------------------------------------
+    await page.evaluate(() => {
+      const node = document.querySelector('.family-canvas g.node.clickable-node[id*="p_mohammad_yahya_hussain"]');
+      if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const name = document.querySelector("aside.family-side strong");
+      return name && name.textContent.includes("Mohammad Yahya Hussain");
+    }, { timeout: 8000 });
+
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .badge-derived");
+      return badge && badge.textContent.includes("Derived Kinship Term");
+    }, { timeout: 8000 });
+
+    const inspectBtnFound = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll(".relation-card-item button"));
+      return btns.some((b) => b.textContent.includes("Inspect Proof"));
+    });
+    if (!inspectBtnFound) throw new Error("Inspect Proof button not found on derived relationship card");
+
+    const editBtnDisabled = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("aside.family-side button"));
+      const editBtn = btns.find((b) => b.textContent.includes("Edit Stored Fact"));
+      return editBtn && editBtn.disabled;
+    });
+    if (!editBtnDisabled) throw new Error("Expected 'Edit Stored Fact' button to be disabled for derived relationship");
+
+    const removeBtnDisabled = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("aside.family-side button"));
+      const removeBtn = btns.find((b) => b.textContent.includes("Remove Stored Fact"));
+      return removeBtn && removeBtn.disabled;
+    });
+    if (!removeBtnDisabled) throw new Error("Expected 'Remove Stored Fact' button to be disabled for derived relationship");
+
+    step(38, "Derived relationship displays Derived Kinship Term and Inspect Proof with direct editing disabled");
+
+    // -----------------------------------------------------------------------
+    // 39. "Inspect Proof" modal displays lineage path without edit/delete inputs
+    // -----------------------------------------------------------------------
+    await clickButtonText("Inspect Proof");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+
+    const proofModalText = await page.$eval(".modal-card", (el) => el.textContent);
+    if (!proofModalText.includes("Why this term is derived")) {
+      throw new Error(`Inspect Proof modal missing 'Why this term is derived': ${proofModalText}`);
+    }
+    if (!proofModalText.includes("Underlying lineage & stored fact path")) {
+      throw new Error(`Inspect Proof modal missing lineage path header: ${proofModalText}`);
+    }
+
+    const hasEditingInputs = await page.evaluate(() => {
+      const modal = document.querySelector(".modal-card");
+      if (!modal) return false;
+      const inputs = modal.querySelectorAll("input, select, .btn-danger");
+      return inputs.length > 0;
+    });
+    if (hasEditingInputs) {
+      throw new Error("Inspect Proof modal unexpectedly contained editable inputs or danger buttons");
+    }
+
+    await clickButtonText("Close");
+    await sleep(500);
+    const modalClosed = await page.evaluate(() => !document.querySelector(".modal-backdrop"));
+    if (!modalClosed) throw new Error("Proof modal did not close cleanly");
+
+    step(39, "Inspect Proof modal displays lineage path without edit/delete inputs and closes cleanly");
+
+    // -----------------------------------------------------------------------
+    // 40. Stored fact displays "Stored Fact" badge and enabled Edit/Remove affordances
+    // -----------------------------------------------------------------------
+    await clickButtonText("Return to My Family View");
+    await sleep(1200);
+    await page.waitForFunction(() => {
+      const current = document.querySelector(".family-focus-current");
+      return current && current.textContent.includes("Mohammad Yahya Hussain");
+    }, { timeout: 8000 });
+
+    // Select Irsa Naz (mother of Mohammad Yahya Hussain)
+    await page.evaluate(() => {
+      const node = document.querySelector('.family-canvas g.node.clickable-node[id*="p_irsa_naz"]');
+      if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const name = document.querySelector("aside.family-side strong");
+      return name && name.textContent.includes("Irsa Naz");
+    }, { timeout: 8000 });
+
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .badge-stored");
+      return badge && badge.textContent.includes("Parent-Child");
+    }, { timeout: 8000 });
+
+    const storedEditEnabled = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("aside.family-side button"));
+      const editBtn = btns.find((b) => b.textContent.includes("Edit Stored Fact"));
+      return editBtn && !editBtn.disabled;
+    });
+    if (!storedEditEnabled) throw new Error("Expected 'Edit Stored Fact' to be enabled for stored fact");
+
+    const storedRemoveEnabled = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("aside.family-side button"));
+      const removeBtn = btns.find((b) => b.textContent.includes("Remove Stored Fact"));
+      return removeBtn && !removeBtn.disabled;
+    });
+    if (!storedRemoveEnabled) throw new Error("Expected 'Remove Stored Fact' to be enabled for stored fact");
+
+    step(40, "Stored fact displays Stored Fact badge and enabled Edit/Remove affordances");
+
+    // -----------------------------------------------------------------------
+    // 41. Add Family Fact with Consequence Preview, Confirm & Save -> diagram updates, UndoBar displays
+    // -----------------------------------------------------------------------
+    // Select Muaaz in the family diagram
+    await page.evaluate(() => {
+      const node = document.querySelector('.family-canvas g.node.clickable-node[id*="p_muaaz"]');
+      if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const name = document.querySelector("aside.family-side strong");
+      return name && name.textContent.includes("Muaaz");
+    }, { timeout: 8000 });
+
+    await clickButtonText("+ Add Family Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+
+    // Search and select Musabiha as target
+    const targetInput = await page.$('input[placeholder*="Search name or alias"]');
+    if (!targetInput) throw new Error("Target person search input not found in Add Relationship dialog");
+    await targetInput.type("Musabiha");
+    await sleep(400);
+
+    await page.evaluate((targetName) => {
+      const options = Array.from(document.querySelectorAll("select.form-select option"));
+      const opt = options.find((o) => o.textContent.includes(targetName));
+      if (opt) {
+        const sel = opt.parentElement;
+        sel.value = opt.value;
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }, "Musabiha");
+
+    // Select Marriage as fact type
+    await page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll("select.form-select"));
+      const typeSelect = selects.find((s) => Array.from(s.options).some((o) => o.value === "marriage"));
+      if (typeSelect) {
+        typeSelect.value = "marriage";
+        typeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await sleep(400);
+
+    // Open Consequence Preview
+    await clickButtonText("Preview Consequences");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .preview-section", { timeout: 8000 });
+
+    const previewBodyText = await page.evaluate(() => {
+      const cards = document.querySelectorAll(".modal-card");
+      return cards[cards.length - 1].textContent;
+    });
+    if (!previewBodyText.includes("Add marriage between Muaaz and Musabiha")) {
+      throw new Error(`Expected direct change in preview, got: ${previewBodyText}`);
+    }
+    if (!previewBodyText.includes("Wife") || !previewBodyText.includes("Husband")) {
+      throw new Error(`Expected derived kinship consequences in preview, got: ${previewBodyText}`);
+    }
+
+    // Confirm & Save
+    await clickButtonText("Confirm & Save Fact");
+    await sleep(1500);
+
+    await page.waitForSelector(".undo-bar", { timeout: 8000 });
+    const undoBarText = await page.$eval(".undo-bar span", (el) => el.textContent);
+    if (!undoBarText.includes("Added marriage between Muaaz and Musabiha")) {
+      throw new Error(`Expected UndoBar description for added marriage, got: ${undoBarText}`);
+    }
+    step(41, "Add Family Fact with Consequence Preview, Confirm & Save updates diagram and shows UndoBar");
+
+    // -----------------------------------------------------------------------
+    // 42. Undo reverts added fact -> diagram reverts, UndoBar dismisses
+    // -----------------------------------------------------------------------
+    await clickButtonText("Undo");
+    await sleep(1500);
+
+    await page.waitForFunction(() => !document.querySelector(".undo-bar"), { timeout: 8000 });
+    await page.waitForSelector(".family-diagram svg", { timeout: 10000 });
+    step(42, "Undo reverts added fact, diagram updates, and UndoBar dismisses");
+
+    // -----------------------------------------------------------------------
+    // 43. Edit Stored Fact (Marriage) -> status changes, UndoBar appears, undo reverts
+    // -----------------------------------------------------------------------
+    // Focus Irsa Naz to access her stored marriage with Mansoor Hussain
+    await typeSearch("Irsa");
+    await page.waitForSelector(".person-search-results", { timeout: 8000 });
+    await page.keyboard.press("ArrowDown");
+    await sleep(200);
+    await page.keyboard.press("Enter");
+    await sleep(1200);
+    await page.waitForSelector(".family-diagram svg", { timeout: 10000 });
+
+    // Select Mansoor Hussain
+    await page.evaluate(() => {
+      const node = document.querySelector('.family-canvas g.node.clickable-node[id*="p_mansoor_hussain"]');
+      if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const name = document.querySelector("aside.family-side strong");
+      return name && name.textContent.includes("Mansoor Hussain");
+    }, { timeout: 8000 });
+
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .badge-stored");
+      return badge && badge.textContent.includes("Marriage");
+    }, { timeout: 8000 });
+
+    // Open Edit Stored Fact dialog
+    await clickButtonText("Edit Stored Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+
+    // Change status to divorced
+    await page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll("select.form-select"));
+      const statusSelect = selects.find((s) => Array.from(s.options).some((o) => o.value === "divorced"));
+      if (statusSelect) {
+        statusSelect.value = "divorced";
+        statusSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await sleep(300);
+
+    await clickButtonText("Save Marriage Fact");
+    await sleep(1500);
+
+    // Verify UndoBar and updated status label
+    await page.waitForSelector(".undo-bar", { timeout: 8000 });
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .badge-stored");
+      return badge && badge.textContent.includes("Marriage (divorced)");
+    }, { timeout: 8000 });
+
+    // Undo status change
+    await clickButtonText("Undo");
+    await sleep(1500);
+    await page.waitForFunction(() => !document.querySelector(".undo-bar"), { timeout: 8000 });
+
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .badge-stored");
+      return badge && badge.textContent.includes("Marriage") && !badge.textContent.includes("divorced");
+    }, { timeout: 8000 });
+    step(43, "Edit Stored Fact updates marriage status, shows UndoBar, and undo reverts cleanly");
+
+    // -----------------------------------------------------------------------
+    // 44. Remove Stored Fact with Consequence Preview & Undo
+    // -----------------------------------------------------------------------
+    // Add a marriage between Muaaz and Musabiha so we can test explicit deletion preview
+    await typeSearch("Muaaz");
+    await page.waitForSelector(".person-search-results", { timeout: 8000 });
+    await page.keyboard.press("ArrowDown");
+    await sleep(200);
+    await page.keyboard.press("Enter");
+    await sleep(1200);
+    await page.waitForSelector(".family-diagram svg", { timeout: 10000 });
+
+    // Select Musabiha
+    await page.evaluate(() => {
+      const node = document.querySelector('.family-canvas g.node.clickable-node[id*="p_musabiha"]');
+      if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const name = document.querySelector("aside.family-side strong");
+      return name && name.textContent.includes("Musabiha");
+    }, { timeout: 8000 });
+
+    await clickButtonText("+ Add Family Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+
+    const targetInput2 = await page.$('input[placeholder*="Search name or alias"]');
+    await targetInput2.type("Muaaz");
+    await sleep(400);
+    await page.evaluate((targetName) => {
+      const options = Array.from(document.querySelectorAll("select.form-select option"));
+      const opt = options.find((o) => o.textContent.includes(targetName));
+      if (opt) {
+        const sel = opt.parentElement;
+        sel.value = opt.value;
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }, "Muaaz");
+
+    await page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll("select.form-select"));
+      const typeSelect = selects.find((s) => Array.from(s.options).some((o) => o.value === "marriage"));
+      if (typeSelect) {
+        typeSelect.value = "marriage";
+        typeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await sleep(300);
+    await clickButtonText("Save Fact");
+    await sleep(1500);
+
+    // Now Musabiha is Wife (stored marriage fact)
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .badge-stored");
+      return badge && badge.textContent.includes("Marriage");
+    }, { timeout: 8000 });
+
+    // Click Remove Stored Fact -> auto triggers deletion Consequence Preview
+    await clickButtonText("Remove Stored Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .preview-direct", { timeout: 8000 });
+
+    const delPreviewText = await page.evaluate(() => {
+      const cards = document.querySelectorAll(".modal-card");
+      return cards[cards.length - 1].textContent;
+    });
+    if (!delPreviewText.includes("Remove marriage between Muaaz and Musabiha")) {
+      throw new Error(`Expected deletion preview to describe removing marriage, got: ${delPreviewText}`);
+    }
+
+    // Confirm deletion
+    await clickButtonText("Confirm & Save Fact");
+    await sleep(1500);
+
+    await page.waitForSelector(".undo-bar", { timeout: 8000 });
+
+    // Undo deletion restores the marriage
+    await clickButtonText("Undo");
+    await sleep(1500);
+    await page.waitForFunction(() => !document.querySelector(".undo-bar"), { timeout: 8000 });
+
+    // Clean up: remove the test marriage fact again so data remains in initial state
+    await clickButtonText("Remove Stored Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .preview-direct", { timeout: 8000 });
+    await clickButtonText("Confirm & Save Fact");
+    await sleep(1500);
+    if (await page.$(".undo-bar")) {
+      const dismissBtn = await page.$(".undo-bar-close");
+      if (dismissBtn) await dismissBtn.click();
+      await sleep(300);
+    }
+    step(44, "Remove Stored Fact displays Consequence Preview, executes deletion, and undo restores fact");
+
+    // -----------------------------------------------------------------------
+    // 45. Ancestry cycle mutation refusal in UI
+    // -----------------------------------------------------------------------
+    await clickButtonText("Return to My Family View");
+    await sleep(1200);
+    await page.waitForFunction(() => {
+      const current = document.querySelector(".family-focus-current");
+      return current && current.textContent.includes("Mohammad Yahya Hussain");
+    }, { timeout: 8000 });
+
+    // Select Irsa Naz
+    await page.evaluate(() => {
+      const node = document.querySelector('.family-canvas g.node.clickable-node[id*="p_irsa_naz"]');
+      if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const name = document.querySelector("aside.family-side strong");
+      return name && name.textContent.includes("Irsa Naz");
+    }, { timeout: 8000 });
+
+    await clickButtonText("+ Add Family Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+
+    // Target Mohammad Yahya Hussain
+    const cycleTargetInput = await page.$('input[placeholder*="Search name or alias"]');
+    await cycleTargetInput.type("Yahya");
+    await sleep(400);
+    await page.evaluate((targetName) => {
+      const options = Array.from(document.querySelectorAll("select.form-select option"));
+      const opt = options.find((o) => o.textContent.includes(targetName));
+      if (opt) {
+        const sel = opt.parentElement;
+        sel.value = opt.value;
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }, "Yahya");
+
+    // Set direction to Child so Mohammad Yahya Hussain becomes parent of Irsa Naz
+    await page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll("select.form-select"));
+      const dirSelect = selects.find((s) => Array.from(s.options).some((o) => o.value === "child"));
+      if (dirSelect) {
+        dirSelect.value = "child";
+        dirSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await sleep(300);
+
+    // Trigger preview
+    await clickButtonText("Preview Consequences");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .diff-invalid", { timeout: 8000 });
+
+    const blockedText = await page.evaluate(() => {
+      const cards = document.querySelectorAll(".modal-card");
+      const lastCard = cards[cards.length - 1];
+      const diffInvalid = lastCard.querySelector(".diff-invalid");
+      return diffInvalid ? diffInvalid.textContent : lastCard.textContent;
+    });
+    if (!blockedText.includes("Ancestry cycle")) {
+      throw new Error(`Expected Ancestry cycle validation block, got: ${blockedText}`);
+    }
+
+    const confirmBtnPresent = await page.evaluate(() => {
+      const cards = document.querySelectorAll(".modal-card");
+      const lastCard = cards[cards.length - 1];
+      const btns = Array.from(lastCard.querySelectorAll("button"));
+      return btns.some((b) => b.textContent.includes("Confirm & Save Fact"));
+    });
+    if (confirmBtnPresent) {
+      throw new Error("Invalid ancestry cycle mutation unexpectedly showed 'Confirm & Save Fact' button");
+    }
+
+    // Cancel preview dialog
+    await page.evaluate(() => {
+      const cards = document.querySelectorAll(".modal-card");
+      if (cards.length > 1) {
+        const lastCard = cards[cards.length - 1];
+        const cancelBtn = Array.from(lastCard.querySelectorAll("button")).find(
+          (b) => b.textContent.includes("Cancel") || b.classList.contains("btn-close")
+        );
+        if (cancelBtn) cancelBtn.click();
+      }
+    });
+    await sleep(500);
+
+    // Cancel Add Fact dialog
+    await clickButtonText("Cancel");
+    await sleep(500);
+    step(45, "Ancestry cycle mutation refusal blocks validation in UI preview without save affordance");
+
+    // -----------------------------------------------------------------------
+    // 46. Reset focus to default viewer focus prior to security checks
+    // -----------------------------------------------------------------------
+    const hasReturnBtn = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("button, .btn"));
+      return btns.some((b) => b.textContent && b.textContent.includes("Return to My Family View"));
+    });
+    if (hasReturnBtn) {
+      await clickButtonText("Return to My Family View");
+      await sleep(1200);
+    }
+    await page.waitForFunction(() => {
+      const current = document.querySelector(".family-focus-current");
+      return current && current.textContent.includes("Mohammad Yahya Hussain");
+    }, { timeout: 8000 });
+    await page.waitForSelector(".family-diagram svg", { timeout: 10000 });
+    step(46, "Reset focus to default viewer focus prior to security checks");
+
+    // -----------------------------------------------------------------------
+    // 47. Rendered hostile-name Mermaid DOM is inert
     // -----------------------------------------------------------------------
     await page.evaluate(() => {
       window.__familyPwned = undefined;
@@ -799,10 +1260,10 @@ async function main() {
     ) {
       throw new Error(`Hostile DOM elements found in Mermaid output: ${JSON.stringify(hostileDomElements)}`);
     }
-    step(38, "Rendered hostile-name Mermaid DOM is inert");
+    step(47, "Rendered hostile-name Mermaid DOM is inert");
 
     // -----------------------------------------------------------------------
-    // 39. Browser console has no unexpected errors after hostile-name test
+    // 48. Browser console has no unexpected errors after hostile-name test
     // -----------------------------------------------------------------------
     const criticalErrors = consoleErrors.filter(
       (e) => !e.includes("favicon") && !e.includes("404") && !e.includes("React DevTools"),
@@ -810,10 +1271,10 @@ async function main() {
     if (criticalErrors.length > 0) {
       throw new Error(`Unexpected browser console errors detected: ${JSON.stringify(criticalErrors)}`);
     }
-    step(39, "Browser console has no unexpected errors after hostile-name test");
+    step(48, "Browser console has no unexpected errors after hostile-name test");
 
     console.log("\n=======================================================");
-    console.log(`🎉 ALL ${passedSteps.length} / 39 FAMILY UI E2E CHECKS PASSED!`);
+    console.log(`🎉 ALL ${passedSteps.length} / 48 FAMILY UI E2E CHECKS PASSED!`);
     console.log("=======================================================\n");
     } catch (err) {
       testError = err;
