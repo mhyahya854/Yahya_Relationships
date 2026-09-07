@@ -569,6 +569,8 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                 <div className="form-group">
                   <label>Role</label>
                   <select
+                    id="edit-parent-role-select"
+                    data-testid="edit-parent-role-select"
                     className="form-select"
                     value={parentRole}
                     onChange={(e) => setParentRole(e.target.value)}
@@ -583,6 +585,8 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                 <div className="form-group">
                   <label>Kind</label>
                   <select
+                    id="edit-parent-kind-select"
+                    data-testid="edit-parent-kind-select"
                     className="form-select"
                     value={parentKind}
                     onChange={(e) => setParentKind(e.target.value)}
@@ -604,6 +608,8 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                   <div className="form-group">
                     <label>Status</label>
                     <select
+                      id="edit-marriage-status-select"
+                      data-testid="edit-marriage-status-select"
                       className="form-select"
                       value={marriageStatus}
                       onChange={(e) => setMarriageStatus(e.target.value)}
@@ -629,6 +635,8 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                 <div className="form-group">
                   <label>Children Status</label>
                   <select
+                    id="edit-marriage-children-status-select"
+                    data-testid="edit-marriage-children-status-select"
                     className="form-select"
                     value={marriageChildrenStatus}
                     onChange={(e) => setMarriageChildrenStatus(e.target.value)}
@@ -659,6 +667,8 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                   <div className="form-group">
                     <label>Sibling Group Type</label>
                     <select
+                      id="edit-sibling-type-select"
+                      data-testid="edit-sibling-type-select"
                       className="form-select"
                       value={siblingType}
                       onChange={(e) => setSiblingType(e.target.value)}

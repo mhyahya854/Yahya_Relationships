@@ -1,127 +1,110 @@
 # Phase 4 — Family Editing & Mutation UX Verification
 
-## 1. Starting Commit & Baseline
-- **Starting Commit**: `284a018111ba151bdc8f23805b9ed201f19e5215` ("Finalize Family focus state and security hardening")
-- **Starting Branch**: `main`
-- **Remote**: `https://github.com/mhyahya854/Yahya_Relationships`
-- **Baseline Family Counts**:
-  - 35 people
-  - 44 parent-child facts
-  - 12 marriages
-  - 10 sibling groups
-  - 21 focus-person cousin paths
-  - 35 canonical journals
-- **Production Data Baseline**:
-  - `Database/Main/family.db` SHA-256: `3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E`
-  - 35 canonical journals byte-identical.
-  - All test runs executed in isolated temporary sandboxes via `PEOPLE_RELATIONSHIPS_ROOT`. Zero mutation of production facts or journals.
+## Commit lineage
 
----
+- Original Phase 4 starting SHA: `284a018111ba151bdc8f23805b9ed201f19e5215` (`Finalize Family focus state and security hardening`).
+- Closure starting SHA: `6b7563f18bb79821eba8da91055d7e39485ce04d` (`Implement Phase 4 Family Editing & Mutation UX with safe consequence preview and undo`).
+- Final closure SHA: the commit containing this file. Its literal SHA and matching live CI run are recorded in the final handoff because a Git commit cannot contain its own hash: changing this file changes that hash.
+- Branch / remote: `main` / `https://github.com/mhyahya854/Yahya_Relationships`.
 
-## 2. Architecture & Design Principles
+## Canonical model and UI behavior
 
-### Derived vs. Stored Kinship Separation
-- **Stored Facts (Ground Truth)**:
-  - Parent-child facts (`parent_child` table with 7 distinct relationship kinds: `biological`, `adoptive`, `foster`, `step`, `surrogate`, `guardian`, `unspecified`).
-  - Marriages (`marriages` table with statuses: `married`, `divorced`, `widowed`, `separated`, `annulled`, optional `year`, and `children_status`).
-  - Sibling groups (`sibling_groups` & `sibling_group_members` tables with type and birth-order sequences).
-  - General / non-familial connections (`general_relationships` table).
-  - Stored facts display explicit badges (`Stored Fact`, `Parent-Child`, `Marriage`, `Sibling Group`) and provide direct editing and deletion affordances.
-- **Derived Kinship (Calculated Truth)**:
-  - Kinship terms (such as `cousin`, `aunt`, `uncle`, `nephew`, `niece`, `grandparent`, `grandchild`, `in-law`, `sibling` when inferred through shared biological parents) are derived automatically by the canonical Python relationship engine.
-  - Derived relationships display a `Derived Kinship Term` badge and provide an "Inspect Proof" action.
-  - Direct edit and removal affordances are disabled or withheld for derived relationships; mutations must occur by editing the underlying stored facts that produce the lineage.
+Stored facts are the editable source of truth:
 
-### Safe Mutation Workflow & Consequence Transparency
-- **Dry-Run Preview**:
-  - Before executing destructive or modifying mutations, dry-run consequence preview evaluates the mutation in an isolated in-memory or rolled-back transaction.
-  - Calculates direct fact changes, warnings, and derived kinship consequences (`derived_added`, `derived_removed`).
-  - Prohibits invalid mutations (e.g., self-marriage, ancestry cycles, duplicate facts, single-person marriages) with clear blocking error codes without saving.
-- **Floating Undo Integration**:
-  - Every committed mutation (create, update, delete) records a snapshot onto the mutation stack.
-  - Successful mutations surface an accessible `UndoBar` in the UI.
-  - Clicking "Undo" invokes the backend undo manager, cleanly restoring prior state and refreshing diagram and relationship panels.
+- Parent-child: kinds `biological`, `adopted`, `step`, `foster`, `guardian`, `unknown`, `unspecified`; roles `father`, `mother`, `parent`, `unknown`.
+- Marriage: statuses `married`, `divorced`, `widowed`, `unknown`; optional year; children status `None` (unspecified), `no_children`, or `unknown`.
+- Sibling group: type `None` (default/general) or `full`, plus ordered birth sequence.
+- General/non-family connections remain separate stored facts.
 
----
+Stored facts show their stored classification and expose edit/remove actions. Calculated kinship terms show `Derived Kinship Term` and `Inspect Proof`; they do not expose direct edit or delete controls. To change derived truth, the user edits the underlying stored fact.
 
-## 3. Implementation Details
+The add dialog supports multi-member sibling groups through the canonical `PersonSearch`: the source is always included, additional members appear as removable chips, duplicates are excluded, and at least two total members are required. Default/general groups accept three or more members. A `full` group is limited to exactly two total members and the UI refuses a third selection rather than truncating it.
 
-### Backend Normalization & Services
-- `Codebase/App/app/backend/services/family.py`:
-  - `add_marriage` & `update_marriage`: Normalized empty strings (`""`) to `None` for optional `children_status`.
-  - `add_sibling_group`: Normalized empty strings (`""`) to `None` for `type_`.
-- `Codebase/App/app/backend/api/main.py`:
-  - Pydantic payload models and endpoints normalized empty string values for `children_status` and `type_` to ensure canonical database representation.
-- `Codebase/App/app/backend/domain/mutations/preview.py`:
-  - Flexible parameter extraction supporting both `person_a`/`person_b` and `spouse_a`/`spouse_b`, as well as `members`/`member_ids`.
-  - Normalized empty strings to `None` across mutation preview routines.
-- `Codebase/Tests/Backend/conftest.py`:
-  - Ensured mutation undo stack (`_MUTATION_STACK`) is cleared between test fixtures to prevent test cross-contamination.
+## Consequence preview architecture
 
-### Frontend Components & User Experience
-- `Codebase/App/Frontend/src/components/PersonDetail.tsx`:
-  - Extended `useRelationship` hook to accept `refreshKey?: number | string` in dependency array to allow re-fetching relationship facts after family mutations and undo cycles.
-- `Codebase/App/Frontend/src/features/relationships/components/AddRelationshipDialog.tsx`:
-  - Supported `MARRIAGE_CHILDREN_STATUSES` and `SIBLING_GROUP_TYPES` with birth-order sequence toggles.
-  - Wired Consequence Preview modal on `⚡ Preview Consequences`.
-- `Codebase/App/Frontend/src/features/relationships/components/EditRelationshipDialog.tsx`:
-  - Added `initialDeleteMode` prop to automatically trigger deletion consequence preview when opened via "Remove Stored Fact".
-  - Isolated derived relationship display: shows "Why this term is derived" and underlying lineage paths without edit form inputs or delete buttons.
-- `Codebase/App/Frontend/src/views/FamilyView.tsx`:
-  - Integrated `EditRelationshipDialog` into Family exploration view.
-  - Wired `relRefreshKey` to refresh relationship context whenever a mutation or undo occurs.
-  - Added "Edit Stored Fact" and "Remove Stored Fact" context buttons in side panel (disabled for derived relationships).
-  - Enhanced `RelationshipListDetailed` with `badge-stored` / `badge-derived` provenance badges, "Edit Stored Fact" / "Remove Stored Fact" for stored entries, and explanatory text + "Inspect Proof" for derived entries.
-  - Wired `UndoBar` to display mutation notifications with 1-click Undo restoring previous graph state.
+`Codebase/App/app/backend/domain/mutations/preview.py` obtains relationships from the canonical family/path engine. It retains primary stored facts, every distinct path returned by `path_service._derived_paths`, and inferred biological siblinghood where no explicit sibling group exists.
 
----
+Preview identity is structural, not display-label based. Each derived item carries its canonical path ID plus ordered endpoints, relationship semantics, side, cousin degree/removal, distance, and node chain. Deterministic ordering makes repeated previews byte-for-byte equivalent. Removing one supporting fact can therefore report the affected branch while preserving an independent surviving branch with the same English label. The UI renders side and named path nodes without exposing raw UUIDs.
 
-## 4. Verification Suite Results
+Preview enforces the same changed constraints as execution, including canonical enums, duplicate parent/marriage/sibling facts, single-person marriage conflicts, ancestry cycles, minimum sibling size, and the two-person full-sibling limit. A preview is an always-rolled-back SQLite transaction.
 
-### 1. Backend Mutation UX Suite (pytest)
-- **File**: `Codebase/Tests/Backend/test_family_mutation_ux.py`
-- **Tests**: 9 / 9 passed.
-  1. `test_parent_child_mutation_all_kinds`: All 7 kinds of parent-child relationships (`biological`, `adoptive`, `foster`, `step`, `surrogate`, `guardian`, `unspecified`) persist and validate cleanly.
-  2. `test_parent_child_undo_cycle`: Verifies adding, updating, and removing parent-child facts with undo restoration.
-  3. `test_marriage_crud_and_normalization`: Empty string normalization for `children_status`, year updates, and undo.
-  4. `test_sibling_group_crud_and_inferred_siblinghood`: Verifies explicit sibling group addition and deletion, proving that deleting the explicit group leaves biological siblinghood intact (flipping from stored to derived).
-  5. `test_mutation_preview_dry_run_immutability`: Proves preview calculations execute without mutating database state.
-  6. `test_mutation_preview_catches_ancestry_cycle`: Verifies preview detects and blocks cycles with code `ANCESTRY_CYCLE`.
-  7. `test_mutation_undo_stack_poisoning_prevention`: Ensures failed mutations do not pollute the undo stack.
-  8. `test_read_only_mode_blocks_mutations`: Verifies database open in read-only mode rejects mutations with appropriate error codes.
-  9. `test_clear_mutation_history`: Verifies undo stack clear semantics.
-- **Full Backend Pytest**: 274 / 274 passed (`node Scripts/run-py.mjs -m pytest Tests/Backend -q`).
+## Transaction and undo safety
 
-### 2. Family UI E2E Suite (Puppeteer)
-- **File**: `Codebase/Tests/UI/family_e2e.mjs`
-- **Result**: 48 / 48 passed.
-  - Steps 1–37: Family screen rendering, focus selection, zoom/fit/center, bilingual kinship display, multipath indicators, search, perspective handoff.
-  - Step 38: Derived relationship displays "Derived Kinship Term" and "Inspect Proof", with direct editing buttons disabled.
-  - Step 39: "Inspect Proof" modal displays lineage path without edit/delete inputs; closes cleanly.
-  - Step 40: Stored fact displays "Stored Fact" badge and enabled Edit/Remove affordances.
-  - Step 41: Add Family Fact with Consequence Preview, Confirm & Save updates diagram and shows `UndoBar`.
-  - Step 42: Undo reverts added fact, diagram updates, and `UndoBar` dismisses.
-  - Step 43: Edit Stored Fact updates marriage status, shows `UndoBar`, and undo reverts cleanly.
-  - Step 44: Remove Stored Fact displays Consequence Preview, executes deletion, and undo restores fact.
-  - Step 45: Ancestry cycle mutation refusal blocks validation in UI preview without save affordance.
-  - Step 46: Reset focus to default viewer focus prior to security checks.
-  - Step 47: Rendered hostile-name Mermaid DOM is inert (`window.__familyPwned === undefined`, 0 scripts, 0 iframes, 0 inline handlers).
-  - Step 48: Browser console has no unexpected errors after hostile-name test.
+Family mutations use the existing atomic service transaction boundary. Injected failures at the post-write validation seam prove exact rollback for parent-child facts, marriages, and sibling groups. Assertions compare all rows in the mutated tables plus `sources` and `fact_sources`; sibling tests also compare the complete membership table. Each failure leaves the undo stack unchanged. A subsequent valid mutation succeeds and its undo restores the prior domain rows.
 
-### 3. Regression & Integration Gateways
-- **TypeScript Typecheck**: `npm run typecheck` — 0 errors.
-- **Legacy Verification**: `npm run legacy:check` — PASS (35 people, 44 parent-child facts, 12 marriages, 10 sibling groups).
-- **People UI E2E**: `npm run test:ui` — 18 / 18 passed.
-- **Relationships UI E2E**: `npm run test:relationships` — 37 / 37 passed.
-- **Dev Stack Smoke E2E**: `node Scripts/test_e2e_runner.mjs` — All checks passed.
-- **Desktop Tauri Crate**: `cargo check --manifest-path Desktop/Tauri/Cargo.toml` — Clean build (`dev` profile).
+The schema remains version 2. This closure adds no migration and changes no production facts.
 
-### 4. Data Safety Verification
-- **Production Database**:
-  - Path: `Database/Main/family.db`
-  - Expected SHA-256: `3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E`
-  - Actual SHA-256:   `3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E`
-  - Status: **100% BYTE-IDENTICAL**
-- **Canonical Journals**:
-  - Found: 35 journals in `Database/People/Family/`
-  - Status: **100% BYTE-IDENTICAL**
+## Exact backend tests
+
+`Codebase/Tests/Backend/test_family_mutation_ux.py` collects and passes these 18 tests:
+
+1. `test_parent_child_all_seven_kinds_and_undo_cycle`
+2. `test_parent_child_refusals`
+3. `test_marriage_crud_metadata_and_undo`
+4. `test_marriage_refusals`
+5. `test_sibling_group_crud_and_derived_persistence`
+6. `test_sibling_group_refusals`
+7. `test_preview_dry_run_immutability`
+8. `test_atomicity_failed_mutation_leaves_undo_clean`
+9. `test_read_only_mode_blocks_family_writes`
+10. `test_multipath_preview_partial_path_removal_preserves_alternate_path`
+11. `test_multipath_preview_is_deterministic`
+12. `test_parent_child_injected_failure_rolls_back_exactly`
+13. `test_marriage_injected_failure_rolls_back_exactly`
+14. `test_sibling_group_injected_failure_rolls_back_members_and_group`
+15. `test_multi_member_default_sibling_group_create`
+16. `test_full_sibling_group_rejects_more_than_two_members`
+17. `test_multi_member_sibling_group_undo_restores_exact_members_and_order`
+18. `test_preview_validation_matches_commit_validation`
+
+The multipath tests build two independent cousin branches. Before mutation there are two distinct structural path IDs; previewing removal of one parent-child fact reports only that path ID; execution leaves the alternate relationship intact; undo restores the exact two-path set. Repeating the same preview returns an identical result.
+
+## Family UI E2E coverage
+
+`Codebase/Tests/UI/family_e2e.mjs` passes 65 / 65 mandatory steps. Steps 1–48 retain the committed Family exploration/editing, consequence-preview, undo, refusal, and hostile-name security coverage. Closure steps 49–65 prove:
+
+49. Exactly seven canonical parent kinds are exposed; `adoptive` and `surrogate` are absent.
+50. Duplicate family mutation is refused in preview without a save action.
+51. Parent-child create runs through preview, save, diagram refresh, and stored-fact rendering.
+52. The post-mutation Family focus/target truth is handed to Relationships and the Family session persists on return.
+53. Parent-child kind edit changes the stored fact and shows Undo.
+54. Undo restores the original parent-child kind.
+55. Parent-child delete runs through preview and shows Undo.
+56. Undo restores the exact parent-child fact.
+57. A full sibling group with more than two members is refused in the UI.
+58. A default multi-member sibling group is created through preview and save.
+59. Sibling-group ordered metadata is edited.
+60. Undo restores the prior metadata.
+61. Deleting the new explicit group preserves its separately derived cousin truth.
+62. Undo restores the explicit group, followed by isolated-test cleanup.
+63. Deleting the canonical Musabiha–Musa stored group falls back to inferred biological siblinghood.
+64. Undo restores that exact canonical stored sibling group.
+65. Derived kinship still offers `Inspect Proof` and no direct destructive controls.
+
+Marriage create/edit/delete/undo coverage from the original Phase 4 E2E remains green, as do its validation and consequence-preview checks.
+
+## Local verification gates
+
+- Focused backend: `test_family_write.py` 7 / 7; `test_mutations.py` 6 / 6; `test_family_mutation_ux.py` 18 / 18; `test_family_exploration.py` 31 / 31; `test_relationships_hardening.py` 79 / 79; `test_relationships_phase2.py` 14 / 14.
+- Full backend: 283 / 283 passed across 22 collected files (greater than the 274-test committed baseline).
+- Legacy parity: PASS — 35 people, 44 parent-child facts, 12 marriages, 10 sibling groups, 21 cousin paths, arbitrary perspective.
+- Frontend typecheck: PASS.
+- Frontend production build: PASS (2,166 modules transformed; only the existing Vite dynamic/static import advisory).
+- People UI E2E: 18 / 18 passed.
+- Relationships UI E2E: 37 / 37 passed.
+- Family UI E2E: 65 / 65 passed.
+- Full dev-stack smoke E2E: PASS, all 18 smoke assertions.
+- Desktop Tauri crate: `cargo check` from `Codebase/Desktop/Tauri` PASS.
+
+All mutation suites use isolated temporary roots via `PEOPLE_RELATIONSHIPS_ROOT`; no test mutation targets production.
+
+## Production integrity
+
+- `Database/Main/family.db` before and after SHA-256: `3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E`.
+- Canonical journals under `Database/People/Family`: 35 / 35 present and byte-identical.
+- No database sidecars or tracked `Database` changes were created.
+- Live exact-SHA Build & Package Matrix status and its four release artifact names are reported in the final handoff after publication; this keeps this evidence file from invalidating the SHA it describes.
+
+## Remaining limitation
+
+Sibling-group membership is immutable in place. To add or remove members from an existing group, delete it and recreate it with the desired membership. Multi-member creation, metadata edit, delete, derived fallback, and undo are supported and verified.

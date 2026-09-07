@@ -13,7 +13,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const browser = await puppeteer.launch({
   executablePath: EDGE,
   headless: "new",
-  args: ["--disable-gpu", "--no-first-run"],
+  args: ["--disable-gpu", "--no-first-run", "--edge-skip-compat-layer-relaunch"],
   defaultViewport: { width: 1400, height: 900 },
 });
 

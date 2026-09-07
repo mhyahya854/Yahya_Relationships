@@ -147,6 +147,12 @@ export interface DerivedDiffItem {
   person_b_name: string;
   label_en: string;
   label_ur?: string | null;
+  side?: string | null;
+  path_id?: string | null;
+  nodes?: Array<{ id: string; name: string }>;
+  degree?: number | null;
+  removal?: number | null;
+  distance?: number | null;
 }
 
 export interface MutationPreviewResult {

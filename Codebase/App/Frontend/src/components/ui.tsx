@@ -91,6 +91,7 @@ export function PersonSearch({
   autoFocus,
   inputRef,
   ariaLabel,
+  disabled,
 }: {
   people: Person[];
   onSelect: (person: Person) => void;
@@ -98,6 +99,7 @@ export function PersonSearch({
   autoFocus?: boolean;
   inputRef?: RefCallback<HTMLInputElement>;
   ariaLabel?: string;
+  disabled?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -144,6 +146,7 @@ export function PersonSearch({
         aria-expanded={open}
         aria-label={ariaLabel ?? placeholder ?? "Search people"}
         aria-controls="person-search-listbox"
+        disabled={disabled}
         aria-activedescendant={
           activeIndex >= 0 && matches[activeIndex]
             ? `person-opt-${matches[activeIndex].id}`

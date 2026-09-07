@@ -127,7 +127,7 @@ async function main() {
     browser = await puppeteer.launch({
       executablePath: EDGE,
       headless: "new",
-      args: ["--disable-gpu", "--no-first-run", "--no-sandbox"],
+      args: ["--disable-gpu", "--no-first-run", "--no-sandbox", "--edge-skip-compat-layer-relaunch"],
       defaultViewport: { width: 1600, height: 1000 },
     });
 
@@ -144,13 +144,25 @@ async function main() {
     });
 
     async function clickButtonText(text) {
-      const handle = await page.evaluateHandle((expected) => {
+      await page.waitForFunction((expected) => {
         const buttons = [...document.querySelectorAll("button, .btn, .nav-item")];
-        return buttons.find((b) => b.textContent && b.textContent.trim().toLowerCase().includes(expected.toLowerCase()));
+        return buttons.some((b) => {
+          const rect = b.getBoundingClientRect();
+          return b.textContent?.trim().toLowerCase().includes(expected.toLowerCase()) &&
+            !b.disabled && rect.width > 0 && rect.height > 0;
+        });
+      }, { timeout: 10000 }, text);
+      const clicked = await page.evaluate((expected) => {
+        const buttons = [...document.querySelectorAll("button, .btn, .nav-item")];
+        const button = buttons.find((b) => {
+          const rect = b.getBoundingClientRect();
+          return b.textContent?.trim().toLowerCase().includes(expected.toLowerCase()) &&
+            !b.disabled && rect.width > 0 && rect.height > 0;
+        });
+        button?.click();
+        return Boolean(button);
       }, text);
-      const element = handle.asElement();
-      if (!element) throw new Error(`Button with text '${text}' not found.`);
-      await element.click();
+      if (!clicked) throw new Error(`Visible enabled button with text '${text}' not found.`);
       await sleep(500);
     }
 
@@ -885,6 +897,8 @@ async function main() {
     await clickButtonText("+ Add Family Fact");
     await sleep(800);
     await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+    await page.waitForSelector('input[placeholder*="Search name or alias"]', { timeout: 8000 });
+
 
     // Search and select Musabiha as target
     const targetInput = await page.$('input[placeholder*="Search name or alias"]');
@@ -1039,6 +1053,7 @@ async function main() {
     await clickButtonText("+ Add Family Fact");
     await sleep(800);
     await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+    await page.waitForSelector('input[placeholder*="Search name or alias"]', { timeout: 8000 });
 
     const targetInput2 = await page.$('input[placeholder*="Search name or alias"]');
     await targetInput2.type("Muaaz");
@@ -1131,6 +1146,7 @@ async function main() {
     await clickButtonText("+ Add Family Fact");
     await sleep(800);
     await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+    await page.waitForSelector('input[placeholder*="Search name or alias"]', { timeout: 8000 });
 
     // Target Mohammad Yahya Hussain
     const cycleTargetInput = await page.$('input[placeholder*="Search name or alias"]');
@@ -1273,8 +1289,704 @@ async function main() {
     }
     step(48, "Browser console has no unexpected errors after hostile-name test");
 
+    // =======================================================================
+    // PHASE 4 CLOSURE EXTENSION (STEPS 49-63)
+    // =======================================================================
+
+    // -----------------------------------------------------------------------
+    // 49. Parent kind dropdown exposes all 7 canonical values
+    // -----------------------------------------------------------------------
+    await typeSearch("Yahya");
+    await page.waitForSelector(".person-search-results", { timeout: 8000 });
+    await page.keyboard.press("ArrowDown");
+    await sleep(200);
+    await page.keyboard.press("Enter");
+    await sleep(1200);
+    await page.waitForSelector(".family-diagram svg", { timeout: 10000 });
+
+    await clickButtonText("+ Add Family Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+
+    const parentKinds = await page.evaluate(() => {
+      const select = document.querySelector("#parent-kind-select");
+      if (!select) return [];
+      return Array.from(select.options).map((o) => o.value);
+    });
+    const expectedKinds = ["biological", "adopted", "step", "foster", "guardian", "unknown", "unspecified"];
+    for (const k of expectedKinds) {
+      if (!parentKinds.includes(k)) {
+        throw new Error(`Parent kind dropdown missing canonical kind: '${k}'. Found: ${JSON.stringify(parentKinds)}`);
+      }
+    }
+    if (parentKinds.includes("adoptive") || parentKinds.includes("surrogate")) {
+      throw new Error(`Parent kind dropdown contains non-canonical kind: ${JSON.stringify(parentKinds)}`);
+    }
+
+    await clickButtonText("Cancel");
+    await sleep(500);
+    step(49, "Parent kind dropdown exposes all 7 canonical values");
+
+    // -----------------------------------------------------------------------
+    // 50. Duplicate family mutation refusal in UI preview without save affordance
+    // -----------------------------------------------------------------------
+    await typeSearch("Irsa");
+    await page.waitForSelector(".person-search-results", { timeout: 8000 });
+    await page.keyboard.press("ArrowDown");
+    await sleep(200);
+    await page.keyboard.press("Enter");
+    await sleep(1200);
+    await page.waitForSelector(".family-diagram svg", { timeout: 10000 });
+
+    await clickButtonText("+ Add Family Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+    await page.waitForSelector('input[placeholder*="Search name or alias"]', { timeout: 8000 });
+
+    const dupTargetInput = await page.$('input[placeholder*="Search name or alias"]');
+    await dupTargetInput.type("Yahya");
+    await sleep(400);
+    await page.evaluate((targetName) => {
+      const options = Array.from(document.querySelectorAll("select.form-select option"));
+      const opt = options.find((o) => o.textContent.includes(targetName));
+      if (opt) {
+        const sel = opt.parentElement;
+        sel.value = opt.value;
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }, "Yahya");
+
+    await page.evaluate(() => {
+      const roleSel = document.querySelector("#parent-role-select");
+      if (roleSel) {
+        roleSel.value = "mother";
+        roleSel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      const kindSel = document.querySelector("#parent-kind-select");
+      if (kindSel) {
+        kindSel.value = "biological";
+        kindSel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await sleep(300);
+
+    await clickButtonText("Preview Consequences");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .diff-invalid", { timeout: 8000 });
+
+    const dupBlockedText = await page.evaluate(() => {
+      const cards = document.querySelectorAll(".modal-card");
+      const lastCard = cards[cards.length - 1];
+      const diffInvalid = lastCard.querySelector(".diff-invalid");
+      return diffInvalid ? diffInvalid.textContent : lastCard.textContent;
+    });
+    if (!dupBlockedText.includes("Parent-child fact already exists") && !dupBlockedText.includes("already exists")) {
+      throw new Error(`Expected duplicate fact refusal, got: ${dupBlockedText}`);
+    }
+
+    const dupSaveBtnPresent = await page.evaluate(() => {
+      const cards = document.querySelectorAll(".modal-card");
+      const lastCard = cards[cards.length - 1];
+      const btns = Array.from(lastCard.querySelectorAll("button"));
+      return btns.some((b) => b.textContent.includes("Confirm & Save Fact"));
+    });
+    if (dupSaveBtnPresent) {
+      throw new Error("Duplicate mutation preview unexpectedly displayed 'Confirm & Save Fact' button");
+    }
+
+    await page.evaluate(() => {
+      const cards = document.querySelectorAll(".modal-card");
+      if (cards.length > 1) {
+        const lastCard = cards[cards.length - 1];
+        const cancelBtn = Array.from(lastCard.querySelectorAll("button")).find(
+          (b) => b.textContent.includes("Cancel") || b.classList.contains("btn-close")
+        );
+        if (cancelBtn) cancelBtn.click();
+      }
+    });
+    await sleep(400);
+    await clickButtonText("Cancel");
+    await sleep(400);
+    step(50, "Duplicate family mutation refusal in UI preview without save affordance");
+
+    // -----------------------------------------------------------------------
+    // 51. Parent-child Family UI create with consequence preview, diagram refresh, and stored badge
+    // -----------------------------------------------------------------------
+    // Switch focus to Irsa Naz so that sourcePerson = Irsa Naz (she was last selected in step 45).
+    // Then open Add Family Fact from the context panel to create Irsa Naz → Musabiha (adopted).
+    await typeSearch("Irsa");
+    await page.waitForSelector(".person-search-results", { timeout: 8000 });
+    await page.keyboard.press("ArrowDown");
+    await sleep(200);
+    await page.keyboard.press("Enter");
+    await sleep(1200);
+    await page.waitForSelector(".family-diagram svg", { timeout: 10000 });
+
+    // Ensure Irsa Naz is still the selected (from step 45); if not, click the focus node
+    // to open the context panel with Irsa Naz as selected
+    const irsaSelected = await page.evaluate(() => {
+      const name = document.querySelector("aside.family-side strong");
+      return name && name.textContent.includes("Irsa Naz");
+    });
+    if (!irsaSelected) {
+      // Click Irsa Naz's node if visible in diagram
+      await page.evaluate(() => {
+        const node = document.querySelector('.family-canvas g.node.clickable-node[id*="p_irsa_naz"]');
+        if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await sleep(600);
+    }
+
+    // Dismiss any existing undo bar before proceeding
+    if (await page.$(".undo-bar")) {
+      const dismissBtn = await page.$(".undo-bar-close");
+      if (dismissBtn) await dismissBtn.click();
+      await sleep(300);
+    }
+
+    await clickButtonText("+ Add Family Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+    await page.waitForSelector('input[placeholder*="Search name or alias"]', { timeout: 8000 });
+
+    const pcTargetInput = await page.$('input[placeholder*="Search name or alias"]');
+    await pcTargetInput.type("Musabiha");
+    await sleep(400);
+    await page.evaluate((targetName) => {
+      const options = Array.from(document.querySelectorAll("select.form-select option"));
+      const opt = options.find((o) => o.textContent.includes(targetName));
+      if (opt) {
+        const sel = opt.parentElement;
+        sel.value = opt.value;
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }, "Musabiha");
+
+    await page.evaluate(() => {
+      const roleSel = document.querySelector("#parent-role-select");
+      if (roleSel) {
+        roleSel.value = "father";
+        roleSel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      const kindSel = document.querySelector("#parent-kind-select");
+      if (kindSel) {
+        kindSel.value = "adopted";
+        kindSel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await sleep(300);
+
+    await clickButtonText("Preview Consequences");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .preview-section", { timeout: 8000 });
+
+    await page.screenshot({ path: join(DOC_SHOTS, "family-add-parent-fact.png"), fullPage: false });
+    console.log("  [Screenshot] Captured: family-add-parent-fact.png");
+
+    const pcPreviewText = await page.evaluate(() => {
+      const cards = document.querySelectorAll(".modal-card");
+      return cards[cards.length - 1].textContent;
+    });
+    if (!pcPreviewText.includes("adopted child")) {
+      throw new Error(`Expected direct change describing adopted child in preview, got: ${pcPreviewText}`);
+    }
+
+    await clickButtonText("Confirm & Save Fact");
+    await sleep(1500);
+
+    await page.waitForSelector(".undo-bar", { timeout: 8000 });
+    const pcUndoText = await page.$eval(".undo-bar span", (el) => el.textContent);
+    if (!pcUndoText.includes("parent-child")) {
+      throw new Error(`Expected UndoBar description for parent-child, got: ${pcUndoText}`);
+    }
+
+    // Dismiss UndoBar and select Musabiha to see the stored badge from Irsa's perspective
+    if (await page.$(".undo-bar-close")) {
+      await page.evaluate(() => {
+        const btn = document.querySelector(".undo-bar-close");
+        if (btn) btn.click();
+      });
+      await sleep(300);
+    }
+
+    await page.evaluate(() => {
+      const node = document.querySelector('.family-canvas g.node.clickable-node[id*="p_musabiha"]');
+      if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await sleep(600);
+
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .badge-stored");
+      return badge && badge.textContent.includes("Parent-Child (adopted)");
+    }, { timeout: 8000 });
+
+    step(51, "Parent-child Family UI create with consequence preview, diagram refresh, and stored badge");
+
+    // -----------------------------------------------------------------------
+    // 52. Post-mutation Family -> Relationships semantic consistency
+    // -----------------------------------------------------------------------
+    await clickButtonText("View in Relationships");
+    await page.waitForFunction(() => {
+      const title = document.querySelector(".view-head h1");
+      return title?.textContent.includes("Relationships");
+    }, { timeout: 8000 });
+    await page.waitForFunction(() =>
+      Boolean(
+        document.querySelector(".perspective-current strong")?.textContent &&
+        document.querySelector(".selected-person-panel .side-profile-row strong")?.textContent &&
+        document.querySelector(".panel-rel-group .panel-rel-row")?.textContent
+      ),
+      { timeout: 10000 },
+    );
+
+    const parentHandoff = await page.evaluate(() => ({
+      perspective: document.querySelector(".perspective-current strong")?.textContent || "",
+      target: document.querySelector(".selected-person-panel .side-profile-row strong")?.textContent || "",
+      relationship: document.querySelector(".panel-rel-group .panel-rel-row")?.textContent || "",
+    }));
+    if (!parentHandoff.perspective.includes("Irsa Naz") ||
+        !parentHandoff.target.includes("Musabiha") ||
+        !parentHandoff.relationship.includes("Daughter (adopted)")) {
+      throw new Error(`Post-mutation Relationships handoff was stale: ${JSON.stringify(parentHandoff)}`);
+    }
+
+    await clickButtonText("Family");
+    await page.waitForSelector(".family-diagram svg", { timeout: 10000 });
+    await page.waitForFunction(() =>
+      document.querySelector(".family-focus-current")?.textContent.includes("Irsa Naz") &&
+      document.querySelector("aside.family-side strong")?.textContent.includes("Musabiha"),
+      { timeout: 10000 },
+    );
+    const parentReturnState = await page.evaluate(() => ({
+      focus: document.querySelector(".family-focus-current")?.textContent || "",
+      selected: document.querySelector("aside.family-side strong")?.textContent || "",
+    }));
+    if (!parentReturnState.focus.includes("Irsa Naz") || !parentReturnState.selected.includes("Musabiha")) {
+      throw new Error(`Family session did not survive mutation handoff: ${JSON.stringify(parentReturnState)}`);
+    }
+    step(52, "Post-mutation Family -> Relationships truth and Family session persistence");
+
+    // -----------------------------------------------------------------------
+    // 53. Parent-child Family UI edit changes kind to foster with UndoBar
+    // -----------------------------------------------------------------------
+    await clickButtonText("Edit Stored Fact");
+    await sleep(800);
+    await page.waitForSelector("#edit-parent-kind-select", { timeout: 8000 });
+
+    await page.evaluate(() => {
+      const kindSel = document.querySelector("#edit-parent-kind-select");
+      if (kindSel) {
+        kindSel.value = "foster";
+        kindSel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await sleep(300);
+
+    await clickButtonText("Save Parent Fact");
+    await sleep(1500);
+
+    await page.waitForSelector(".undo-bar", { timeout: 8000 });
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .badge-stored");
+      return badge && badge.textContent.includes("Parent-Child (foster)");
+    }, { timeout: 8000 });
+
+    step(53, "Parent-child Family UI edit changes kind to foster with UndoBar");
+
+    // -----------------------------------------------------------------------
+    // 54. Parent-child Family UI undo edit restores original adopted kind
+    // -----------------------------------------------------------------------
+    await clickButtonText("Undo");
+    await sleep(1500);
+    await page.waitForFunction(() => !document.querySelector(".undo-bar"), { timeout: 8000 });
+
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .badge-stored");
+      return badge && badge.textContent.includes("Parent-Child (adopted)");
+    }, { timeout: 8000 });
+
+    step(54, "Parent-child Family UI undo edit restores original adopted kind");
+
+    // -----------------------------------------------------------------------
+    // 55. Parent-child Family UI delete with preview and UndoBar
+    // -----------------------------------------------------------------------
+    await clickButtonText("Remove Stored Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+
+    const pcDelPreviewText = await page.evaluate(() => {
+      const cards = document.querySelectorAll(".modal-card");
+      return cards[cards.length - 1].textContent;
+    });
+    if (!pcDelPreviewText.includes("parent-child") || !pcDelPreviewText.includes("Musabiha")) {
+      throw new Error(`Expected deletion preview to describe removing parent-child fact involving Musabiha, got: ${pcDelPreviewText}`);
+    }
+
+    await clickButtonText("Confirm & Save Fact");
+    await sleep(1500);
+    await page.waitForSelector(".undo-bar", { timeout: 8000 });
+
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .badge-stored");
+      return !badge || !badge.textContent.includes("Parent-Child (adopted)");
+    }, { timeout: 8000 });
+
+    step(55, "Parent-child Family UI delete with preview and UndoBar");
+
+    // -----------------------------------------------------------------------
+    // 56. Parent-child Family UI undo delete restores exact parent fact
+    // -----------------------------------------------------------------------
+    await clickButtonText("Undo");
+    await sleep(1500);
+    await page.waitForFunction(() => !document.querySelector(".undo-bar"), { timeout: 8000 });
+
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .badge-stored");
+      return badge && badge.textContent.includes("Parent-Child (adopted)");
+    }, { timeout: 8000 });
+
+    // Clean up: remove test parent-child fact
+    await clickButtonText("Remove Stored Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+    await clickButtonText("Confirm & Save Fact");
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .badge-stored");
+      return !badge || !badge.textContent.includes("Parent-Child (adopted)");
+    }, { timeout: 10000 });
+    if (await page.$(".undo-bar")) {
+      const dismissBtn = await page.$(".undo-bar-close");
+      if (dismissBtn) await dismissBtn.click();
+      await sleep(300);
+    }
+    step(56, "Parent-child Family UI undo delete restores exact parent fact");
+
+    // Use the sibling-group source as Family focus so its newly stored facts
+    // are the relationship context shown when another member is selected.
+    await clickButtonText("Make Family Focus");
+    await page.waitForFunction(() =>
+      document.querySelector(".family-focus-current")?.textContent.includes("Musabiha"),
+      { timeout: 10000 },
+    );
+
+    // -----------------------------------------------------------------------
+    // 57. Full sibling group with >2 members refused in UI
+    // -----------------------------------------------------------------------
+    await clickButtonText("+ Add Family Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+
+    await page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll("select.form-select"));
+      const typeSelect = selects.find((s) => Array.from(s.options).some((o) => o.value === "sibling"));
+      if (typeSelect) {
+        typeSelect.value = "sibling";
+        typeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await sleep(400);
+
+    await page.evaluate(() => {
+      const sibTypeSelect = document.querySelector("#add-sibling-type-select");
+      if (sibTypeSelect) {
+        sibTypeSelect.value = "full";
+        sibTypeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await sleep(300);
+
+    await page.click("#sibling-member-search input");
+    await page.type("#sibling-member-search input", "Muaaz");
+    await page.waitForSelector("#person-opt-muaaz", { timeout: 8000 });
+    await page.click("#person-opt-muaaz");
+
+    await page.waitForFunction(() => {
+      const membersLabel = document.querySelector(".sibling-chips")?.previousElementSibling;
+      const searchInput = document.querySelector("#sibling-member-search input");
+      return membersLabel?.textContent.includes("2 members") && searchInput?.disabled;
+    }, { timeout: 8000 });
+
+    const thirdAddDisabled = await page.evaluate(() => {
+      return document.querySelector("#sibling-member-search input")?.disabled;
+    });
+    if (!thirdAddDisabled) {
+      throw new Error("Full Siblings group did not disable adding a 3rd member when 2 members are reached");
+    }
+
+    await page.evaluate(() => {
+      const sibTypeSelect = document.querySelector("#add-sibling-type-select");
+      if (sibTypeSelect) {
+        sibTypeSelect.value = "";
+        sibTypeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await sleep(300);
+
+    const generalAddEnabled = await page.evaluate(() => {
+      return !document.querySelector("#sibling-member-search input")?.disabled;
+    });
+    if (!generalAddEnabled) {
+      throw new Error("Default/General Sibling Group unexpectedly kept candidate select disabled");
+    }
+
+    await clickButtonText("Cancel");
+    await sleep(500);
+    step(57, "Full sibling group with >2 members refused in UI");
+
+    // -----------------------------------------------------------------------
+    // 58. Multi-member default sibling group create with Preview & Save
+    // -----------------------------------------------------------------------
+    await clickButtonText("+ Add Family Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+
+    await page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll("select.form-select"));
+      const typeSelect = selects.find((s) => Array.from(s.options).some((o) => o.value === "sibling"));
+      if (typeSelect) {
+        typeSelect.value = "sibling";
+        typeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await sleep(400);
+
+    await page.click("#sibling-member-search input");
+    await page.type("#sibling-member-search input", "Muaaz");
+    await page.waitForSelector("#person-opt-muaaz", { timeout: 8000 });
+    await page.click("#person-opt-muaaz");
+    await page.waitForFunction(() => document.querySelectorAll(".sibling-chips .family-badge").length === 2, { timeout: 8000 });
+
+    await page.click("#sibling-member-search input");
+    await page.type("#sibling-member-search input", "Barirah");
+    await page.waitForSelector("#person-opt-barirah", { timeout: 8000 });
+    await page.click("#person-opt-barirah");
+    await page.waitForFunction(() => document.querySelectorAll(".sibling-chips .family-badge").length === 3, { timeout: 8000 });
+
+    const chipCount = await page.evaluate(() => {
+      return document.querySelectorAll(".sibling-chips .family-badge").length;
+    });
+    if (chipCount !== 3) {
+      throw new Error(`Expected 3 sibling member chips, found: ${chipCount}`);
+    }
+
+    await page.screenshot({ path: join(DOC_SHOTS, "family-multimember-sibling-group.png"), fullPage: false });
+    console.log("  [Screenshot] Captured: family-multimember-sibling-group.png");
+
+    await clickButtonText("Preview Consequences");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .preview-direct", { timeout: 8000 });
+
+    await page.screenshot({ path: join(DOC_SHOTS, "family-multipath-consequence-preview.png"), fullPage: false });
+    console.log("  [Screenshot] Captured: family-multipath-consequence-preview.png");
+
+    const sibPreviewText = await page.evaluate(() => {
+      const cards = document.querySelectorAll(".modal-card");
+      return cards[cards.length - 1].textContent;
+    });
+    if (!sibPreviewText.includes("sibling") || !sibPreviewText.includes("3") && !sibPreviewText.includes("three") && !sibPreviewText.includes("Create sibling")) {
+      // Accept either a mention of 3-member count or the 'Create sibling fact' phrase
+      if (!sibPreviewText.includes("Create sibling fact") && !sibPreviewText.includes("sibling group")) {
+        throw new Error(`Expected sibling group preview description, got: ${sibPreviewText}`);
+      }
+    }
+
+    await clickButtonText("Confirm & Save Fact");
+    await sleep(1500);
+
+    await page.waitForSelector(".undo-bar", { timeout: 8000 });
+    const sibUndoText = await page.$eval(".undo-bar span", (el) => el.textContent);
+    if (!sibUndoText.includes("Added sibling group")) {
+      throw new Error(`Expected sibling group UndoBar text, got: ${sibUndoText}`);
+    }
+
+    await page.evaluate(() => {
+      const node = document.querySelector('.family-canvas g.node.clickable-node[id*="p_muaaz"]');
+      if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForFunction(() => document.querySelector("aside.family-side strong")?.textContent.includes("Muaaz"), { timeout: 8000 });
+
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .badge-stored");
+      return badge && badge.textContent.includes("Sibling Group");
+    }, { timeout: 8000 });
+
+    step(58, "Multi-member default sibling group create with Preview & Save");
+
+    // -----------------------------------------------------------------------
+    // 59. Sibling group metadata edit updates ordered birth sequence
+    // -----------------------------------------------------------------------
+    await clickButtonText("Edit Stored Fact");
+    await sleep(800);
+    await page.waitForSelector("#sibling-ordered-cb", { timeout: 8000 });
+
+    await page.evaluate(() => {
+      const cb = document.querySelector("#sibling-ordered-cb");
+      if (cb) {
+        cb.checked = true;
+        cb.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await sleep(300);
+
+    await clickButtonText("Save Sibling Group Fact");
+    await sleep(1500);
+
+    await page.waitForSelector(".undo-bar", { timeout: 8000 });
+    const editSibUndoText = await page.$eval(".undo-bar span", (el) => el.textContent);
+    if (!editSibUndoText.includes("Updated sibling group fact")) {
+      throw new Error(`Expected UndoBar for updated sibling group fact, got: ${editSibUndoText}`);
+    }
+
+    step(59, "Sibling group metadata edit updates ordered birth sequence");
+
+    // -----------------------------------------------------------------------
+    // 60. Sibling group metadata undo reverts changes cleanly
+    // -----------------------------------------------------------------------
+    await clickButtonText("Undo");
+    await sleep(1500);
+    await page.waitForFunction(() => !document.querySelector(".undo-bar"), { timeout: 8000 });
+
+    step(60, "Sibling group metadata undo reverts changes cleanly");
+
+    // -----------------------------------------------------------------------
+    // 61. Explicit sibling group deletion preserves the underlying derived cousin truth
+    // -----------------------------------------------------------------------
+    await clickButtonText("Remove Stored Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+
+    const delSibPreviewText = await page.evaluate(() => {
+      const cards = document.querySelectorAll(".modal-card");
+      return cards[cards.length - 1].textContent;
+    });
+    if (!delSibPreviewText.includes("sibling group") && !delSibPreviewText.includes("sibling fact")) {
+      throw new Error(`Expected deletion preview for sibling group, got: ${delSibPreviewText}`);
+    }
+
+    await clickButtonText("Confirm & Save Fact");
+    await sleep(1500);
+    await page.waitForSelector(".undo-bar", { timeout: 8000 });
+
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .family-badge.badge-derived");
+      return badge && badge.textContent.includes("Derived Kinship Term");
+    }, { timeout: 8000 });
+
+    const postDeleteRelationship = await page.$eval(".relation-card-item", (el) => el.textContent);
+    if (!postDeleteRelationship.toLowerCase().includes("cousin")) {
+      throw new Error(`Expected the underlying cousin relationship after sibling group deletion, got: ${postDeleteRelationship}`);
+    }
+    step(61, "Sibling group delete removes the stored fact and preserves derived cousin truth");
+
+    // -----------------------------------------------------------------------
+    // 62. Sibling group undo delete restores explicit stored fact
+    // -----------------------------------------------------------------------
+    await clickButtonText("Undo");
+    await sleep(1500);
+    await page.waitForFunction(() => !document.querySelector(".undo-bar"), { timeout: 8000 });
+
+    await page.waitForFunction(() => {
+      const badge = document.querySelector(".relation-card-item .family-badge.badge-stored");
+      return badge && badge.textContent.includes("Sibling Group");
+    }, { timeout: 8000 });
+
+    // Clean up: remove test sibling group
+    await clickButtonText("Remove Stored Fact");
+    await sleep(800);
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+    await clickButtonText("Confirm & Save Fact");
+    await page.waitForFunction(() => {
+      const card = document.querySelector(".relation-card-item");
+      return card?.querySelector(".badge-derived") && card.textContent.toLowerCase().includes("cousin");
+    }, { timeout: 10000 });
+    if (await page.$(".undo-bar")) {
+      const dismissBtn = await page.$(".undo-bar-close");
+      if (dismissBtn) await dismissBtn.click();
+      await sleep(300);
+    }
+
+    step(62, "Sibling group undo delete restores explicit stored fact");
+
+    // -----------------------------------------------------------------------
+    // 63. Deleting a canonical stored sibling group leaves inferred siblinghood
+    // -----------------------------------------------------------------------
+    await typeSearch("Musabiha");
+    await page.waitForSelector(".person-search-results", { timeout: 8000 });
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".family-diagram svg", { timeout: 10000 });
+    await page.waitForFunction(() => document.querySelector(".family-focus-current")?.textContent.includes("Musabiha"), { timeout: 8000 });
+
+    await page.evaluate(() => {
+      const node = document.querySelector('.family-canvas g.node.clickable-node[id*="flowchart-p_musa-"]');
+      if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const name = document.querySelector("aside.family-side strong");
+      return name && name.textContent.trim() === "Musa";
+    }, { timeout: 8000 });
+    await page.waitForFunction(() => document.querySelector(".relation-card-item .badge-stored")?.textContent.includes("Sibling Group"), { timeout: 8000 });
+
+    await clickButtonText("Remove Stored Fact");
+    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+    await clickButtonText("Confirm & Save Fact");
+    await page.waitForSelector(".undo-bar", { timeout: 8000 });
+    await page.waitForFunction(() => {
+      const card = document.querySelector(".relation-card-item");
+      const badge = card?.querySelector(".badge-derived");
+      return badge?.textContent.includes("Derived Kinship Term") && card?.textContent.includes("Brother");
+    }, { timeout: 8000 });
+    step(63, "Stored sibling deletion falls back to inferred biological siblinghood");
+
+    // -----------------------------------------------------------------------
+    // 64. Undo restores the exact canonical stored sibling group
+    // -----------------------------------------------------------------------
+    await clickButtonText("Undo");
+    await page.waitForFunction(() => !document.querySelector(".undo-bar"), { timeout: 8000 });
+    await page.waitForFunction(() => document.querySelector(".relation-card-item .badge-stored")?.textContent.includes("Sibling Group"), { timeout: 8000 });
+    step(64, "Undo restores the canonical stored sibling group after inferred fallback");
+
+    // -----------------------------------------------------------------------
+    // 65. Derived kinship terms withhold direct destructive controls with Inspect Proof enabled
+    // -----------------------------------------------------------------------
+    await page.evaluate(() => {
+      const node = document.querySelector('.family-canvas g.node.clickable-node[id*="p_maham_mansoor"]');
+      if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const name = document.querySelector("aside.family-side strong");
+      return name && name.textContent.trim() === "Maham Mansoor";
+    }, { timeout: 8000 });
+    await page.waitForFunction(() => {
+      const card = document.querySelector(".relation-card-item");
+      return card?.querySelector(".badge-derived") && card.textContent.toLowerCase().includes("cousin");
+    }, { timeout: 10000 });
+
+    const derivedButtonsState = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("aside.family-side .family-side-actions button, aside.family-side .row-actions button"));
+      const editBtn = btns.find((b) => b.textContent.includes("Edit Stored Fact"));
+      const removeBtn = btns.find((b) => b.textContent.includes("Remove Stored Fact"));
+      return {
+        editDisabled: editBtn ? editBtn.disabled : true,
+        removeDisabled: removeBtn ? removeBtn.disabled : true,
+      };
+    });
+    if (!derivedButtonsState.editDisabled || !derivedButtonsState.removeDisabled) {
+      throw new Error(`Derived relationship unexpectedly had active destructive controls: ${JSON.stringify(derivedButtonsState)}`);
+    }
+
+    const hasInspectProof = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll(".relation-card-item button"));
+      return btns.some((b) => b.textContent.includes("Inspect Proof"));
+    });
+    if (!hasInspectProof) {
+      throw new Error("Derived relationship did not expose 'Inspect Proof' button");
+    }
+
+    step(65, "Derived kinship terms withhold direct destructive controls with Inspect Proof enabled");
+
     console.log("\n=======================================================");
-    console.log(`🎉 ALL ${passedSteps.length} / 48 FAMILY UI E2E CHECKS PASSED!`);
+    console.log(`🎉 ALL ${passedSteps.length} / 65 FAMILY UI E2E CHECKS PASSED!`);
     console.log("=======================================================\n");
     } catch (err) {
       testError = err;

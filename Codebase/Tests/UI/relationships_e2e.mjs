@@ -130,7 +130,7 @@ async function main() {
     browser = await puppeteer.launch({
       executablePath: EDGE,
       headless: "new",
-      args: ["--disable-gpu", "--no-first-run", "--no-sandbox"],
+      args: ["--disable-gpu", "--no-first-run", "--no-sandbox", "--edge-skip-compat-layer-relaunch"],
       defaultViewport: { width: 1600, height: 1000 },
     });
 

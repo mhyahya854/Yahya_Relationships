@@ -151,7 +151,7 @@ try {
   browser = await puppeteer.launch({
     executablePath: EDGE,
     headless: "new",
-    args: ["--disable-gpu", "--no-first-run"],
+    args: ["--disable-gpu", "--no-first-run", "--edge-skip-compat-layer-relaunch"],
     defaultViewport: { width: 1440, height: 900 },
   });
 

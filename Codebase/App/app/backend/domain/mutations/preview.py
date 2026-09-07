@@ -12,6 +12,7 @@ import sqlite3
 from typing import Any
 
 from ..family import engine as build_family
+from ..relationships import path_service
 
 from ... import db
 from ...kinship import labels
@@ -20,24 +21,139 @@ from ...services import errors
 
 
 def _get_all_derived_map(model: dict) -> dict[tuple[str, str], list[dict]]:
-    """Map (person_a_id, person_b_id) -> list of derived/primary family relationship labels."""
+    """Map (person_a_id, person_b_id) -> list of derived family relationship path payloads."""
     idx = people_index(model)
     rel_map: dict[tuple[str, str], list[dict]] = {}
-    pids = list(idx.keys())
-    for i, pid_a in enumerate(pids):
+    pids = sorted(idx.keys())
+
+    explicit_sibling_pairs = set()
+    for g in model.get("sibling_groups", []):
+        members = g.get("members", [])
+        for i, m1 in enumerate(members):
+            for m2 in members[i + 1:]:
+                explicit_sibling_pairs.add((m1, m2))
+                explicit_sibling_pairs.add((m2, m1))
+
+    for pid_a in pids:
         for pid_b in pids:
             if pid_a == pid_b:
                 continue
+            is_explicit_sib = (pid_a, pid_b) in explicit_sibling_pairs
+            pair_items: list[dict] = []
+
+            # 1. Primary explicit facts from canonical engine (marriage, parent-child, explicit sibling)
             entries = build_family._pair_relationship_entries(model, pid_a, pid_b, idx)
-            main = [item for item in entries if item["group"] in ("primary", "direct")]
-            if not main:
-                cousins = [item for item in entries if item["group"] == "cousin"]
-                if cousins:
-                    # Sort cousins deterministically
-                    cousins_sorted = sorted(cousins, key=lambda item: item["en"].lower())
-                    main = [cousins_sorted[0]]
-            if main:
-                rel_map[(pid_a, pid_b)] = main
+            for item in entries:
+                if item.get("group") == "primary":
+                    pair_items.append(
+                        {
+                            "id": f"primary:{item.get('kind', 'fact')}:{pid_a}:{pid_b}:{item.get('role', '')}:{item.get('suffix', '')}:{item.get('stored_fact_kind', '')}",
+                            "person_a_id": pid_a,
+                            "person_b_id": pid_b,
+                            "relationship_type": item.get("kind", "primary"),
+                            "semantic_id": item.get("kind", "primary"),
+                            "label_en": item["en"],
+                            "label_ur": item.get("ur"),
+                            "side": item.get("side", ""),
+                            "degree": item.get("degree"),
+                            "removal": item.get("removal"),
+                            "distance": item.get("distance", 1),
+                            "nodes": [pid_a, pid_b],
+                            "derived": item.get("derived", False),
+                        }
+                    )
+
+            # 2. All distinct derived structural kinship paths (ancestors, descendants, collateral, cousins)
+            derived = path_service._derived_paths(
+                model=model,
+                people_index=idx,
+                perspective_id=pid_a,
+                target_id=pid_b,
+                explicit_sibling=is_explicit_sib,
+                max_depth=10,
+            )
+            for dp in derived:
+                pair_items.append(
+                    {
+                        "id": dp["id"],
+                        "person_a_id": pid_a,
+                        "person_b_id": pid_b,
+                        "relationship_type": dp.get("relationship_type", dp.get("type")),
+                        "semantic_id": dp.get("semantic_id", dp.get("relationship_type", dp.get("type"))),
+                        "label_en": dp["label_en"],
+                        "label_ur": dp.get("label_ur"),
+                        "side": dp.get("side", ""),
+                        "degree": dp.get("degree"),
+                        "removal": dp.get("removal"),
+                        "distance": dp.get("distance"),
+                        "nodes": [node["id"] if isinstance(node, dict) else str(node) for node in dp.get("nodes", [])],
+                        "derived": True,
+                    }
+                )
+
+            # 3. Inferred biological siblinghood when shared parents exist without explicit group
+            if not is_explicit_sib:
+                shared_parents = path_service._same_parents(model, idx, pid_a, pid_b)
+                if shared_parents:
+                    target_g = path_service._gender_of(idx, pid_b)
+                    en = "Sister" if target_g == "female" else "Brother"
+                    ur = "بہن" if target_g == "female" else "بھائی"
+                    entry = labels.normalize_family_entry({
+                        "en": en,
+                        "ur": ur,
+                        "kind": "sibling",
+                        "target_gender": target_g,
+                        "explicit_full": False,
+                        "sibling_type": "biological",
+                        "stored_fact_kind": None,
+                        "derived": True,
+                    })
+                    parents_by_gender = sorted(
+                        shared_parents,
+                        key=lambda p_id: (
+                            0 if path_service._gender_of(idx, p_id) == "female" else 1,
+                            p_id,
+                        ),
+                    )
+                    for parent_id in parents_by_gender[:1]:
+                        sib_payload = path_service._path_payload(
+                            domain="family",
+                            entry=entry,
+                            node_ids=[pid_a, parent_id, pid_b],
+                            model=model,
+                            people_index=idx,
+                            common_ancestors=shared_parents,
+                            derived=True,
+                        )
+                        pair_items.append(
+                            {
+                                "id": sib_payload["id"],
+                                "person_a_id": pid_a,
+                                "person_b_id": pid_b,
+                                "relationship_type": "sibling",
+                                "semantic_id": "sibling",
+                                "label_en": sib_payload["label_en"],
+                                "label_ur": sib_payload.get("label_ur"),
+                                "side": "",
+                                "degree": None,
+                                "removal": None,
+                                "distance": 2,
+                                "nodes": [node["id"] if isinstance(node, dict) else str(node) for node in sib_payload.get("nodes", [])],
+                                "derived": True,
+                            }
+                        )
+
+            if pair_items:
+                pair_items.sort(
+                    key=lambda p: (
+                        p.get("distance", 0),
+                        p.get("degree") if p.get("degree") is not None else 99,
+                        p.get("removal") if p.get("removal") is not None else 99,
+                        p.get("relationship_type", ""),
+                        p.get("id", ""),
+                    )
+                )
+                rel_map[(pid_a, pid_b)] = pair_items
     return rel_map
 
 
@@ -74,6 +190,10 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                 child_id = params["child_id"]
                 role = params.get("role", "parent")
                 kind = params.get("kind", "biological")
+                if kind not in {"biological", "unspecified", "adopted", "foster", "guardian", "step", "unknown"}:
+                    raise errors.ValidationError(f"Unsupported parent-child kind: {kind!r}.")
+                if role not in {"mother", "father", "parent", "unknown"}:
+                    raise errors.ValidationError(f"Unsupported parent role: {role!r}.")
                 if parent_id not in idx_before:
                     raise errors.NotFoundError(f"Unknown parent ID: {parent_id}")
                 if child_id not in idx_before:
@@ -81,6 +201,14 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                 if parent_id == child_id:
                     raise errors.ValidationError(
                         "A person cannot be their own parent.", code="SELF_PARENT"
+                    )
+                existing = connection.execute(
+                    "SELECT 1 FROM parent_child WHERE parent_id = ? AND child_id = ?",
+                    (parent_id, child_id),
+                ).fetchone()
+                if existing:
+                    raise errors.ValidationError(
+                        "That parent-child fact already exists.", code="DUPLICATE_FACT"
                     )
                 connection.execute(
                     """
@@ -139,6 +267,8 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                 status = params.get("status", "married")
                 year = params.get("year")
                 children_status = params.get("children_status") or None
+                if status not in {"married", "divorced", "widowed", "unknown"}:
+                    raise errors.ValidationError(f"Unsupported marriage status: {status!r}.")
                 if not person_a or not person_b:
                     raise errors.ValidationError("Both spouses must be specified.")
                 if person_a not in idx_before or person_b not in idx_before:
@@ -148,6 +278,21 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                         "A person cannot marry themselves.", code="SELF_MARRIAGE"
                     )
                 spouse_a, spouse_b = sorted((person_a, person_b))
+                existing = connection.execute(
+                    "SELECT 1 FROM marriages WHERE spouse_a = ? AND spouse_b = ?",
+                    (spouse_a, spouse_b),
+                ).fetchone()
+                if existing:
+                    raise errors.ValidationError(
+                        "That marriage fact already exists.", code="DUPLICATE_FACT"
+                    )
+                for sp in (spouse_a, spouse_b):
+                    sp_row = connection.execute("SELECT marital_status FROM people WHERE id = ?", (sp,)).fetchone()
+                    if sp_row and sp_row["marital_status"] == "single":
+                        raise errors.ValidationError(
+                            f"Person {sp} is marked single and cannot have a marriage fact.",
+                            code="FAMILY_VALIDATION",
+                        )
                 max_order = connection.execute(
                     "SELECT COALESCE(MAX(display_order), -1) AS m FROM marriages"
                 ).fetchone()["m"]
@@ -208,11 +353,43 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
                 )
 
             elif action == "add_sibling_group":
-                member_ids = params.get("member_ids") or params.get("members") or []
+                member_ids = [m for m in (params.get("member_ids") or params.get("members") or []) if m]
                 type_ = params.get("type_") or params.get("type") or None
+                if type_ == "":
+                    type_ = None
                 ordered = bool(params.get("ordered", False))
                 if len(member_ids) < 2:
-                    raise errors.ValidationError("Sibling group requires at least 2 members.")
+                    raise errors.ValidationError(
+                        "A sibling group needs at least two members.", code="SIBLING_GROUP_SIZE"
+                    )
+                if len(set(member_ids)) != len(member_ids):
+                    raise errors.ValidationError(
+                        "A sibling group cannot repeat a person.", code="SIBLING_GROUP_REPEAT"
+                    )
+                if type_ not in (None, "full"):
+                    raise errors.ValidationError(
+                        f"Unsupported sibling-group type: {type_!r}."
+                    )
+                if type_ == "full" and len(member_ids) != 2:
+                    raise errors.ValidationError(
+                        "Full-sibling facts need exactly two members.",
+                        code="FULL_SIBLING_SIZE",
+                    )
+                for member in member_ids:
+                    if member not in idx_before:
+                        raise errors.NotFoundError(f"Unknown sibling group member: {member}")
+                for group in connection.execute("SELECT id FROM sibling_groups").fetchall():
+                    stored = [
+                        row["person_id"]
+                        for row in connection.execute(
+                            "SELECT person_id FROM sibling_group_members WHERE group_id = ? ORDER BY member_order, person_id",
+                            (group["id"],),
+                        )
+                    ]
+                    if sorted(stored) == sorted(member_ids):
+                        raise errors.ValidationError(
+                            "That sibling group already exists.", code="DUPLICATE_FACT"
+                        )
                 max_order = connection.execute(
                     "SELECT COALESCE(MAX(display_order), -1) AS m FROM sibling_groups"
                 ).fetchone()["m"]
@@ -396,19 +573,26 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
             for pair, items in map_after.items():
                 pid_a, pid_b = pair
                 before_items = map_before.get(pair, [])
-                before_keys = {(item.get("type"), item["en"]) for item in before_items}
+                before_keys = {item["id"] for item in before_items}
                 for item in items:
-                    if (item.get("type"), item["en"]) not in before_keys:
+                    if item["id"] not in before_keys:
                         derived_added.append(
                             {
+                                "path_id": item["id"],
                                 "person_a_id": pid_a,
                                 "person_a_name": idx_after.get(pid_a, {}).get("name", pid_a),
                                 "person_b_id": pid_b,
                                 "person_b_name": idx_after.get(pid_b, {}).get("name", pid_b),
-                                "relationship_type": item.get("type"),
-                                "semantic_id": item.get("type"),
-                                "label_en": item["en"],
-                                "label_ur": item.get("ur"),
+                                "relationship_type": item.get("relationship_type", item.get("type")),
+                                "semantic_id": item.get("semantic_id", item.get("relationship_type", item.get("type"))),
+                                "label_en": item["label_en"],
+                                "label_ur": item.get("label_ur"),
+                                "side": item.get("side", ""),
+                                "degree": item.get("degree"),
+                                "removal": item.get("removal"),
+                                "distance": item.get("distance"),
+                                "nodes": [node["id"] if isinstance(node, dict) else str(node) for node in item.get("nodes", [])],
+                                "derived": True,
                             }
                         )
 
@@ -416,21 +600,47 @@ def preview_mutation(action: str, params: dict[str, Any]) -> dict[str, Any]:
             for pair, items in map_before.items():
                 pid_a, pid_b = pair
                 after_items = map_after.get(pair, [])
-                after_keys = {(item.get("type"), item["en"]) for item in after_items}
+                after_keys = {item["id"] for item in after_items}
                 for item in items:
-                    if (item.get("type"), item["en"]) not in after_keys:
+                    if item["id"] not in after_keys:
                         derived_removed.append(
                             {
+                                "path_id": item["id"],
                                 "person_a_id": pid_a,
                                 "person_a_name": idx_before.get(pid_a, {}).get("name", pid_a),
                                 "person_b_id": pid_b,
                                 "person_b_name": idx_before.get(pid_b, {}).get("name", pid_b),
-                                "relationship_type": item.get("type"),
-                                "semantic_id": item.get("type"),
-                                "label_en": item["en"],
-                                "label_ur": item.get("ur"),
+                                "relationship_type": item.get("relationship_type", item.get("type")),
+                                "semantic_id": item.get("semantic_id", item.get("relationship_type", item.get("type"))),
+                                "label_en": item["label_en"],
+                                "label_ur": item.get("label_ur"),
+                                "side": item.get("side", ""),
+                                "degree": item.get("degree"),
+                                "removal": item.get("removal"),
+                                "distance": item.get("distance"),
+                                "nodes": [node["id"] if isinstance(node, dict) else str(node) for node in item.get("nodes", [])],
+                                "derived": True,
                             }
                         )
+
+            derived_added.sort(
+                key=lambda x: (
+                    x["person_a_id"],
+                    x["person_b_id"],
+                    x.get("distance", 0),
+                    x.get("relationship_type", ""),
+                    x.get("path_id", ""),
+                )
+            )
+            derived_removed.sort(
+                key=lambda x: (
+                    x["person_a_id"],
+                    x["person_b_id"],
+                    x.get("distance", 0),
+                    x.get("relationship_type", ""),
+                    x.get("path_id", ""),
+                )
+            )
 
             return {
                 "valid": True,

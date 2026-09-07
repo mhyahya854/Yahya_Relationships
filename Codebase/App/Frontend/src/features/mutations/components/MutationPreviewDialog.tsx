@@ -70,11 +70,17 @@ export const MutationPreviewDialog: React.FC<Props> = ({
 
               {preview.derived_added.length > 0 && (
                 <div className="diff-card diff-added">
-                  <strong>+ {preview.derived_added.length} Derived Relationships Added:</strong>
+                  <strong>+ {preview.derived_added.length} Derived Relationship{preview.derived_added.length > 1 ? "s" : ""} Added:</strong>
                   <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
                     {preview.derived_added.map((item, i) => (
-                      <li key={i}>
-                        <strong>{item.person_b_name}</strong> becomes <strong>{item.label_en}</strong> to {item.person_a_name}
+                      <li key={i} style={{ marginBottom: 4 }}>
+                        <strong>{item.person_b_name}</strong> becomes <strong>{item.label_en}</strong>
+                        {item.side ? ` (${item.side})` : ""} to {item.person_a_name}
+                        {item.nodes && item.nodes.length > 2 && (
+                          <div className="muted tiny" style={{ marginTop: 2 }}>
+                            via {item.nodes.map((n) => n.name).join(" → ")}
+                          </div>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -83,11 +89,17 @@ export const MutationPreviewDialog: React.FC<Props> = ({
 
               {preview.derived_removed.length > 0 && (
                 <div className="diff-card diff-removed">
-                  <strong>&minus; {preview.derived_removed.length} Derived Relationships Removed:</strong>
+                  <strong>&minus; {preview.derived_removed.length} Derived Relationship{preview.derived_removed.length > 1 ? "s" : ""} Removed:</strong>
                   <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
                     {preview.derived_removed.map((item, i) => (
-                      <li key={i}>
-                        <strong>{item.person_b_name}</strong> is no longer {item.label_en} to {item.person_a_name}
+                      <li key={i} style={{ marginBottom: 4 }}>
+                        <strong>{item.person_b_name}</strong> is no longer <strong>{item.label_en}</strong>
+                        {item.side ? ` (${item.side})` : ""} to {item.person_a_name}
+                        {item.nodes && item.nodes.length > 2 && (
+                          <div className="muted tiny" style={{ marginTop: 2 }}>
+                            via {item.nodes.map((n) => n.name).join(" → ")}
+                          </div>
+                        )}
                       </li>
                     ))}
                   </ul>

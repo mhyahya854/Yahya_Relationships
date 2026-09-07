@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../../../api";
+import { PersonSearch } from "../../../components/ui";
 import type { MutationPreviewResult, Person } from "../../../types";
 import { MutationPreviewDialog } from "../../mutations/components/MutationPreviewDialog";
 import {
@@ -40,6 +41,9 @@ export const AddRelationshipDialog: React.FC<Props> = ({
   const [marriageChildrenStatus, setMarriageChildrenStatus] = useState<string>("");
   const [siblingType, setSiblingType] = useState<string>("");
   const [siblingOrdered, setSiblingOrdered] = useState<boolean>(false);
+  const [siblingMemberIds, setSiblingMemberIds] = useState<string[]>(
+    initialTargetPersonId ? [initialTargetPersonId] : []
+  );
 
   // General State
   const [genType, setGenType] = useState<string>("close_friend");
@@ -72,10 +76,56 @@ export const AddRelationshipDialog: React.FC<Props> = ({
     }
   }, [targetSearch, filteredTargets]);
 
-  const getMutationActionAndParams = () => {
-    if (!targetId) return null;
+  // Keep siblingMemberIds synced if a targetId was selected before switching to sibling
+  useEffect(() => {
+    if (targetId && !siblingMemberIds.includes(targetId)) {
+      setSiblingMemberIds((prev) => (prev.length === 0 ? [targetId] : prev));
+    }
+  }, [targetId]);
 
+  const allSiblingMemberIds = useMemo(() => {
+    const list = [sourcePerson.id];
+    for (const id of siblingMemberIds) {
+      if (!list.includes(id)) list.push(id);
+    }
+    return list;
+  }, [sourcePerson.id, siblingMemberIds]);
+
+  const availableSiblings = useMemo(
+    () => peopleList.filter((p) => !allSiblingMemberIds.includes(p.id)),
+    [peopleList, allSiblingMemberIds]
+  );
+
+  const handleAddSibling = (idToAdd: string) => {
+    if (!idToAdd || allSiblingMemberIds.includes(idToAdd)) return;
+    setSiblingMemberIds((prev) => [...prev, idToAdd]);
+    setErrorMsg(null);
+  };
+
+  const handleRemoveSibling = (idToRemove: string) => {
+    setSiblingMemberIds((prev) => prev.filter((id) => id !== idToRemove));
+    setErrorMsg(null);
+  };
+
+  const isSiblingMode = domain === "family" && familyType === "sibling";
+  const isFullSiblingOverLimit =
+    isSiblingMode && siblingType === "full" && allSiblingMemberIds.length > 2;
+  const isSiblingUnderLimit = isSiblingMode && allSiblingMemberIds.length < 2;
+
+  const getMutationActionAndParams = () => {
     if (domain === "family") {
+      if (familyType === "sibling") {
+        if (allSiblingMemberIds.length < 2) return null;
+        return {
+          action: "add_sibling_group",
+          params: {
+            member_ids: allSiblingMemberIds,
+            type_: siblingType || undefined,
+            ordered: siblingOrdered,
+          },
+        };
+      }
+      if (!targetId) return null;
       if (familyType === "parent_child") {
         const parentId = sourceIsParent ? sourcePerson.id : targetId;
         const childId = sourceIsParent ? targetId : sourcePerson.id;
@@ -99,17 +149,9 @@ export const AddRelationshipDialog: React.FC<Props> = ({
             children_status: marriageChildrenStatus || null,
           },
         };
-      } else if (familyType === "sibling") {
-        return {
-          action: "add_sibling_group",
-          params: {
-            member_ids: [sourcePerson.id, targetId],
-            type_: siblingType || undefined,
-            ordered: siblingOrdered,
-          },
-        };
       }
     } else {
+      if (!targetId) return null;
       return {
         action: "add_general",
         params: {
@@ -128,9 +170,17 @@ export const AddRelationshipDialog: React.FC<Props> = ({
 
   const handlePreview = async () => {
     setErrorMsg(null);
+    if (isFullSiblingOverLimit) {
+      setErrorMsg("Full Siblings groups require exactly 2 members. Switch to Default / General Sibling Group to include 3 or more siblings.");
+      return;
+    }
     const req = getMutationActionAndParams();
     if (!req) {
-      setErrorMsg("Please select a target person.");
+      if (isSiblingMode) {
+        setErrorMsg("Please add at least one sibling to the group.");
+      } else {
+        setErrorMsg("Please select a target person.");
+      }
       return;
     }
     setLoading(true);
@@ -146,9 +196,17 @@ export const AddRelationshipDialog: React.FC<Props> = ({
 
   const handleExecuteSave = async () => {
     setErrorMsg(null);
+    if (isFullSiblingOverLimit) {
+      setErrorMsg("Full Siblings groups require exactly 2 members. Switch to Default / General Sibling Group to include 3 or more siblings.");
+      return;
+    }
     const req = getMutationActionAndParams();
-    if (!req || !targetPerson) {
-      setErrorMsg("Please select a target person.");
+    if (!req) {
+      if (isSiblingMode) {
+        setErrorMsg("Please add at least one sibling to the group.");
+      } else {
+        setErrorMsg("Please select a target person.");
+      }
       return;
     }
 
@@ -164,7 +222,7 @@ export const AddRelationshipDialog: React.FC<Props> = ({
             role: parentRole,
             kind: parentKind,
           });
-          onSaved(`Added ${parentKind} parent-child fact between ${sourcePerson.name} and ${targetPerson.name}`);
+          onSaved(`Added ${parentKind} parent-child fact between ${sourcePerson.name} and ${targetPerson?.name || "child"}`);
         } else if (familyType === "marriage") {
           await api.family.addMarriage({
             person_a: sourcePerson.id,
@@ -173,10 +231,13 @@ export const AddRelationshipDialog: React.FC<Props> = ({
             year: marriageYear ? parseInt(marriageYear, 10) : undefined,
             children_status: marriageChildrenStatus || undefined,
           });
-          onSaved(`Added marriage between ${sourcePerson.name} and ${targetPerson.name}`);
+          onSaved(`Added marriage between ${sourcePerson.name} and ${targetPerson?.name || "spouse"}`);
         } else if (familyType === "sibling") {
-          await api.family.addSiblingGroup([sourcePerson.id, targetId], siblingType || null, siblingOrdered);
-          onSaved(`Added sibling fact between ${sourcePerson.name} and ${targetPerson.name}`);
+          await api.family.addSiblingGroup(allSiblingMemberIds, siblingType || null, siblingOrdered);
+          const memberNames = allSiblingMemberIds
+            .map((id) => peopleList.find((p) => p.id === id)?.name || id)
+            .join(", ");
+          onSaved(`Added sibling group with members: ${memberNames}`);
         }
       } else {
         await api.relationships.general.add({
@@ -188,7 +249,7 @@ export const AddRelationshipDialog: React.FC<Props> = ({
           label_b_to_a: directionality === "directional" ? labelBToA : undefined,
           notes: genNotes || undefined,
         });
-        onSaved(`Added general relationship (${genType}) between ${sourcePerson.name} and ${targetPerson.name}`);
+        onSaved(`Added general relationship (${genType}) between ${sourcePerson.name} and ${targetPerson?.name || "target"}`);
       }
       onClose();
     } catch (err: unknown) {
@@ -217,6 +278,7 @@ export const AddRelationshipDialog: React.FC<Props> = ({
               <label>Target Person *</label>
               <input
                 type="text"
+                id="target-person-search-input"
                 className="form-input"
                 placeholder="Search name or alias..."
                 value={targetSearch}
@@ -301,6 +363,8 @@ export const AddRelationshipDialog: React.FC<Props> = ({
                       <div className="form-group">
                         <label>Parent Role</label>
                         <select
+                          id="parent-role-select"
+                          data-testid="parent-role-select"
                           className="form-select"
                           value={parentRole}
                           onChange={(e) => setParentRole(e.target.value)}
@@ -315,6 +379,8 @@ export const AddRelationshipDialog: React.FC<Props> = ({
                       <div className="form-group">
                         <label>Kind</label>
                         <select
+                          id="parent-kind-select"
+                          data-testid="parent-kind-select"
                           className="form-select"
                           value={parentKind}
                           onChange={(e) => setParentKind(e.target.value)}
@@ -336,6 +402,8 @@ export const AddRelationshipDialog: React.FC<Props> = ({
                       <div className="form-group">
                         <label>Status</label>
                         <select
+                          id="marriage-status-select"
+                          data-testid="marriage-status-select"
                           className="form-select"
                           value={marriageStatus}
                           onChange={(e) => setMarriageStatus(e.target.value)}
@@ -361,6 +429,8 @@ export const AddRelationshipDialog: React.FC<Props> = ({
                     <div className="form-group">
                       <label>Children Status</label>
                       <select
+                        id="marriage-children-status-select"
+                        data-testid="marriage-children-status-select"
                         className="form-select"
                         value={marriageChildrenStatus}
                         onChange={(e) => setMarriageChildrenStatus(e.target.value)}
@@ -376,31 +446,110 @@ export const AddRelationshipDialog: React.FC<Props> = ({
                 )}
 
                 {familyType === "sibling" && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "center" }}>
-                    <div className="form-group">
-                      <label>Sibling Group Type</label>
-                      <select
-                        className="form-select"
-                        value={siblingType}
-                        onChange={(e) => setSiblingType(e.target.value)}
-                      >
-                        {SIBLING_GROUP_TYPES.map((st) => (
-                          <option key={st.value} value={st.value}>
-                            {st.label}
-                          </option>
-                        ))}
-                      </select>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "center" }}>
+                      <div className="form-group">
+                        <label>Sibling Group Type</label>
+                        <select
+                          id="add-sibling-type-select"
+                          data-testid="add-sibling-type-select"
+                          className="form-select"
+                          value={siblingType}
+                          onChange={(e) => setSiblingType(e.target.value)}
+                        >
+                          {SIBLING_GROUP_TYPES.map((st) => (
+                            <option key={st.value} value={st.value}>
+                              {st.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 22 }}>
+                        <input
+                          type="checkbox"
+                          id="add-sibling-ordered-cb"
+                          checked={siblingOrdered}
+                          onChange={(e) => setSiblingOrdered(e.target.checked)}
+                        />
+                        <label htmlFor="add-sibling-ordered-cb" style={{ margin: 0, cursor: "pointer" }}>
+                          Ordered (birth sequence)
+                        </label>
+                      </div>
                     </div>
-                    <div className="form-group" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 22 }}>
-                      <input
-                        type="checkbox"
-                        id="add-sibling-ordered-cb"
-                        checked={siblingOrdered}
-                        onChange={(e) => setSiblingOrdered(e.target.checked)}
-                      />
-                      <label htmlFor="add-sibling-ordered-cb" style={{ margin: 0, cursor: "pointer" }}>
-                        Ordered (birth sequence)
-                      </label>
+
+                    {/* Sibling Members Manager */}
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label>Sibling Group Members * ({allSiblingMemberIds.length} members)</label>
+                      <div
+                        className="sibling-chips"
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 8,
+                          padding: "8px 10px",
+                          background: "var(--card-bg, #f9fafb)",
+                          border: "1px solid var(--line, #e5e7eb)",
+                          borderRadius: 6,
+                          minHeight: 42,
+                          alignItems: "center",
+                        }}
+                      >
+                        <span className="family-badge badge-stored" style={{ padding: "4px 8px" }}>
+                          {sourcePerson.name} (Source)
+                        </span>
+                        {siblingMemberIds.map((mId) => {
+                          const person = peopleList.find((p) => p.id === mId);
+                          return (
+                            <span
+                              key={mId}
+                              id={`sibling-chip-${mId}`}
+                              className="family-badge badge-explicit"
+                              style={{ padding: "4px 8px", display: "inline-flex", alignItems: "center", gap: 6 }}
+                            >
+                              {person?.name || mId}
+                              <button
+                                type="button"
+                                className="btn-remove-sibling"
+                                onClick={() => handleRemoveSibling(mId)}
+                                title="Remove from group"
+                                style={{
+                                  border: "none",
+                                  background: "transparent",
+                                  cursor: "pointer",
+                                  color: "#991b1b",
+                                  fontWeight: "bold",
+                                  padding: "0 2px",
+                                  fontSize: 14,
+                                }}
+                              >
+                                &times;
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+
+                      {isFullSiblingOverLimit && (
+                        <div className="diff-card diff-invalid" style={{ marginTop: 8, padding: "8px 12px" }}>
+                          <strong>Full Siblings Group Limit:</strong> Full Siblings group requires exactly 2 members (1 source + 1 sibling). Switch to Default / General Sibling Group to include 3 or more siblings.
+                        </div>
+                      )}
+
+                      {/* Add Sibling Control */}
+                      <div style={{ marginTop: 10 }}>
+                        <label style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-muted, #4b5563)" }}>
+                          Add Person to Sibling Group
+                        </label>
+                        <div id="sibling-member-search" style={{ marginTop: 4 }}>
+                          <PersonSearch
+                            people={availableSiblings}
+                            onSelect={(person) => handleAddSibling(person.id)}
+                            placeholder="Search name or alias to add..."
+                            ariaLabel="Add person to sibling group"
+                            disabled={siblingType === "full" && allSiblingMemberIds.length >= 2}
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -484,7 +633,7 @@ export const AddRelationshipDialog: React.FC<Props> = ({
               <button
                 className="btn btn-outline"
                 onClick={handlePreview}
-                disabled={loading || !targetId}
+                disabled={loading || (isSiblingMode ? isSiblingUnderLimit || isFullSiblingOverLimit : !targetId)}
                 style={{ borderColor: "#0e7490", color: "#0e7490" }}
               >
                 {loading ? "Calculating..." : "⚡ Preview Consequences"}
@@ -493,7 +642,7 @@ export const AddRelationshipDialog: React.FC<Props> = ({
             <button
               className="btn btn-primary"
               onClick={handleExecuteSave}
-              disabled={loading || !targetId}
+              disabled={loading || (isSiblingMode ? isSiblingUnderLimit || isFullSiblingOverLimit : !targetId)}
             >
               {loading ? "Saving..." : "Save Fact"}
             </button>

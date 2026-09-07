@@ -14,6 +14,7 @@ Covers:
 - Read-only enforcement.
 """
 
+import sqlite3
 from unittest.mock import patch
 import pytest
 
@@ -22,7 +23,9 @@ from app.backend.data_root.errors import DataRootReadOnlyError
 from app.backend.data_root.manager import DataRootManager
 from app.backend.domain.mutations import history as mutation_history
 from app.backend.domain.mutations import preview as mutation_preview
+from app.backend.domain.relationships import path_service
 from app.backend.services import errors, family, people
+
 
 
 PARENT_KINDS = [
@@ -34,6 +37,20 @@ PARENT_KINDS = [
     "unknown",
     "unspecified",
 ]
+
+
+def _snapshot_tables(*table_names: str) -> dict[str, list[tuple]]:
+    connection = db.get_connection()
+    try:
+        return {
+            table: sorted(
+                (tuple(row) for row in connection.execute(f"SELECT * FROM {table}").fetchall()),
+                key=repr,
+            )
+            for table in table_names
+        }
+    finally:
+        connection.close()
 
 
 def test_parent_child_all_seven_kinds_and_undo_cycle(isolated, client):
@@ -435,3 +452,274 @@ def test_read_only_mode_blocks_family_writes(isolated):
 
         with pytest.raises(DataRootReadOnlyError):
             family.add_sibling_group(member_ids=[p1, p2])
+
+
+def test_multipath_preview_partial_path_removal_preserves_alternate_path(isolated):
+    """Synthetic family with two independent paths: deleting one path's underlying
+    fact removes only that structural path while the alternate path survives, and
+    undo restores both paths."""
+    mutation_history._MUTATION_STACK.clear()
+
+    # 1. Create isolated synthetic family with two independent ancestry paths
+    gp_pat = people.create_person(name="Paternal Grandfather", gender="male")["id"]
+    gp_mat = people.create_person(name="Maternal Grandmother", gender="female")["id"]
+    dad_a = people.create_person(name="Father A", gender="male")["id"]
+    mom_a = people.create_person(name="Mother A", gender="female")["id"]
+    child_a = people.create_person(name="Child A", gender="male")["id"]
+    dad_b = people.create_person(name="Father B", gender="male")["id"]
+    mom_b = people.create_person(name="Mother B", gender="female")["id"]
+    child_b = people.create_person(name="Child B", gender="female")["id"]
+
+    # Path 1 (paternal): child_a -> dad_a -> gp_pat -> dad_b -> child_b
+    family.add_parent_child(parent_id=gp_pat, child_id=dad_a, role="father", kind="biological")
+    family.add_parent_child(parent_id=gp_pat, child_id=dad_b, role="father", kind="biological")
+    family.add_parent_child(parent_id=dad_a, child_id=child_a, role="father", kind="biological")
+    family.add_parent_child(parent_id=dad_b, child_id=child_b, role="father", kind="biological")
+
+    # Path 2 (maternal): child_a -> mom_a -> gp_mat -> mom_b -> child_b
+    family.add_parent_child(parent_id=gp_mat, child_id=mom_a, role="mother", kind="biological")
+    family.add_parent_child(parent_id=gp_mat, child_id=mom_b, role="mother", kind="biological")
+    family.add_parent_child(parent_id=mom_a, child_id=child_a, role="mother", kind="biological")
+    family.add_parent_child(parent_id=mom_b, child_id=child_b, role="mother", kind="biological")
+
+    # 2. Confirm both path IDs / structural records exist
+    paths_before = path_service.get_relationship_paths(child_a, child_b)["paths"]
+    assert len(paths_before) == 2
+    paternal_path = next(p for p in paths_before if p["side"] == "paternal")
+    maternal_path = next(p for p in paths_before if p["side"] == "maternal")
+    pat_id = paternal_path["id"]
+    mat_id = maternal_path["id"]
+    assert pat_id != mat_id
+
+    # 3. Preview deleting one underlying stored fact (dad_a -> child_a)
+    prev = mutation_preview.preview_mutation("delete_parent_child", {"parent_id": dad_a, "child_id": child_a})
+    assert prev["valid"] is True
+    assert prev == mutation_preview.preview_mutation(
+        "delete_parent_child", {"parent_id": dad_a, "child_id": child_a}
+    )
+
+    # 4. Preview reports loss/change of exactly affected structural path
+    removed_ids = [r["path_id"] for r in prev["derived_removed"]]
+    assert pat_id in removed_ids
+
+    # 5. Unaffected alternate path remains
+    assert mat_id not in removed_ids
+
+    # 6. Execute deletion
+    del_res = family.delete_parent_child(dad_a, child_a)
+    assert del_res["ok"] is True
+
+    # 7. Canonical relationship remains due alternate path
+    paths_after = path_service.get_relationship_paths(child_a, child_b)["paths"]
+    assert len(paths_after) >= 1
+    assert any(p["id"] == mat_id for p in paths_after)
+
+    # 8. Removed path is actually gone
+    assert not any(p["id"] == pat_id for p in paths_after)
+
+    # 9. Undo
+    undo = mutation_history.undo_last_mutation()
+    assert undo["ok"] is True
+
+    # 10. Both paths return exactly
+    paths_restored = path_service.get_relationship_paths(child_a, child_b)["paths"]
+    assert len(paths_restored) == 2
+    restored_ids = {p["id"] for p in paths_restored}
+    assert pat_id in restored_ids
+    assert mat_id in restored_ids
+
+
+def test_multipath_preview_is_deterministic(isolated):
+    """Repeated preview of the same mutation produces identical deterministic diffs."""
+    common_a = people.create_person(name="Det Common A")["id"]
+    common_b = people.create_person(name="Det Common B")["id"]
+    left_a = people.create_person(name="Det Left A")["id"]
+    left_b = people.create_person(name="Det Left B")["id"]
+    right_a = people.create_person(name="Det Right A")["id"]
+    right_b = people.create_person(name="Det Right B")["id"]
+    person_a = people.create_person(name="Det Person A")["id"]
+    person_b = people.create_person(name="Det Person B")["id"]
+    for parent_id, child_id in (
+        (common_a, left_a), (common_a, right_a), (left_a, person_a), (right_a, person_b),
+        (common_b, left_b), (common_b, right_b), (left_b, person_a), (right_b, person_b),
+    ):
+        family.add_parent_child(parent_id=parent_id, child_id=child_id)
+
+    assert len(path_service.get_relationship_paths(person_a, person_b)["paths"]) == 2
+    params = {"parent_id": left_a, "child_id": person_a}
+    prev1 = mutation_preview.preview_mutation("delete_parent_child", params)
+    prev2 = mutation_preview.preview_mutation("delete_parent_child", params)
+
+    assert prev1 == prev2
+    assert prev1["direct_changes"] == prev2["direct_changes"]
+    assert prev1["derived_added"] == prev2["derived_added"]
+    assert prev1["derived_removed"] == prev2["derived_removed"]
+
+
+def test_parent_child_injected_failure_rolls_back_exactly(isolated):
+    """Injected failure before commit rolls back SQLite write, provenance, and undo stack."""
+    p1 = people.create_person(name="Fail PC Parent")["id"]
+    p2 = people.create_person(name="Fail PC Child")["id"]
+
+    before = _snapshot_tables("parent_child", "sources", "fact_sources")
+    stack_before = len(mutation_history._MUTATION_STACK)
+
+    with patch("app.backend.services.family._validate_after_write", side_effect=sqlite3.OperationalError("Injected SQL failure")):
+        with pytest.raises(sqlite3.OperationalError):
+            family.add_parent_child(parent_id=p1, child_id=p2, role="father", kind="biological")
+
+    assert _snapshot_tables("parent_child", "sources", "fact_sources") == before
+    assert len(mutation_history._MUTATION_STACK) == stack_before
+
+    # Next legitimate mutation succeeds
+    ok_res = family.add_parent_child(parent_id=p1, child_id=p2, role="father", kind="biological")
+    assert ok_res["ok"] is True
+    # Undo of next legitimate mutation works
+    undo = mutation_history.undo_last_mutation()
+    assert undo["ok"] is True
+    assert _snapshot_tables("parent_child")["parent_child"] == before["parent_child"]
+
+
+def test_marriage_injected_failure_rolls_back_exactly(isolated):
+    """Injected failure during marriage write rolls back DB rows, provenance, and undo stack."""
+    p1 = people.create_person(name="Fail Spouse 1", gender="male")["id"]
+    p2 = people.create_person(name="Fail Spouse 2", gender="female")["id"]
+
+    before = _snapshot_tables("marriages", "sources", "fact_sources")
+    stack_before = len(mutation_history._MUTATION_STACK)
+
+    with patch("app.backend.services.family._validate_after_write", side_effect=sqlite3.OperationalError("Injected marriage failure")):
+        with pytest.raises(sqlite3.OperationalError):
+            family.add_marriage(person_a=p1, person_b=p2, status="married", year=2021)
+
+    assert _snapshot_tables("marriages", "sources", "fact_sources") == before
+    assert len(mutation_history._MUTATION_STACK) == stack_before
+
+    # Next legitimate mutation succeeds
+    ok_res = family.add_marriage(person_a=p1, person_b=p2, status="married", year=2021)
+    assert ok_res["ok"] is True
+    undo = mutation_history.undo_last_mutation()
+    assert undo["ok"] is True
+    assert _snapshot_tables("marriages")["marriages"] == before["marriages"]
+
+
+def test_sibling_group_injected_failure_rolls_back_members_and_group(isolated):
+    """Injected failure during sibling group creation rolls back both group and membership rows."""
+    p1 = people.create_person(name="Sib A")["id"]
+    p2 = people.create_person(name="Sib B")["id"]
+    p3 = people.create_person(name="Sib C")["id"]
+
+    before = _snapshot_tables(
+        "sibling_groups", "sibling_group_members", "sources", "fact_sources"
+    )
+    stack_before = len(mutation_history._MUTATION_STACK)
+
+    with patch("app.backend.services.family._validate_after_write", side_effect=sqlite3.OperationalError("Injected sibling failure")):
+        with pytest.raises(sqlite3.OperationalError):
+            family.add_sibling_group(member_ids=[p1, p2, p3])
+
+    assert _snapshot_tables(
+        "sibling_groups", "sibling_group_members", "sources", "fact_sources"
+    ) == before
+    assert len(mutation_history._MUTATION_STACK) == stack_before
+
+    # Next legitimate mutation succeeds
+    ok_res = family.add_sibling_group(member_ids=[p1, p2, p3])
+    assert ok_res["ok"] is True
+    undo = mutation_history.undo_last_mutation()
+    assert undo["ok"] is True
+    after_undo = _snapshot_tables("sibling_groups", "sibling_group_members")
+    assert after_undo["sibling_groups"] == before["sibling_groups"]
+    assert after_undo["sibling_group_members"] == before["sibling_group_members"]
+
+
+def test_multi_member_default_sibling_group_create(isolated):
+    """Explicit default sibling groups support >= 2 members (e.g. 3 or 4 siblings)."""
+    p1 = people.create_person(name="Multi 1")["id"]
+    p2 = people.create_person(name="Multi 2")["id"]
+    p3 = people.create_person(name="Multi 3")["id"]
+    p4 = people.create_person(name="Multi 4")["id"]
+
+    res = family.add_sibling_group(member_ids=[p1, p2, p3, p4])
+    assert res["ok"] is True
+    assert len(res["members"]) == 4
+
+    con = db.get_connection()
+    try:
+        members = [
+            r[0] for r in con.execute(
+                "SELECT person_id FROM sibling_group_members WHERE group_id = ? ORDER BY person_id",
+                (res["id"],),
+            ).fetchall()
+        ]
+        assert members == sorted([p1, p2, p3, p4])
+    finally:
+        con.close()
+
+
+def test_full_sibling_group_rejects_more_than_two_members(isolated):
+    """Full-sibling group type requires exactly 2 members in both service and preview."""
+    p1 = people.create_person(name="Full Sib 1")["id"]
+    p2 = people.create_person(name="Full Sib 2")["id"]
+    p3 = people.create_person(name="Full Sib 3")["id"]
+
+    with pytest.raises(errors.ValidationError) as exc:
+        family.add_sibling_group(member_ids=[p1, p2, p3], type_="full")
+    assert exc.value.code == "FULL_SIBLING_SIZE"
+
+    prev = mutation_preview.preview_mutation("add_sibling_group", {"member_ids": [p1, p2, p3], "type_": "full"})
+    assert prev["valid"] is False
+    assert prev["code"] == "FULL_SIBLING_SIZE"
+
+
+def test_multi_member_sibling_group_undo_restores_exact_members_and_order(isolated):
+    """Undo of multi-member sibling group restores exact member IDs and order sequence."""
+    p1 = people.create_person(name="Ord Sib 1")["id"]
+    p2 = people.create_person(name="Ord Sib 2")["id"]
+    p3 = people.create_person(name="Ord Sib 3")["id"]
+
+    add_res = family.add_sibling_group(member_ids=[p1, p2, p3], ordered=True)
+    grp_id = add_res["id"]
+
+    del_res = family.delete_sibling_group(grp_id)
+    assert del_res["ok"] is True
+
+    undo = mutation_history.undo_last_mutation()
+    assert undo["ok"] is True
+
+    con = db.get_connection()
+    try:
+        rows = con.execute(
+            "SELECT person_id, member_order FROM sibling_group_members WHERE group_id = ? ORDER BY member_order",
+            (grp_id,),
+        ).fetchall()
+        assert len(rows) == 3
+        assert rows[0]["person_id"] == p1 and rows[0]["member_order"] == 1
+        assert rows[1]["person_id"] == p2 and rows[1]["member_order"] == 2
+        assert rows[2]["person_id"] == p3 and rows[2]["member_order"] == 3
+    finally:
+        con.close()
+
+
+def test_preview_validation_matches_commit_validation(isolated):
+    """Preview validity aligns with commit validity for duplicates and constraints."""
+    p1 = people.create_person(name="Parity P1")["id"]
+    p2 = people.create_person(name="Parity P2")["id"]
+
+    # 1. Parent-child duplicate
+    family.add_parent_child(parent_id=p1, child_id=p2)
+    prev_dup_pc = mutation_preview.preview_mutation("add_parent_child", {"parent_id": p1, "child_id": p2})
+    assert prev_dup_pc["valid"] is False
+    assert prev_dup_pc["code"] == "DUPLICATE_FACT"
+
+    # 2. Marriage duplicate
+    family.add_marriage(person_a=p1, person_b=p2)
+    prev_dup_m = mutation_preview.preview_mutation("add_marriage", {"person_a": p1, "person_b": p2})
+    assert prev_dup_m["valid"] is False
+    assert prev_dup_m["code"] == "DUPLICATE_FACT"
+
+    # 3. Sibling group duplicate
+    family.add_sibling_group(member_ids=[p1, p2])
+    prev_dup_s = mutation_preview.preview_mutation("add_sibling_group", {"member_ids": [p1, p2]})
+    assert prev_dup_s["valid"] is False
+    assert prev_dup_s["code"] == "DUPLICATE_FACT"
