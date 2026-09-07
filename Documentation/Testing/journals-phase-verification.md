@@ -60,14 +60,14 @@ The existing React Markdown renderer remains dependency-free and does not use ra
 
 ## Focused Journal verification
 
-- Backend: `Codebase/Tests/Backend/test_journals_phase5.py` — 38/38 passed.
-- Covered exact UTF-8 reads; missing read and summary purity; existing, first, and empty saves; English, Urdu, Roman Urdu, mixed text, emoji, LF normalization; default and custom append headings; duplicate-date avoidance; empty append; modification/creation/deletion/two-client conflicts; hash/mtime edge cases; explicit overwrite; no conflict-side creation; three atomic failure points; append race safety; read-only and maintenance refusal; unknown/unsafe IDs; orphan and malformed summaries; absence of SQLite Journal prose; large round trip; and revision updates.
+- Backend: `Codebase/Tests/Backend/test_journals_phase5.py` — 39/39 passed.
+- Covered exact UTF-8 reads; CRLF-read normalization with raw-byte hashing; missing read and summary purity; existing, first, and empty saves; English, Urdu, Roman Urdu, mixed text, emoji, LF normalization; default and custom append headings; duplicate-date avoidance; empty append; modification/creation/deletion/two-client conflicts; hash/mtime edge cases; explicit overwrite; no conflict-side creation; three atomic failure points; append race safety; read-only and maintenance refusal; unknown/unsafe IDs; orphan and malformed summaries; absence of SQLite Journal prose; large round trip; and revision updates.
 - Dedicated browser suite: `Codebase/Tests/UI/journals_e2e.mjs` — 40/40 passed against a copied temporary DataRoot.
 - Browser coverage includes People Profile, Family, and Relationships consistency; exact save/reopen; multilingual content; Preview; keyboard Save; Quick Append; unsaved close choices; clean and dirty external changes; conflict comparison and both resolution routes; large content; hostile Markdown; missing create; external create/delete races; read-only controls; accessibility/direction; and console-error review.
 
 ## Frozen regression results
 
-- Full backend: 321/321 passed (includes the 38 Phase 5 tests; frozen baseline was 283).
+- Full backend: 322/322 passed (includes the 39 Phase 5 tests; frozen baseline was 283).
 - People E2E: 18/18 passed.
 - Relationships E2E: 37/37 passed.
 - Family E2E: 65/65 passed.

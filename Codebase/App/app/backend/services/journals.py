@@ -21,7 +21,7 @@ def _normalize_lf(content: str) -> str:
 
 def _read_text(path: Path) -> tuple[str, str, str]:
     raw = path.read_bytes()
-    content = raw.decode("utf-8")
+    content = _normalize_lf(raw.decode("utf-8"))
     stat = path.stat()
     digest = hashlib.sha256(raw).hexdigest()
     return content, str(int(stat.st_mtime_ns)), digest

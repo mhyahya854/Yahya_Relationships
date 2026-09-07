@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from datetime import datetime
 from pathlib import Path
@@ -46,6 +47,15 @@ def test_read_existing_journal_exact_utf8(isolated):
     assert result["sha256"]
     assert result["modified_ns"]
     assert result["exists"] is True
+
+
+def test_read_normalizes_crlf_content_but_hashes_disk_bytes(isolated):
+    path = _path()
+    raw = b"# Windows checkout\r\n\r\nEntry\r\n"
+    path.write_bytes(raw)
+    result = journals.read_journal(PID)
+    assert result["content"] == "# Windows checkout\n\nEntry\n"
+    assert result["sha256"] == hashlib.sha256(raw).hexdigest()
 
 
 def test_read_missing_journal_creates_nothing(isolated):
