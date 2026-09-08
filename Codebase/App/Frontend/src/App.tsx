@@ -92,6 +92,7 @@ function PerspectiveSelector() {
 function Shell() {
   const [screen, setScreen] = useState<Screen>("relationships");
   const [peopleTargetId, setPeopleTargetId] = useState<string | null>(null);
+  const [peopleGroupId, setPeopleGroupId] = useState<string | null>(null);
   const [relationshipTargetId, setRelationshipTargetId] = useState<string | null>(null);
   const { perspectivePerson, defaultId, setPerspective } = usePerspective();
 
@@ -120,6 +121,13 @@ function Shell() {
 
   const handleNavigateToProfile = (personId: string) => {
     setPeopleTargetId(personId);
+    setPeopleGroupId(null);
+    setScreen("people");
+  };
+
+  const handleNavigateToGroup = (groupId: string) => {
+    setPeopleTargetId(null);
+    setPeopleGroupId(groupId);
     setScreen("people");
   };
 
@@ -161,6 +169,7 @@ function Shell() {
           {screen === "people" && (
             <PeopleView
               initialPersonId={peopleTargetId}
+              initialGroupId={peopleGroupId}
               onNavigateToRelationships={handleNavigateToRelationships}
             />
           )}
@@ -177,7 +186,13 @@ function Shell() {
               onNavigateToRelationships={handleNavigateToRelationships}
             />
           )}
-          {screen === "search" && <SearchView />}
+          {screen === "search" && (
+            <SearchView
+              onNavigateToProfile={handleNavigateToProfile}
+              onNavigateToRelationships={handleNavigateToRelationships}
+              onNavigateToGroup={handleNavigateToGroup}
+            />
+          )}
           {screen === "hermes" && <HermesView />}
           {screen === "backups" && <BackupsView />}
         </div>

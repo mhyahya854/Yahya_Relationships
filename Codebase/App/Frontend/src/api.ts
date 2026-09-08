@@ -13,7 +13,7 @@ import type {
   Person,
   PersonProfileData,
   RelationshipResult,
-  SearchResult,
+  SearchResponse,
   SiblingGroupFact,
 } from "./types";
 
@@ -350,10 +350,12 @@ export const api = {
       ),
   },
 
-  search: (q: string) => {
-    const params = new URLSearchParams({ q });
-    return request<{ ok: boolean; results: SearchResult[] }>(
+  search: (q: string, perspectiveId?: string, limit = 100, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ q, limit: String(limit) });
+    if (perspectiveId) params.set("perspective_id", perspectiveId);
+    return request<SearchResponse>(
       `/api/search?${params.toString()}`,
+      { signal },
     );
   },
 

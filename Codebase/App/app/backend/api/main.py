@@ -829,8 +829,15 @@ def api_append_journal(person_id: str, payload: JournalAppend) -> dict:
 
 
 @app.get("/api/search")
-def api_search(q: str = "", limit: int = 40) -> dict:
-    return {"ok": True, **search.search(q, limit=limit)}
+def api_search(
+    q: str = "",
+    limit: int = Query(40, ge=1, le=100),
+    perspective_id: str | None = None,
+) -> dict:
+    return {
+        "ok": True,
+        **search.search(q, limit=limit, perspective_id=perspective_id),
+    }
 
 
 # ---------------------------------------------------------------------------

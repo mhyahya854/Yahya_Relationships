@@ -81,12 +81,45 @@ export interface Journal {
 }
 
 export interface SearchResult {
+  result_id: string;
   category: "PERSON" | "RELATIONSHIP" | "GROUP" | "JOURNAL";
   person_id: string | null;
   relationship_id?: number;
+  relationship_kind?: "family" | "general";
+  target_person_id?: string;
+  perspective_id?: string;
+  path_id?: string;
+  semantic_id?: string | null;
+  derived?: boolean;
+  group_id?: string;
+  member_ids?: string[];
+  member_count?: number;
+  matched_alias?: string | null;
+  match_kind?: string;
+  matched_field?: string;
+  matched_fields?: string[];
+  person_a_id?: string;
+  person_a_name?: string;
+  person_b_id?: string;
+  person_b_name?: string;
+  directionality?: "symmetric" | "directional";
+  direction_from?: string | null;
+  label_a_to_b?: string;
+  label_b_to_a?: string;
+  label_en?: string;
+  label_ur?: string | null;
+  notes?: string | null;
   title: string;
   subtitle: string;
   match: string;
+}
+
+export interface SearchResponse {
+  ok: boolean;
+  query: string;
+  normalized_query: string;
+  perspective: { id: string; name: string };
+  results: SearchResult[];
 }
 
 export interface BackupInfo {
