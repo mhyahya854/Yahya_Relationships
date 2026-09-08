@@ -107,6 +107,7 @@ export function PersonProfile({
   onOpenPerson,
   onShowRelationshipPath,
   onOpenJournal,
+  onJournalDirtyChange,
 }: {
   person: Person;
   perspectiveId?: string | null;
@@ -118,6 +119,7 @@ export function PersonProfile({
   onOpenPerson?: (personId: string) => void;
   onShowRelationshipPath?: (personId: string) => void;
   onOpenJournal?: (personId: string) => void;
+  onJournalDirtyChange?: (dirty: boolean) => void;
 }) {
   const [profileData, setProfileData] = useState<PersonProfileData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -126,6 +128,16 @@ export function PersonProfile({
 
   const [journalDirty, setJournalDirty] = useState(false);
   const [pendingTab, setPendingTab] = useState<"overview" | "relationships" | null>(null);
+
+  const reportJournalDirty = useCallback((dirty: boolean) => {
+    setJournalDirty(dirty);
+    onJournalDirtyChange?.(dirty);
+  }, [onJournalDirtyChange]);
+
+  useEffect(() => {
+    reportJournalDirty(false);
+    setPendingTab(null);
+  }, [person.id, reportJournalDirty]);
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -489,7 +501,7 @@ export function PersonProfile({
             <JournalEditor
               person={person}
               initialJournal={profileData.journal}
-              onDirtyChange={setJournalDirty}
+              onDirtyChange={reportJournalDirty}
             />
           )}
         </div>
@@ -503,7 +515,7 @@ export function PersonProfile({
             <Button
               kind="danger"
               onClick={() => {
-                setJournalDirty(false);
+                reportJournalDirty(false);
                 setActiveTab(pendingTab);
                 setPendingTab(null);
               }}

@@ -37,6 +37,25 @@ export function PeopleView({ onNavigateToRelationships, initialPersonId }: Props
   const [comparePicker, setComparePicker] = useState(false);
   const [compareTarget, setCompareTarget] = useState<Person | null>(null);
   const [undoNotice, setUndoNotice] = useState<string | null>(null);
+  const [profileJournalDirty, setProfileJournalDirty] = useState(false);
+  const [profileCloseGuardOpen, setProfileCloseGuardOpen] = useState(false);
+
+  const openProfile = useCallback((person: Person) => {
+    setProfileJournalDirty(false);
+    setProfileCloseGuardOpen(false);
+    setSelected(person);
+  }, []);
+
+  const closeProfile = useCallback(() => {
+    setProfileJournalDirty(false);
+    setProfileCloseGuardOpen(false);
+    setSelected(null);
+  }, []);
+
+  const requestProfileClose = useCallback(() => {
+    if (profileJournalDirty) setProfileCloseGuardOpen(true);
+    else closeProfile();
+  }, [closeProfile, profileJournalDirty]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -63,10 +82,10 @@ export function PeopleView({ onNavigateToRelationships, initialPersonId }: Props
     if (initialPersonId && people.length > 0) {
       const match = people.find((p) => p.id === initialPersonId);
       if (match) {
-        setSelected(match);
+        openProfile(match);
       }
     }
-  }, [initialPersonId, people]);
+  }, [initialPersonId, openProfile, people]);
 
   // Load perspective relationship interpretations when perspectiveId changes
   useEffect(() => {
@@ -292,7 +311,7 @@ export function PeopleView({ onNavigateToRelationships, initialPersonId }: Props
               <button
                 type="button"
                 className="person-cell"
-                onClick={() => setSelected(person)}
+                onClick={() => openProfile(person)}
                 title={`Open profile for ${person.name}`}
               >
                 <Avatar person={person} size={32} />
@@ -354,7 +373,7 @@ export function PeopleView({ onNavigateToRelationships, initialPersonId }: Props
                 onClick={(e) => e.stopPropagation()}
                 style={{ justifyContent: "flex-end" }}
               >
-                <Button kind="ghost" onClick={() => setSelected(person)}>
+                <Button kind="ghost" onClick={() => openProfile(person)}>
                   Profile
                 </Button>
                 <Button
@@ -417,7 +436,7 @@ export function PeopleView({ onNavigateToRelationships, initialPersonId }: Props
 
       {/* PERSON PROFILE MODAL */}
       {selected && (
-        <Modal title={`${selected.name} — Profile`} onClose={() => setSelected(null)} wide>
+        <Modal title={`${selected.name} — Profile`} onClose={requestProfileClose} wide closeOnEscape>
           <PersonProfile
             person={selected}
             perspectiveId={perspectiveId}
@@ -435,15 +454,26 @@ export function PeopleView({ onNavigateToRelationships, initialPersonId }: Props
             onOpenPerson={(personId) => {
               const target = people.find((p) => p.id === personId);
               if (target) {
-                setSelected(target);
+                openProfile(target);
               }
             }}
             onShowRelationshipPath={(personId) => {
-              setSelected(null);
+              closeProfile();
               onNavigateToRelationships?.(personId);
             }}
             onOpenJournal={() => setJournalFor(selected)}
+            onJournalDirtyChange={setProfileJournalDirty}
           />
+          {profileCloseGuardOpen && (
+            <div className="journal-inline-dialog" role="alertdialog" aria-modal="true" aria-label="Unsaved Profile Journal changes">
+              <h3>Unsaved Journal changes</h3>
+              <p>Closing this profile will discard the current Journal draft.</p>
+              <div className="journal-dialog-actions">
+                <Button kind="primary" onClick={() => setProfileCloseGuardOpen(false)}>Keep Editing</Button>
+                <Button kind="danger" onClick={closeProfile}>Discard</Button>
+              </div>
+            </div>
+          )}
         </Modal>
       )}
 
@@ -461,7 +491,7 @@ export function PeopleView({ onNavigateToRelationships, initialPersonId }: Props
           onOpenExisting={(existingId) => {
             const match = people.find((p) => p.id === existingId);
             if (match) {
-              setSelected(match);
+              openProfile(match);
             }
           }}
         />

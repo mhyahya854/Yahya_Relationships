@@ -4,6 +4,7 @@
 
 - Starting branch: `main`
 - Starting `HEAD` and `origin/main`: `dc9a1ea04205dc44fec558d31a7015ccbf5eedaa`
+- Final-closure checkpoint `HEAD` and `origin/main`: `4a2a44ca3de07b6d509efc064023797eb02da37b` (`Normalize Journal reads across platforms`).
 - Production database baseline SHA-256: `3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E`
 - Production Journal baseline: 35 canonical `journal.md` files, each recorded by path, byte length, and SHA-256 before testing.
 - Final-SHA convention: the Phase 5 commit that contains this report is the final SHA. Its exact value, matching `HEAD` and `origin/main`, and the exact-SHA CI run are reported in the final handoff because a commit cannot embed its own hash.
@@ -51,6 +52,7 @@ One `JournalEditor` is used by the embedded Profile Journal tab and the `Journal
 - visible Saved, Unsaved, and Changed-on-disk text states;
 - `Ctrl+S` / `Cmd+S` save handling with browser-save prevention;
 - in-app Keep Editing / Discard guards for dirty cancel, tab switch, modal close, backdrop close, and Escape;
+- dirty-state propagation from the embedded editor through `PersonProfile` to the owning People profile modal, so the outer X, Escape, and backdrop all use one guarded close handler;
 - side-by-side local and disk conflict content with Keep Editing, Use Disk Version, and explicit overwrite;
 - accessible labels, dialog roles, keyboard-reachable controls, and `dir="auto"` for mixed-direction text.
 
@@ -62,8 +64,8 @@ The existing React Markdown renderer remains dependency-free and does not use ra
 
 - Backend: `Codebase/Tests/Backend/test_journals_phase5.py` — 39/39 passed.
 - Covered exact UTF-8 reads; CRLF-read normalization with raw-byte hashing; missing read and summary purity; existing, first, and empty saves; English, Urdu, Roman Urdu, mixed text, emoji, LF normalization; default and custom append headings; duplicate-date avoidance; empty append; modification/creation/deletion/two-client conflicts; hash/mtime edge cases; explicit overwrite; no conflict-side creation; three atomic failure points; append race safety; read-only and maintenance refusal; unknown/unsafe IDs; orphan and malformed summaries; absence of SQLite Journal prose; large round trip; and revision updates.
-- Dedicated browser suite: `Codebase/Tests/UI/journals_e2e.mjs` — 40/40 passed against a copied temporary DataRoot.
-- Browser coverage includes People Profile, Family, and Relationships consistency; exact save/reopen; multilingual content; Preview; keyboard Save; Quick Append; unsaved close choices; clean and dirty external changes; conflict comparison and both resolution routes; large content; hostile Markdown; missing create; external create/delete races; read-only controls; accessibility/direction; and console-error review.
+- Dedicated browser suite: `Codebase/Tests/UI/journals_e2e.mjs` — 48/48 passed against a copied temporary DataRoot.
+- Browser coverage includes People Profile, Family, and Relationships consistency; exact save/reopen; multilingual content; Preview; keyboard Save; Quick Append; inner and outer unsaved-close choices; outer profile X, Escape, and backdrop parity; Keep Editing draft preservation; Save and Discard dirty-state reset; reopen-after-discard; clean and dirty external changes; conflict comparison and both resolution routes; large content; hostile Markdown; missing create; external create/delete races; read-only controls; accessibility/direction; and console-error review.
 
 ## Frozen regression results
 

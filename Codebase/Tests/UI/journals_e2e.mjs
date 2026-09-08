@@ -238,6 +238,51 @@ try {
   await openPeopleJournal(personName);
   await page.waitForFunction((expected) => document.querySelector(".journal-view")?.textContent?.includes(expected), {}, "Roman Urdu");
   step("Close and reopen preserved content");
+
+  await clickText(".journal-experience", "Edit");
+  const outerGuardDraft = `${editedContent}outer profile guard draft\n`;
+  await setValue(".journal-editor", outerGuardDraft);
+  await page.click(".modal-head button[title='Close']");
+  await page.waitForSelector("[aria-label='Unsaved Profile Journal changes']");
+  step("Profile close button guarded the embedded dirty Journal draft");
+  await clickText("[aria-label='Unsaved Profile Journal changes']", "Keep Editing");
+  if (await page.$eval(".journal-editor", (element) => element.value) !== outerGuardDraft) {
+    throw new Error("Profile Keep Editing lost the embedded draft");
+  }
+  step("Profile Keep Editing preserved the embedded draft exactly");
+
+  await page.focus(".modal-head button[title='Close']");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("[aria-label='Unsaved Profile Journal changes']");
+  step("Profile Escape close used the same dirty-draft guard");
+  await clickText("[aria-label='Unsaved Profile Journal changes']", "Keep Editing");
+  await page.$eval(".modal-backdrop", (element) => {
+    element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  });
+  await page.waitForSelector("[aria-label='Unsaved Profile Journal changes']");
+  step("Profile backdrop close used the same dirty-draft guard");
+  await clickText("[aria-label='Unsaved Profile Journal changes']", "Keep Editing");
+
+  await clickText(".journal-experience", "Save");
+  await page.waitForFunction(() => document.querySelector(".journal-status")?.textContent === "Saved");
+  if (readFileSync(journalPath, "utf8") !== outerGuardDraft) throw new Error("Profile Journal save bytes differ");
+  step("Saving the embedded Journal reset the profile dirty state");
+  await page.click(".modal-head button[title='Close']");
+  await page.waitForFunction(() => !document.querySelector(".person-profile-container"));
+  if (await page.$("[aria-label='Unsaved Profile Journal changes']")) throw new Error("Clean profile close opened a guard");
+  step("Clean profile close required no discard confirmation");
+
+  await openPeopleJournal(personName);
+  await clickText(".journal-experience", "Edit");
+  await setValue(".journal-editor", `${outerGuardDraft}discard this outer draft\n`);
+  await page.click(".modal-head button[title='Close']");
+  await clickText("[aria-label='Unsaved Profile Journal changes']", "Discard");
+  await page.waitForFunction(() => !document.querySelector(".person-profile-container"));
+  if (readFileSync(journalPath, "utf8") !== outerGuardDraft) throw new Error("Profile discard changed disk content");
+  step("Profile Discard closed without writing the embedded draft");
+  await openPeopleJournal(personName);
+  await page.waitForFunction((expected) => document.querySelector(".journal-view")?.textContent?.includes(expected), {}, "outer profile guard draft");
+  step("Reopening after profile discard showed only the last saved content");
   await closeModal();
 
   await clickText(".nav", "Family");
