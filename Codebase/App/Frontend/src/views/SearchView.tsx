@@ -18,10 +18,12 @@ const FILTERS: Array<{ id: SearchFilter; label: string }> = [
 export function SearchView({
   onNavigateToProfile,
   onNavigateToRelationships,
+  onNavigateToFamily,
   onNavigateToGroup,
 }: {
   onNavigateToProfile: (personId: string) => void;
-  onNavigateToRelationships: (personId: string, fromPerspectiveId?: string) => void;
+  onNavigateToRelationships: (personId: string, fromPerspectiveId?: string) => void | Promise<void>;
+  onNavigateToFamily: (personId: string) => void;
   onNavigateToGroup: (groupId: string) => void;
 }) {
   const { perspectiveId, perspectivePerson } = usePerspective();
@@ -243,7 +245,8 @@ export function SearchView({
                 {result.category === "PERSON" && person && (
                   <>
                     <Button kind="primary" onClick={() => onNavigateToProfile(person.id)}>Details</Button>
-                    <Button onClick={() => onNavigateToRelationships(person.id)}>View in Relationships</Button>
+                    <Button onClick={() => void onNavigateToRelationships(person.id)}>View in Relationships</Button>
+                    <Button onClick={() => onNavigateToFamily(person.id)}>View Family</Button>
                     <Button onClick={() => setJournalFor(person)}>Journal</Button>
                   </>
                 )}
@@ -253,6 +256,7 @@ export function SearchView({
                       View in Relationships
                     </Button>
                     <Button onClick={() => onNavigateToProfile(person.id)}>Details</Button>
+                    <Button onClick={() => onNavigateToFamily(person.id)}>View Family</Button>
                   </>
                 )}
                 {result.relationship_kind === "general" && personA && personB && (

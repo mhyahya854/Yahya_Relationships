@@ -260,6 +260,15 @@ textarea {
   padding: 18px;
 }
 
+.navigation-return {
+  max-width: 1240px;
+  margin: 0 auto 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .view {
   max-width: 1240px;
   margin: 0 auto;

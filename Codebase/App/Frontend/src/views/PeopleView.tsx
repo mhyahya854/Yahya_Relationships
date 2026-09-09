@@ -8,14 +8,26 @@ import { usePerspective } from "../state";
 import type { Group, Person, RelationshipEntry } from "../types";
 
 interface Props {
-  onNavigateToRelationships?: (personId: string) => void;
+  onNavigateToRelationships?: (personId: string) => void | Promise<void>;
+  onNavigateToFamily?: (personId: string) => void;
+  onTargetUnavailable?: (personId: string) => void;
+  returnLabel?: string;
+  onReturn?: () => void;
   initialPersonId?: string | null;
   initialGroupId?: string | null;
 }
 
 type SortOption = "name-asc" | "name-desc" | "birth-asc" | "birth-desc" | "relationship";
 
-export function PeopleView({ onNavigateToRelationships, initialPersonId, initialGroupId }: Props) {
+export function PeopleView({
+  onNavigateToRelationships,
+  onNavigateToFamily,
+  onTargetUnavailable,
+  returnLabel,
+  onReturn,
+  initialPersonId,
+  initialGroupId,
+}: Props) {
   const { perspectiveId, perspectivePerson, setPerspective } = usePerspective();
   const [people, setPeople] = useState<Person[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -84,9 +96,12 @@ export function PeopleView({ onNavigateToRelationships, initialPersonId, initial
       const match = people.find((p) => p.id === initialPersonId);
       if (match) {
         openProfile(match);
+      } else {
+        setError(new Error("That person is no longer available in this Data Root."));
+        onTargetUnavailable?.(initialPersonId);
       }
     }
-  }, [initialPersonId, openProfile, people]);
+  }, [initialPersonId, onTargetUnavailable, openProfile, people]);
 
   useEffect(() => {
     if (initialGroupId && groups.some((group) => group.id === initialGroupId)) {
@@ -444,6 +459,19 @@ export function PeopleView({ onNavigateToRelationships, initialPersonId, initial
       {/* PERSON PROFILE MODAL */}
       {selected && (
         <Modal title={`${selected.name} — Profile`} onClose={requestProfileClose} wide closeOnEscape>
+          {returnLabel && onReturn && (
+            <div className="navigation-return">
+              <Button
+                kind="ghost"
+                disabled={profileJournalDirty}
+                title={profileJournalDirty ? "Save or discard the Journal draft before leaving this profile" : undefined}
+                onClick={onReturn}
+              >
+                ← Return to {returnLabel}
+              </Button>
+              <span className="muted small">Your {returnLabel} context is unchanged.</span>
+            </div>
+          )}
           <PersonProfile
             person={selected}
             perspectiveId={perspectiveId}
@@ -466,8 +494,9 @@ export function PeopleView({ onNavigateToRelationships, initialPersonId, initial
             }}
             onShowRelationshipPath={(personId) => {
               closeProfile();
-              onNavigateToRelationships?.(personId);
+              void onNavigateToRelationships?.(personId);
             }}
+            onViewFamily={onNavigateToFamily}
             onOpenJournal={() => setJournalFor(selected)}
             onJournalDirtyChange={setProfileJournalDirty}
           />

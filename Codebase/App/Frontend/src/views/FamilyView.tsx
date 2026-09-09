@@ -43,7 +43,7 @@ export function FamilyView({
 }: Props) {
   const { defaultId } = usePerspective();
   const [internalFocusId, setInternalFocusId] = useState<string>(
-    propFocusPersonId || initialFocusId || defaultId || "mohammad_yahya_hussain",
+    propFocusPersonId || initialFocusId || defaultId || "",
   );
   const currentFocusId =
     propFocusPersonId !== undefined && propFocusPersonId !== null
@@ -59,7 +59,7 @@ export function FamilyView({
   };
 
   const [defaultFocusId, setDefaultFocusId] = useState<string>(
-    defaultId || "mohammad_yahya_hussain",
+    defaultId || "",
   );
   const [focusPerson, setFocusPerson] = useState<{
     id: string;
@@ -107,6 +107,9 @@ export function FamilyView({
         const match = people.find((p) => p.id === selectedPersonId);
         if (match) {
           setSelected(match);
+        } else {
+          setSelected(null);
+          onSelectedPersonChange?.(null);
         }
       }
     } else if (!selectedPersonId && selected) {
@@ -299,7 +302,8 @@ export function FamilyView({
     relRefreshKey,
   );
 
-  const isDefaultFocus = currentFocusId === (defaultFocusId || defaultId || "mohammad_yahya_hussain");
+  const defaultFamilyFocusId = defaultFocusId || defaultId;
+  const isDefaultFocus = Boolean(defaultFamilyFocusId) && currentFocusId === defaultFamilyFocusId;
 
   const focusPersonObj =
     people.find((p) => p.id === currentFocusId) ||
@@ -394,10 +398,10 @@ export function FamilyView({
           />
         </div>
 
-        {!isDefaultFocus && (
+        {!isDefaultFocus && defaultFamilyFocusId && (
           <Button
             kind="ghost"
-            onClick={() => handleFocusChange(defaultFocusId || defaultId || "mohammad_yahya_hussain")}
+            onClick={() => handleFocusChange(defaultFamilyFocusId)}
             title="Return to default viewer focus"
           >
             Return to My Family View

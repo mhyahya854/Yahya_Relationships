@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
-import { Avatar } from "./components/ui";
+import { Avatar, Button } from "./components/ui";
 import { PerspectiveProvider, usePerspective } from "./state";
 import type { Person } from "./types";
 import { BackupsView } from "./views/BackupsView";
@@ -14,6 +14,11 @@ import type { DataRootState, DataRootStatus } from "./features/dataRoot/types";
 import { StartupFailureView } from "./features/startupFailure/StartupFailureView";
 
 type Screen = "people" | "relationships" | "family" | "search" | "hermes" | "backups";
+
+type ReturnContext = {
+  screen: Screen;
+  label: string;
+};
 
 const NAV: Array<{ id: Screen; label: string; icon: string }> = [
   { id: "people", label: "People", icon: "◉" },
@@ -92,14 +97,20 @@ function PerspectiveSelector() {
 
 function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
   const [screen, setScreen] = useState<Screen>("relationships");
+  const [returnContext, setReturnContext] = useState<ReturnContext | null>(null);
+  const [searchMounted, setSearchMounted] = useState(false);
   const [peopleTargetId, setPeopleTargetId] = useState<string | null>(null);
   const [peopleGroupId, setPeopleGroupId] = useState<string | null>(null);
   const [relationshipTargetId, setRelationshipTargetId] = useState<string | null>(null);
   const { perspectivePerson, defaultId, setPerspective } = usePerspective();
+  const navigationRequest = useRef(0);
+  const relationshipHandoff = useRef<Promise<void>>(Promise.resolve());
 
   // Family Session State (persists across tab navigation during app session)
   const [familyFocusId, setFamilyFocusId] = useState<string | null>(null);
   const [familySelectedId, setFamilySelectedId] = useState<string | null>(null);
+  const clearPeopleTarget = useCallback(() => setPeopleTargetId(null), []);
+  const clearRelationshipTarget = useCallback(() => setRelationshipTargetId(null), []);
 
   // Initialize Family focus to defaultId once available (independent of global perspective)
   useEffect(() => {
@@ -108,28 +119,80 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
     }
   }, [defaultId, familyFocusId]);
 
-  const handleNavigateToRelationships = async (personId: string, fromPerspectiveId?: string) => {
-    try {
-      if (fromPerspectiveId && fromPerspectiveId !== perspectivePerson?.id) {
-        await setPerspective(fromPerspectiveId);
-      }
-      setRelationshipTargetId(personId);
-      setScreen("relationships");
-    } catch (err) {
-      console.error("Failed to set perspective for Relationships handoff:", err);
+  const screenLabel = (target: Screen) => NAV.find((item) => item.id === target)?.label ?? target;
+
+  const openScreen = (target: Screen) => {
+    if (target === "search") setSearchMounted(true);
+    setScreen(target);
+  };
+
+  const rememberReturn = (destination: Screen, origin = screen) => {
+    setReturnContext(origin === destination ? null : { screen: origin, label: screenLabel(origin) });
+  };
+
+  const handlePrimaryNavigate = (target: Screen) => {
+    navigationRequest.current += 1;
+    setReturnContext(null);
+    if (target === "people") {
+      setPeopleTargetId(null);
+      setPeopleGroupId(null);
     }
+    openScreen(target);
+  };
+
+  const handleReturn = () => {
+    if (!returnContext) return;
+    navigationRequest.current += 1;
+    const target = returnContext.screen;
+    setReturnContext(null);
+    openScreen(target);
+  };
+
+  const handleNavigateToRelationships = (personId: string, fromPerspectiveId?: string) => {
+    const origin = screen;
+    const request = ++navigationRequest.current;
+    const run = async () => {
+      if (request !== navigationRequest.current) return;
+      try {
+        if (fromPerspectiveId && fromPerspectiveId !== perspectivePerson?.id) {
+          await setPerspective(fromPerspectiveId);
+        }
+        if (request !== navigationRequest.current) return;
+        if (origin === "people") setPeopleTargetId(personId);
+        setRelationshipTargetId(personId);
+        rememberReturn("relationships", origin);
+        openScreen("relationships");
+      } catch (err) {
+        console.error("Failed to set perspective for Relationships handoff:", err);
+      }
+    };
+    const queued = relationshipHandoff.current.then(run, run);
+    relationshipHandoff.current = queued.then(() => undefined, () => undefined);
+    return queued;
   };
 
   const handleNavigateToProfile = (personId: string) => {
+    navigationRequest.current += 1;
+    if (screen === "relationships") setRelationshipTargetId(personId);
     setPeopleTargetId(personId);
     setPeopleGroupId(null);
-    setScreen("people");
+    rememberReturn("people");
+    openScreen("people");
   };
 
   const handleNavigateToGroup = (groupId: string) => {
+    navigationRequest.current += 1;
     setPeopleTargetId(null);
     setPeopleGroupId(groupId);
-    setScreen("people");
+    rememberReturn("people");
+    openScreen("people");
+  };
+
+  const handleNavigateToFamily = (personId: string) => {
+    navigationRequest.current += 1;
+    setFamilySelectedId(personId);
+    rememberReturn("family");
+    openScreen("family");
   };
 
   return (
@@ -148,7 +211,8 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
               type="button"
               key={item.id}
               className={screen === item.id ? "nav-item active" : "nav-item"}
-              onClick={() => setScreen(item.id)}
+              aria-current={screen === item.id ? "page" : undefined}
+              onClick={() => handlePrimaryNavigate(item.id)}
             >
               <span className="nav-icon">{item.icon}</span>
               <span>{item.label}</span>
@@ -182,15 +246,33 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
           <PerspectiveSelector />
         </header>
         <div className="content">
+          {returnContext && screen !== "people" && (
+            <div className="navigation-return" role="status">
+              <Button kind="ghost" onClick={handleReturn}>
+                ← Return to {returnContext.label}
+              </Button>
+              <span className="muted small">Your {returnContext.label} context is unchanged.</span>
+            </div>
+          )}
           {screen === "people" && (
             <PeopleView
               initialPersonId={peopleTargetId}
               initialGroupId={peopleGroupId}
               onNavigateToRelationships={handleNavigateToRelationships}
+              onNavigateToFamily={handleNavigateToFamily}
+              onTargetUnavailable={clearPeopleTarget}
+              returnLabel={returnContext?.label}
+              onReturn={returnContext ? handleReturn : undefined}
             />
           )}
           {screen === "relationships" && (
-            <RelationshipsView initialTargetId={relationshipTargetId} />
+            <RelationshipsView
+              initialTargetId={relationshipTargetId}
+              onTargetChange={setRelationshipTargetId}
+              onTargetUnavailable={clearRelationshipTarget}
+              onNavigateToProfile={handleNavigateToProfile}
+              onNavigateToFamily={handleNavigateToFamily}
+            />
           )}
           {screen === "family" && defaultId && (
             <FamilyView
@@ -202,12 +284,15 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
               onNavigateToRelationships={handleNavigateToRelationships}
             />
           )}
-          {screen === "search" && (
-            <SearchView
-              onNavigateToProfile={handleNavigateToProfile}
-              onNavigateToRelationships={handleNavigateToRelationships}
-              onNavigateToGroup={handleNavigateToGroup}
-            />
+          {searchMounted && (
+            <div hidden={screen !== "search"}>
+              <SearchView
+                onNavigateToProfile={handleNavigateToProfile}
+                onNavigateToRelationships={handleNavigateToRelationships}
+                onNavigateToFamily={handleNavigateToFamily}
+                onNavigateToGroup={handleNavigateToGroup}
+              />
+            </div>
           )}
           {screen === "hermes" && <HermesView />}
           {screen === "backups" && <BackupsView />}

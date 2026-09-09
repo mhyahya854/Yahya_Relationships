@@ -86,12 +86,27 @@ function buildFlowEdges(
   });
 }
 
-function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | null }) {
-  const { perspectiveId, defaultId, perspectivePerson, setPerspective, returnToDefault } =
+interface NavigationProps {
+  initialTargetId?: string | null;
+  onTargetChange?: (personId: string | null) => void;
+  onTargetUnavailable?: (personId: string) => void;
+  onNavigateToProfile?: (personId: string) => void;
+  onNavigateToFamily?: (personId: string) => void;
+}
+
+function RelationshipsContent({
+  initialTargetId,
+  onTargetChange,
+  onTargetUnavailable,
+  onNavigateToProfile,
+  onNavigateToFamily,
+}: NavigationProps) {
+  const { perspectiveId, perspectivePerson, setPerspective, returnToDefault } =
     usePerspective();
   const graph = useRelationshipGraph();
   const { fitView } = useReactFlow();
   const [people, setPeople] = useState<Person[]>([]);
+  const [peopleLoaded, setPeopleLoaded] = useState(false);
   const [groups, setGroups] = useState<any[]>([]);
   const [selected, setSelected] = useState<Person | null>(null);
   const [relationshipResult, setRelationshipResult] = useState<{
@@ -125,6 +140,8 @@ function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | 
       setGroups(gRes.groups);
     } catch {
       // ignore
+    } finally {
+      setPeopleLoaded(true);
     }
   }, []);
 
@@ -148,7 +165,6 @@ function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | 
 
   useEffect(() => {
     if (!perspectiveId) return;
-    setSelected(null);
     setFocus(null);
     setRelationshipResult(null);
     expandedCountRef.current = 0;
@@ -207,6 +223,8 @@ function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | 
   const selectPerson = useCallback(
     (person: Person) => {
       setSelected(person);
+      onTargetChange?.(person.id);
+      setRelationshipError(null);
       setFocus(null);
       graph.exitPath();
       graph.ensureVisible({
@@ -215,17 +233,21 @@ function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | 
         is_perspective: person.id === perspectiveId,
       });
     },
-    [graph, perspectiveId],
+    [graph, onTargetChange, perspectiveId],
   );
 
   useEffect(() => {
-    if (initialTargetId && people.length > 0) {
+    if (initialTargetId && peopleLoaded) {
       const match = people.find((p) => p.id === initialTargetId);
-      if (match) {
+      if (match && selected?.id !== match.id) {
         selectPerson(match);
+      } else if (!match) {
+        setSelected(null);
+        setRelationshipError(new Error("That relationship target is no longer available in this Data Root."));
+        onTargetUnavailable?.(initialTargetId);
       }
     }
-  }, [initialTargetId, people, selectPerson]);
+  }, [initialTargetId, onTargetUnavailable, people, peopleLoaded, selectPerson, selected?.id]);
 
   const showWhy = useCallback(
     async (entry: RelationshipEntry) => {
@@ -428,18 +450,7 @@ function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | 
     <div className="view relationships-view">
       <div className="view-head relationships-head">
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <h1 style={{ margin: 0 }}>Relationships</h1>
-            {defaultId && perspectiveId !== defaultId && (
-              <Button
-                kind="ghost"
-                onClick={() => void returnToDefault()}
-                title="Return to default perspective person"
-              >
-                ↺ Return to My Perspective
-              </Button>
-            )}
-          </div>
+          <h1 style={{ margin: 0 }}>Relationships</h1>
           <p className="muted" style={{ marginTop: 4 }}>
             Diagram-first navigation from <strong>{perspectiveName}</strong>’s perspective.
           </p>
@@ -488,7 +499,10 @@ function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | 
               const person = personOfNode(node.id);
               if (person) void setPerspective(person.id);
             }}
-            onPaneClick={() => setSelected(null)}
+            onPaneClick={() => {
+              setSelected(null);
+              onTargetChange?.(null);
+            }}
             proOptions={{ hideAttribution: true }}
           >
             <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} />
@@ -541,6 +555,12 @@ function RelationshipsContent({ initialTargetId }: { initialTargetId?: string | 
                 <Button kind="primary" onClick={() => setShowAddRel(true)}>
                   + Add Relationship
                 </Button>
+                {onNavigateToProfile && (
+                  <Button onClick={() => onNavigateToProfile(selected.id)}>View Profile</Button>
+                )}
+                {onNavigateToFamily && (
+                  <Button onClick={() => onNavigateToFamily(selected.id)}>View Family</Button>
+                )}
                 <Button
                   kind="ghost"
                   onClick={() => {
@@ -775,10 +795,10 @@ function EntryGroup({
   );
 }
 
-export function RelationshipsView({ initialTargetId }: { initialTargetId?: string | null }) {
+export function RelationshipsView(props: NavigationProps) {
   return (
     <ReactFlowProvider>
-      <RelationshipsContent initialTargetId={initialTargetId} />
+      <RelationshipsContent {...props} />
     </ReactFlowProvider>
   );
 }

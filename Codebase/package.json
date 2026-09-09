@@ -19,6 +19,7 @@
     "test:search": "node Tests/UI/search_e2e.mjs",
     "test:backups": "node Tests/UI/backups_e2e.mjs",
     "test:data-root": "node Tests/UI/data_root_e2e.mjs",
+    "test:navigation": "node Tests/UI/navigation_e2e.mjs",
     "tauri": "node Scripts/run_tauri.mjs",
     "tauri:build": "node Scripts/run_tauri.mjs build",
     "legacy:check": "node Scripts/run-py.mjs Scripts/build_family.py --check",

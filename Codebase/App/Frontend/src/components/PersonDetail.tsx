@@ -106,6 +106,7 @@ export function PersonProfile({
   onDelete,
   onOpenPerson,
   onShowRelationshipPath,
+  onViewFamily,
   onOpenJournal,
   onJournalDirtyChange,
 }: {
@@ -118,6 +119,7 @@ export function PersonProfile({
   onDelete?: (person: Person) => void;
   onOpenPerson?: (personId: string) => void;
   onShowRelationshipPath?: (personId: string) => void;
+  onViewFamily?: (personId: string) => void;
   onOpenJournal?: (personId: string) => void;
   onJournalDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -240,6 +242,7 @@ export function PersonProfile({
                     type="button"
                     className="btn btn-outline"
                     style={{ fontSize: 12, padding: "5px 12px", background: "#fff" }}
+                    disabled={journalDirty}
                     onClick={() => onShowRelationshipPath(person.id)}
                     title="View relationship connection on the diagram"
                   >
@@ -257,6 +260,11 @@ export function PersonProfile({
         <Button kind="primary" onClick={() => onViewFrom(person.id)}>
           View from this person
         </Button>
+        {onViewFamily && (
+          <Button disabled={journalDirty} onClick={() => onViewFamily(person.id)}>
+            View Family
+          </Button>
+        )}
         {onEdit && (
           <Button onClick={() => onEdit(person)}>
             Edit Person
