@@ -27,7 +27,7 @@ export function DataRootPanel({ onDataChanged }: { onDataChanged?: () => void })
   }, [loadStatus]);
 
   async function handleOpenFolder() {
-    if (!status) return;
+    if (!status?.active_root) return;
     const msg = await openFolder(status.active_root);
     if (msg && !msg.startsWith("Opened")) {
       setError(new Error(msg));
@@ -38,7 +38,7 @@ export function DataRootPanel({ onDataChanged }: { onDataChanged?: () => void })
     return <div className="panel muted">Loading Data Safety Status…</div>;
   }
 
-  const isHealthy = status.health.ok;
+  const isHealthy = status.state === "HEALTHY";
 
   return (
     <div
@@ -66,11 +66,11 @@ export function DataRootPanel({ onDataChanged }: { onDataChanged?: () => void })
                 border: `1px solid ${isHealthy ? "#b7eb8f" : "#ffe58f"}`,
               }}
             >
-              {isHealthy ? "Verified Healthy ✓" : "Audit Issues Found ⚠"}
+              {status.state.replace(/_/g, " ")}{isHealthy ? " ✓" : ""}
             </span>
           </div>
           <code style={{ fontSize: "12.5px", background: "#f1f5f9", padding: "2px 6px", borderRadius: "4px" }}>
-            {status.active_root}
+            {status.active_root ?? "No active location"}
           </code>
         </div>
 
@@ -102,13 +102,8 @@ export function DataRootPanel({ onDataChanged }: { onDataChanged?: () => void })
 
       {showChangeLocation && status && (
         <ChangeDataRootDialog
-          activeRoot={status.active_root}
+          activeRoot={status.active_root ?? ""}
           onClose={() => setShowChangeLocation(false)}
-          onSuccess={() => {
-            setShowChangeLocation(false);
-            void loadStatus();
-            onDataChanged?.();
-          }}
         />
       )}
     </div>

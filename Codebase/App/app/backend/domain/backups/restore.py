@@ -6,6 +6,7 @@ import json
 import shutil
 import sqlite3
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -80,6 +81,7 @@ def restore_backup(
     *,
     _allow_path: bool = False,
     _require_safety_backup: bool = True,
+    _maintenance_held: bool = False,
 ) -> Dict[str, Any]:
     """Restore DB, People, and portable Config as one reversible transaction."""
     if confirmation_token != "RESTORE":
@@ -107,7 +109,8 @@ def restore_backup(
     staging_dir = active_root / f".restore_staging_{operation_id}"
     rollback_dir = active_root / f".restore_rollback_{operation_id}"
 
-    with MaintenanceLockContext(f"RESTORE_BACKUP:{backup_path.name}"):
+    lock = nullcontext() if _maintenance_held else MaintenanceLockContext(f"RESTORE_BACKUP:{backup_path.name}")
+    with lock:
         try:
             # Recheck under the exclusive mutation lock before creating recovery state.
             verification = verify_backup(backup_path)

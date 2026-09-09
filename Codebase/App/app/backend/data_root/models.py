@@ -3,7 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Dict, List, Optional
+
+
+class DataRootState(str, Enum):
+    UNCONFIGURED = "UNCONFIGURED"
+    HEALTHY = "HEALTHY"
+    READ_ONLY = "READ_ONLY"
+    MISSING = "MISSING"
+    INVALID = "INVALID"
+    REPAIRABLE = "REPAIRABLE"
+    MAINTENANCE = "MAINTENANCE"
 
 
 @dataclass

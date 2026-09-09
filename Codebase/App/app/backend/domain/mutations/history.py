@@ -110,6 +110,11 @@ def can_undo() -> bool:
     return len(_MUTATION_STACK) > 0
 
 
+def clear_mutation_history() -> None:
+    """Discard snapshots bound to the previously active Data Root."""
+    _MUTATION_STACK.clear()
+
+
 def get_last_mutation_description() -> Optional[str]:
     if not _MUTATION_STACK:
         return None

@@ -1,6 +1,10 @@
-"""Test fixtures. Every test runs against a fresh copy of family.db under a
-temporary data root so the real database is never mutated by tests."""
+"""Test fixtures that isolate writes and never use the real OS bootstrap.
 
+Frozen read-only tests retain their established source-data fixture; tests that
+write request a fresh copied Data Root through ``isolated``.
+"""
+
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -21,13 +25,29 @@ def _isolated_user_bootstrap(tmp_path, monkeypatch):
     """Redirect the user-level bootstrap pointer file to a per-test temp path.
 
     The real ``%APPDATA%/people-relationships/bootstrap.json`` must never be
-    read or written by any test.
+    read or written by any test.  The temporary pointer preserves the historical
+    source-data fixture for read-only frozen tests; tests that write request the
+    ``isolated`` fixture, and Phase-8 bootstrap tests replace this pointer with
+    their own unconfigured temporary location.
     """
+    bootstrap = tmp_path / "user-config" / "bootstrap.json"
+    bootstrap.parent.mkdir(parents=True, exist_ok=True)
+    bootstrap.write_text(
+        json.dumps({"active_root": str(REPO.resolve()), "updated_at": "test-fixture"}) + "\n",
+        encoding="utf-8",
+    )
     monkeypatch.setenv(
         "PEOPLE_RELATIONSHIPS_BOOTSTRAP",
-        str(tmp_path / "user-config" / "bootstrap.json"),
+        str(bootstrap),
     )
     yield
+    from app.backend.data_root import DataRootManager
+
+    DataRootManager.set_override_root(None)
+    monkeypatch.setenv("PEOPLE_RELATIONSHIPS_BOOTSTRAP", str(bootstrap))
+    engine = sys.modules.get("app.backend.domain.family.engine")
+    if engine is not None:
+        engine.rebind_active_root()
 
 
 @pytest.fixture()

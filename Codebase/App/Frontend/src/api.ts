@@ -363,26 +363,34 @@ export const api = {
   dataRoot: {
     status: () => request<import("./features/dataRoot/types").DataRootStatus>("/api/data-root"),
     validate: () => request<import("./features/dataRoot/types").DataRootHealth>("/api/data-root/validate", { method: "POST" }),
-    repair: () => request<{ ok: boolean; repaired: number; errors: string[] }>("/api/data-root/repair", { method: "POST" }),
+    inspect: (targetPath: string) =>
+      request<import("./features/dataRoot/types").DataRootCandidate>("/api/data-root/inspect", {
+        method: "POST", body: JSON.stringify({ target_path: targetPath }),
+      }),
+    inspectBackup: (targetPath: string) =>
+      request<import("./features/dataRoot/types").BackupInspection>("/api/data-root/inspect-backup", {
+        method: "POST", body: JSON.stringify({ target_path: targetPath }),
+      }),
+    repair: () => request<{ ok: boolean; repaired: number; errors?: string[] }>("/api/data-root/repair", { method: "POST" }),
     move: (destinationPath: string) =>
-      request<{ ok: boolean; previous_root: string; new_root: string; safety_backup_id: string; health: import("./features/dataRoot/types").DataRootHealth }>(
+      request<{ ok: boolean; previous_root: string; new_root: string; old_root_retained: boolean; safety_backup_id: string; health: import("./features/dataRoot/types").DataRootHealth }>(
         "/api/data-root/move",
         { method: "POST", body: JSON.stringify({ destination_path: destinationPath }) }
       ),
     switch: (targetPath: string) =>
-      request<{ ok: boolean; active_root: string; health: import("./features/dataRoot/types").DataRootHealth }>(
+      request<{ ok: boolean; active_root: string; unchanged: boolean; candidate: import("./features/dataRoot/types").DataRootCandidate }>(
         "/api/data-root/switch",
         { method: "POST", body: JSON.stringify({ target_path: targetPath }) }
       ),
-    initialize: (targetPath: string, ownerName?: string) =>
-      request<{ ok: boolean; active_root: string; health: import("./features/dataRoot/types").DataRootHealth }>(
+    initialize: (targetPath: string, ownerName: string, ownerGender?: string) =>
+      request<{ ok: boolean; active_root: string; owner_id: string; health: import("./features/dataRoot/types").DataRootHealth }>(
         "/api/data-root/initialize",
-        { method: "POST", body: JSON.stringify({ target_path: targetPath, owner_name: ownerName ?? "Mohammad Yahya Hussain" }) }
+        { method: "POST", body: JSON.stringify({ target_path: targetPath, owner_name: ownerName, owner_gender: ownerGender || null }) }
       ),
-    restoreTo: (backupPath: string, targetPath?: string) =>
+    restoreTo: (backupPath: string, targetPath: string) =>
       request<{ ok: boolean; active_root: string; health: import("./features/dataRoot/types").DataRootHealth }>(
         "/api/data-root/restore-to",
-        { method: "POST", body: JSON.stringify({ backup_path: backupPath, target_path: targetPath ?? null }) }
+        { method: "POST", body: JSON.stringify({ backup_path: backupPath, target_path: targetPath }) }
       ),
   },
 

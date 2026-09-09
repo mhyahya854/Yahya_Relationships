@@ -10,6 +10,7 @@ import { PeopleView } from "./views/PeopleView";
 import { RelationshipsView } from "./views/RelationshipsView";
 import { SearchView } from "./views/SearchView";
 import { RootUnavailableView } from "./features/dataRoot/components/RootUnavailableView";
+import type { DataRootState, DataRootStatus } from "./features/dataRoot/types";
 import { StartupFailureView } from "./features/startupFailure/StartupFailureView";
 
 type Screen = "people" | "relationships" | "family" | "search" | "hermes" | "backups";
@@ -89,7 +90,7 @@ function PerspectiveSelector() {
   );
 }
 
-function Shell() {
+function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
   const [screen, setScreen] = useState<Screen>("relationships");
   const [peopleTargetId, setPeopleTargetId] = useState<string | null>(null);
   const [peopleGroupId, setPeopleGroupId] = useState<string | null>(null);
@@ -162,6 +163,21 @@ function Shell() {
         </div>
       </aside>
       <main className="main">
+        {rootStatus.state === "READ_ONLY" && (
+          <div role="status" className="info-note" style={{ margin: "12px 18px 0" }}>
+            <strong>Read-only Data Root.</strong> Viewing and searching are available, but changes cannot be saved until this folder is writable or another Data Root is selected.
+          </div>
+        )}
+        {rootStatus.state === "REPAIRABLE" && (
+          <div role="status" className="info-note" style={{ margin: "12px 18px 0" }}>
+            <strong>Data Root has repairable alignment issues.</strong> Reads remain available; review Data Root health before editing.
+          </div>
+        )}
+        {rootStatus.state === "MAINTENANCE" && (
+          <div role="status" className="info-note" style={{ margin: "12px 18px 0" }}>
+            <strong>Data maintenance is in progress.</strong> {rootStatus.maintenance_operation ?? "Root-changing actions are temporarily disabled."}
+          </div>
+        )}
         <header className="topbar">
           <PerspectiveSelector />
         </header>
@@ -176,9 +192,9 @@ function Shell() {
           {screen === "relationships" && (
             <RelationshipsView initialTargetId={relationshipTargetId} />
           )}
-          {screen === "family" && (
+          {screen === "family" && defaultId && (
             <FamilyView
-              focusPersonId={familyFocusId ?? defaultId ?? "mohammad_yahya_hussain"}
+              focusPersonId={familyFocusId ?? defaultId}
               onFocusPersonChange={(newId) => setFamilyFocusId(newId)}
               selectedPersonId={familySelectedId}
               onSelectedPersonChange={(personId) => setFamilySelectedId(personId)}
@@ -202,9 +218,9 @@ function Shell() {
 }
 
 export function App() {
-  const [rootUnavailable, setRootUnavailable] = useState(false);
-  const [isFirstRun, setIsFirstRun] = useState(false);
-  const [lastLocation, setLastLocation] = useState<string | undefined>(undefined);
+  const [rootUnavailable, setRootUnavailable] = useState<DataRootState | null>(null);
+  const [rootStatus, setRootStatus] = useState<DataRootStatus | null>(null);
+  const [lastLocation, setLastLocation] = useState<string | null>(null);
   const [backendFailure, setBackendFailure] = useState<{ port?: number; errorMessage?: string } | null>(null);
   const [checking, setChecking] = useState(true);
 
@@ -230,18 +246,13 @@ export function App() {
       }
 
       const status = await api.dataRoot.status();
+      setRootStatus(status);
       setBackendFailure(null);
-      if (status.first_run || status.configured === false) {
-        setIsFirstRun(true);
-        setRootUnavailable(true);
-        setLastLocation(status.active_root);
-      } else if (!status.health.ok && status.health.issues.some((i) => i.code === "DATA_ROOT_MISSING" || i.code === "DATABASE_MISSING")) {
-        setIsFirstRun(false);
-        setRootUnavailable(true);
-        setLastLocation(status.active_root);
+      if (["UNCONFIGURED", "MISSING", "INVALID"].includes(status.state)) {
+        setRootUnavailable(status.state);
+        setLastLocation(status.last_configured_root);
       } else {
-        setIsFirstRun(false);
-        setRootUnavailable(false);
+        setRootUnavailable(null);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -272,14 +283,18 @@ export function App() {
     );
   }
 
+  if (checking || !rootStatus) {
+    return <main style={{ minHeight: "100vh", display: "grid", placeItems: "center" }} role="status">Checking local data service and Data Root…</main>;
+  }
+
   if (!checking && rootUnavailable) {
     return (
       <RootUnavailableView
-        firstRun={isFirstRun}
+        state={rootUnavailable}
         lastLocation={lastLocation}
+        issues={rootStatus.health.issues}
         onRecovered={() => {
-          setRootUnavailable(false);
-          setIsFirstRun(false);
+          setRootUnavailable(null);
           void checkRoot();
         }}
       />
@@ -287,8 +302,8 @@ export function App() {
   }
 
   return (
-    <PerspectiveProvider>
-      <Shell />
+    <PerspectiveProvider key={rootStatus.root_id ?? rootStatus.active_root ?? rootStatus.state}>
+      <Shell rootStatus={rootStatus} />
     </PerspectiveProvider>
   );
 }

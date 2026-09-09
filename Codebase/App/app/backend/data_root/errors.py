@@ -29,6 +29,11 @@ class DataRootInvalidError(DataRootError):
         super().__init__(message, code="DATA_ROOT_INVALID", detail=detail)
 
 
+class DataRootBootstrapInvalidError(DataRootError):
+    def __init__(self, message: str = "Your saved data-location setting could not be read.", detail: Optional[Any] = None):
+        super().__init__(message, code="BOOTSTRAP_INVALID", detail=detail)
+
+
 class DataRootReadOnlyError(DataRootError):
     def __init__(self, message: str = "Data root directory is read-only. Editing is disabled.", detail: Optional[Any] = None):
         super().__init__(message, code="DATA_ROOT_READ_ONLY", detail=detail)

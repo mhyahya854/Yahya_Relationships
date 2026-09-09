@@ -6,6 +6,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .. import config
 from .manager import DataRootManager
 from .models import (
     DatabaseHealth,
@@ -75,7 +76,7 @@ def audit_data_root(root: Optional[Path] = None) -> DataRootHealth:
     else:
         # Check SQLite Database
         try:
-            conn = sqlite3.connect(str(db_path))
+            conn = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
             conn.row_factory = sqlite3.Row
             integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
 
@@ -96,6 +97,16 @@ def audit_data_root(root: Optional[Path] = None) -> DataRootHealth:
                 "SELECT value FROM metadata WHERE key = 'app_schema_version'"
             ).fetchone()
             schema_ver = int(s_row["value"]) if s_row else 1
+
+            if not 1 <= schema_ver <= config.APP_SCHEMA_VERSION:
+                issues.append(
+                    ValidationIssue(
+                        code="SCHEMA_UNSUPPORTED",
+                        severity="error",
+                        message=f"Database schema {schema_ver} is not supported by this application.",
+                        suggested_action="Choose a compatible Data Root or restore a supported backup.",
+                    )
+                )
 
             db_health = DatabaseHealth(
                 integrity=integrity,

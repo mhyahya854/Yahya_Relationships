@@ -14,6 +14,10 @@ export function DataRootHealthDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [repairResult, setRepairResult] = useState<string | null>(null);
+  const canRepair = health.issues.some((issue) =>
+    ["MISSING_PERSON_FOLDER", "MISSING_JOURNAL", "ARCHIVED_ACTIVE_MISMATCH"].includes(issue.code),
+  );
+  const hasIssues = health.issues.length > 0;
 
   async function handleRepair() {
     setBusy(true);
@@ -24,7 +28,7 @@ export function DataRootHealthDialog({
         setRepairResult(`Repaired ${res.repaired} non-destructive item(s).`);
         onRefresh();
       } else {
-        setRepairResult(`Repair attempted: ${res.errors.join(", ")}`);
+        setRepairResult(`Repair attempted: ${(res.errors ?? ["No repair details returned."]).join(", ")}`);
       }
     } catch (err) {
       setRepairResult(err instanceof Error ? err.message : "Repair failed.");
@@ -41,18 +45,18 @@ export function DataRootHealthDialog({
           style={{
             padding: "10px 14px",
             borderRadius: "8px",
-            background: health.ok ? "var(--ok-soft, #eef9f5)" : "var(--warn-soft, #fff8ec)",
-            border: `1px solid ${health.ok ? "var(--ok, #2e7d32)" : "var(--warn, #d97706)"}`,
+            background: !hasIssues ? "var(--ok-soft, #eef9f5)" : "var(--warn-soft, #fff8ec)",
+            border: `1px solid ${!hasIssues ? "var(--ok, #2e7d32)" : "var(--warn, #d97706)"}`,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
           }}
         >
           <div>
-            <strong>Status: {health.ok ? "HEALTHY ✓" : "ISSUES DETECTED ⚠"}</strong>
-            <div className="muted small">{health.active_root}</div>
+            <strong>Status: {!hasIssues ? "HEALTHY ✓" : "ISSUES DETECTED ⚠"}</strong>
+            <div className="muted small">{health.root_path}</div>
           </div>
-          {!health.ok && (
+          {canRepair && (
             <Button kind="primary" disabled={busy} onClick={() => void handleRepair()}>
               {busy ? "Repairing…" : "Run Safe Repair"}
             </Button>
@@ -73,7 +77,7 @@ export function DataRootHealthDialog({
             <h4 style={{ margin: "0 0 8px 0" }}>SQLite Database</h4>
             <div className="small muted">Integrity: <strong>{health.database?.integrity ?? "unknown"}</strong></div>
             <div className="small muted">People Count: <strong>{health.database?.people_count ?? 0}</strong></div>
-            <div className="small muted">Parent-Child Facts: <strong>{health.database?.parent_child_facts_count ?? 0}</strong></div>
+            <div className="small muted">Parent-Child Facts: <strong>{health.database?.parent_child_count ?? 0}</strong></div>
             <div className="small muted">Marriages Count: <strong>{health.database?.marriages_count ?? 0}</strong></div>
           </div>
 

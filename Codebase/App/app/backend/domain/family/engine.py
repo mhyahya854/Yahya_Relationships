@@ -27,6 +27,17 @@ MERMAID_LIB_PATH = VENDOR_DIR / "mermaid.min.js"
 OUTPUT_MD_PATH = DataRootManager.get_exports_dir(ROOT) / "Family" / "family.md"
 OUTPUT_HTML_PATH = DataRootManager.get_exports_dir(ROOT) / "Family" / "family.html"
 
+
+def rebind_active_root() -> None:
+    """Refresh legacy module paths after the active Data Root changes."""
+    global ROOT, DB_PATH, DATA_PATH, OUTPUT_MD_PATH, OUTPUT_HTML_PATH
+    ROOT = DataRootManager.resolve_active_root()
+    DB_PATH = DataRootManager.get_database_path(ROOT)
+    DATA_PATH = ROOT / "Database" / "Main" / "family.json"
+    exports = DataRootManager.get_exports_dir(ROOT) / "Family"
+    OUTPUT_MD_PATH = exports / "family.md"
+    OUTPUT_HTML_PATH = exports / "family.html"
+
 ALLOWED_PARENT_KINDS = {
     "biological",
     "unspecified",

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sys
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 
 from .errors import (
     DataRootDestinationConflictError,
+    DataRootBootstrapInvalidError,
     DataRootInvalidError,
     DataRootNotFoundError,
     DataRootReadOnlyError,
@@ -36,9 +37,7 @@ def _user_bootstrap_config_path() -> Path:
     """
     override = os.environ.get("PEOPLE_RELATIONSHIPS_BOOTSTRAP")
     if override:
-        bootstrap_file = Path(override).expanduser().resolve()
-        bootstrap_file.parent.mkdir(parents=True, exist_ok=True)
-        return bootstrap_file
+        return Path(override).expanduser().resolve()
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming")))
     elif sys.platform == "darwin":
@@ -46,9 +45,7 @@ def _user_bootstrap_config_path() -> Path:
     else:
         xdg = os.environ.get("XDG_CONFIG_HOME")
         base = Path(xdg).expanduser() if xdg else Path.home() / ".config"
-    config_dir = base / "people-relationships"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return config_dir / "bootstrap.json"
+    return base / "people-relationships" / "bootstrap.json"
 
 
 class DataRootManager:
@@ -62,70 +59,109 @@ class DataRootManager:
         cls._override_root = path.resolve() if path else None
 
     @classmethod
-    def has_configured_root(cls) -> bool:
-        """Check whether an explicit active data root has been configured."""
+    def bootstrap_status(cls) -> Dict[str, Any]:
+        """Read the active-root authority without creating or repairing anything."""
         if cls._override_root is not None:
-            return True
-        if os.environ.get("PEOPLE_RELATIONSHIPS_ROOT"):
-            return True
+            return {"configured": True, "invalid": False, "active_root": cls._override_root, "source": "override"}
+
+        env_root = os.environ.get("PEOPLE_RELATIONSHIPS_ROOT")
+        if env_root:
+            return {
+                "configured": True,
+                "invalid": False,
+                "active_root": Path(env_root).expanduser().resolve(),
+                "source": "environment",
+            }
+
         bootstrap_file = _user_bootstrap_config_path()
+        explicit_bootstrap = "PEOPLE_RELATIONSHIPS_BOOTSTRAP" in os.environ
         if bootstrap_file.exists():
             try:
-                data = json.loads(bootstrap_file.read_text(encoding="utf-8"))
-                if isinstance(data, dict) and data.get("active_root"):
-                    return True
-            except Exception:
-                pass
-        # In non-frozen source mode, default to repo root if database exists
+                payload = json.loads(bootstrap_file.read_text(encoding="utf-8"))
+                active_root = payload.get("active_root") if isinstance(payload, dict) else None
+                if not isinstance(active_root, str) or not active_root.strip():
+                    raise ValueError("active_root must be a non-empty string")
+                return {
+                    "configured": True,
+                    "invalid": False,
+                    "active_root": Path(active_root).expanduser().resolve(),
+                    "source": "bootstrap",
+                    "payload": payload,
+                }
+            except (OSError, UnicodeError, ValueError, TypeError, json.JSONDecodeError) as exc:
+                return {
+                    "configured": True,
+                    "invalid": True,
+                    "active_root": None,
+                    "source": "bootstrap",
+                    "error": str(exc),
+                }
+
+        if explicit_bootstrap:
+            return {"configured": False, "invalid": False, "active_root": None, "source": "bootstrap"}
+
         if not getattr(sys, "frozen", False):
             repo = _repo_root()
             if (repo / "Database" / "Main" / "family.db").exists():
-                return True
-        return False
+                return {"configured": True, "invalid": False, "active_root": repo, "source": "source_fallback"}
+
+        return {"configured": False, "invalid": False, "active_root": None, "source": "bootstrap"}
+
+    @classmethod
+    def has_configured_root(cls) -> bool:
+        """Check whether an explicit active data root has been configured."""
+        return bool(cls.bootstrap_status()["configured"])
 
     @classmethod
     def get_bootstrap_root(cls) -> Path:
         """Resolve current active root path from override, env, bootstrap file, or repo root."""
-        if cls._override_root is not None:
-            return cls._override_root
-
-        # 1. Environment variable
-        env_val = os.environ.get("PEOPLE_RELATIONSHIPS_ROOT")
-        if env_val:
-            return Path(env_val).resolve()
-
-        # 2. Bootstrap config pointer
-        bootstrap_file = _user_bootstrap_config_path()
-        if bootstrap_file.exists():
-            try:
-                data = json.loads(bootstrap_file.read_text(encoding="utf-8"))
-                if isinstance(data, dict) and data.get("active_root"):
-                    return Path(data["active_root"]).resolve()
-            except Exception:
-                pass
-
-        # 3. Source-development fallback (only when running in non-frozen source repo mode)
-        if not getattr(sys, "frozen", False):
-            repo = _repo_root()
-            if (repo / "Database" / "Main" / "family.db").exists():
-                return repo
-
-        # 4. Packaged or unconfigured fallback: return path that does not exist
+        status = cls.bootstrap_status()
+        if status["invalid"]:
+            raise DataRootBootstrapInvalidError(detail={"path": str(_user_bootstrap_config_path())})
+        if status["active_root"] is not None:
+            return status["active_root"]
         bootstrap_file = _user_bootstrap_config_path()
         return bootstrap_file.parent / "unconfigured_data_root"
 
     @classmethod
     def set_active_root_pointer(cls, new_root: Path) -> None:
-        """Update bootstrap config to point to new active root."""
+        """Atomically update the bootstrap pointer; the old bytes survive any failure."""
         resolved = new_root.resolve()
-        if cls._override_root is not None:
-            cls._override_root = resolved
         bootstrap_file = _user_bootstrap_config_path()
         payload = {
             "active_root": str(resolved),
             "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
-        bootstrap_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        metadata = cls.read_root_metadata(resolved)
+        if metadata.get("root_id"):
+            payload["root_id"] = metadata["root_id"]
+        bootstrap_file.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(prefix=".bootstrap-", suffix=".tmp", dir=str(bootstrap_file.parent))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_name, bootstrap_file)
+        except Exception:
+            try:
+                os.unlink(temp_name)
+            except OSError:
+                pass
+            raise
+        if cls._override_root is not None:
+            cls._override_root = resolved
+
+    @classmethod
+    def read_root_metadata(cls, root: Path) -> Dict[str, Any]:
+        metadata_path = cls.get_config_dir(root) / "data-root.json"
+        if not metadata_path.is_file():
+            return {}
+        try:
+            payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+            return payload if isinstance(payload, dict) else {}
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return {}
 
     @classmethod
     def resolve_active_root(cls) -> Path:
@@ -194,13 +230,10 @@ class DataRootManager:
         r = root.resolve() if root else cls.resolve_active_root()
         if not r.exists():
             return False
-        test_file = r / f".write_test_{uuid.uuid4().hex}.tmp"
-        try:
-            test_file.write_text("test", encoding="utf-8")
-            test_file.unlink()
-            return False
-        except (OSError, PermissionError):
+        if not os.access(r, os.W_OK):
             return True
+        database = cls.get_database_path(r)
+        return database.exists() and not os.access(database, os.W_OK)
 
     @classmethod
     def is_active_root_available(cls) -> bool:
@@ -256,6 +289,11 @@ class DataRootManager:
         p = path.resolve()
         if not p.exists():
             raise DataRootNotFoundError(f"Path '{p}' does not exist.")
+        if not p.is_dir() or p.is_symlink():
+            raise DataRootInvalidError(
+                f"Path '{p}' is not a safe Data Root directory.",
+                detail={"code": "UNSAFE_ROOT_PATH"},
+            )
 
         if cls.is_backup_snapshot(p):
             raise DataRootInvalidError(

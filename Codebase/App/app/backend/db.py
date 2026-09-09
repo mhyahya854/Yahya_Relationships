@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import config
+from .data_root.manager import DataRootManager
 
 DEFAULT_GROUPS = [
     ("family", "Family", "Family", "system"),
@@ -516,7 +517,7 @@ def metadata_to_json(connection: sqlite3.Connection) -> dict:
 
 
 def find_person_folder(
-    connection: sqlite3.Connection, person_id: str
+    connection: sqlite3.Connection, person_id: str, root: Path | None = None
 ) -> Path | None:
     """Resolve the canonical person folder without modifying the filesystem.
 
@@ -524,7 +525,7 @@ def find_person_folder(
     people_dir, excluding `_archived` and hidden directories.
     Returns None if no folder exists. Never creates directories or files.
     """
-    people_dir = config.PEOPLE_DIR
+    people_dir = DataRootManager.get_people_dir(root) if root else config.PEOPLE_DIR
     if not people_dir.exists():
         return None
 
@@ -563,10 +564,13 @@ def find_person_folder(
 
 
 def expected_person_folder(
-    connection: sqlite3.Connection, person_id: str, group_id: str | None = None
+    connection: sqlite3.Connection,
+    person_id: str,
+    group_id: str | None = None,
+    root: Path | None = None,
 ) -> Path:
     """Return the expected canonical folder path for a person without touching the filesystem."""
-    people_dir = config.PEOPLE_DIR
+    people_dir = DataRootManager.get_people_dir(root) if root else config.PEOPLE_DIR
     group_row = None
     if group_id is not None:
         group_row = connection.execute(
@@ -599,35 +603,43 @@ def expected_person_folder(
 
 
 def find_journal_path(
-    connection: sqlite3.Connection, person_id: str
+    connection: sqlite3.Connection, person_id: str, root: Path | None = None
 ) -> tuple[Path, bool]:
     """Return (canonical_journal_path, exists) without modifying the filesystem."""
-    folder = find_person_folder(connection, person_id)
+    folder = find_person_folder(connection, person_id, root=root)
     if folder is not None:
         journal = folder / "journal.md"
         return journal, journal.is_file()
-    expected = expected_person_folder(connection, person_id)
+    expected = expected_person_folder(connection, person_id, root=root)
     return expected / "journal.md", False
 
 
 def ensure_person_folder(
-    connection: sqlite3.Connection, person_id: str, group_id: str | None = None
+    connection: sqlite3.Connection,
+    person_id: str,
+    group_id: str | None = None,
+    root: Path | None = None,
 ) -> Path:
     """Return the canonical person folder, creating it on disk if absent.
 
     MUTATING operation - for explicit creation, repair, or write paths only.
     """
-    config.ensure_root_dirs()
-    existing = find_person_folder(connection, person_id)
+    if root:
+        DataRootManager.ensure_structure(root)
+    else:
+        config.ensure_root_dirs()
+    existing = find_person_folder(connection, person_id, root=root)
     if existing is not None:
         return existing
 
-    folder = expected_person_folder(connection, person_id, group_id=group_id)
+    folder = expected_person_folder(connection, person_id, group_id=group_id, root=root)
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
 
-def ensure_journal(connection: sqlite3.Connection, person_id: str) -> Path:
+def ensure_journal(
+    connection: sqlite3.Connection, person_id: str, root: Path | None = None
+) -> Path:
     """Return the canonical journal.md path, creating the folder and file if absent.
 
     MUTATING operation - for explicit creation, repair, or write paths only.
@@ -637,7 +649,7 @@ def ensure_journal(connection: sqlite3.Connection, person_id: str) -> Path:
     ).fetchone()
     if person is None:
         raise LookupError(f"Unknown person: {person_id}")
-    folder = ensure_person_folder(connection, person_id)
+    folder = ensure_person_folder(connection, person_id, root=root)
     journal = folder / "journal.md"
     if not journal.exists():
         name = person["name"] if person["name"] else person_id

@@ -51,11 +51,17 @@ from ..data_root.errors import DataRootError
 async def lifespan(_: FastAPI):
     from ..data_root.manager import DataRootManager
 
-    active_root = DataRootManager.resolve_active_root()
-    db_path = DataRootManager.get_database_path(active_root)
-    if active_root.exists() and db_path.exists():
-        config.ensure_root_dirs()
-        db.migrate()
+    authority = DataRootManager.bootstrap_status()
+    active_root = authority.get("active_root")
+    if not authority["invalid"] and active_root is not None:
+        db_path = DataRootManager.get_database_path(active_root)
+        if active_root.exists() and db_path.exists():
+            try:
+                db.migrate(db_path)
+            except Exception:
+                # Root readiness is reported by /api/data-root; it must not prevent
+                # the backend service from starting for recovery.
+                pass
     yield
 
 
@@ -100,17 +106,26 @@ app.include_router(backups_router.router)
 
 @app.get("/api/health")
 def health() -> dict:
-    from ..data_root.manager import DataRootManager
+    from ..services.data_root import get_data_root_status
 
-    active_root = DataRootManager.resolve_active_root()
-    db_path = DataRootManager.get_database_path(active_root)
-    if not active_root.exists() or not db_path.exists():
+    root_status = get_data_root_status()
+    if (
+        root_status["state"] not in {"HEALTHY", "READ_ONLY", "REPAIRABLE", "MAINTENANCE"}
+        or not root_status["active_root"]
+        or not root_status["health"].get("database")
+    ):
+        status_code = {
+            "UNCONFIGURED": "DATA_ROOT_UNCONFIGURED",
+            "MISSING": "DATA_ROOT_NOT_FOUND",
+            "INVALID": "DATA_ROOT_INVALID",
+        }.get(root_status["state"], "DATA_ROOT_INVALID")
         return {
             "ok": False,
-            "status": "DATA_ROOT_NOT_FOUND",
-            "error": f"Data root or database not found at '{active_root}'",
-            "data_root": str(active_root),
-            "database_path": str(db_path),
+            "service_ok": True,
+            "status": status_code,
+            "error": root_status["health"]["issues"][0]["message"] if root_status["health"]["issues"] else "Data Root is not ready.",
+            "data_root": root_status["active_root"],
+            "database_path": root_status["database_path"],
             "app": config.APP_NAME,
             "version": config.APP_VERSION,
         }
@@ -124,6 +139,7 @@ def health() -> dict:
         connection.close()
     return {
         "ok": True,
+        "service_ok": True,
         "app": config.APP_NAME,
         "version": config.APP_VERSION,
         "schema_version": info["schema_version"],

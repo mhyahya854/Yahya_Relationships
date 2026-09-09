@@ -40,12 +40,14 @@ journal prose; Hermes calls tiny deterministic tools.
 
 ## Data Safety & Portability (Pass 4 Upgrades)
 
-- **Canonical Data Root**: Centralized path resolution via `DataRootManager`. Resolves database (`Database/Main/family.db`), `Database/People/`, `Backups/`, `Database/Config/`, and `Database/Exports/` (legacy layouts — `data/family.db`, root `family.db`, `people/`, `backups/`, `config/`, `exports/` — are still recognized as fallbacks).
+- **Canonical Data Root**: Centralized path resolution via `DataRootManager`, with explicit `UNCONFIGURED`, `HEALTHY`, `READ_ONLY`, `MISSING`, `INVALID`, `REPAIRABLE`, and `MAINTENANCE` states. Status and candidate inspection are read-only; an explicit bootstrap override never falls back to source data.
 - **Filesystem-Aware Undo**: Single-step Undo tracks structured DB changes AND filesystem actions (folder creations/moves). Protects externally modified journals via structured `UNDO_FILESYSTEM_CONFLICT` error.
 - **Guided Backup Restore**: Full human-facing restore flow with strict manifest/path/hash/size/count/schema verification, mandatory verified `Safety/Pre-Restore` snapshots, reversible staged DB/People/Config switching, exact rollback, and post-restore health checks.
 - **Data Root Health Audit**: Deterministic, non-destructive audit (`audit_data_root()`) checking SQLite integrity and filesystem alignment (detects missing folders, missing journals, orphan folders, and archived-active mismatches). Includes `safe_repair_data_root()` for safe repairs.
-- **Data Root Relocation & Switching**: Supports moving the active data root across drives with copy-verify-switch staging, or switching to an existing valid data root.
-- **Disconnected Media Recovery**: If active data root is missing or disconnected on launch, shows a recovery screen offering retry, alternate root selection, or backup restore. Empty databases are never created silently.
+- **Atomic Data Root Onboarding**: Create New stages a schema-2 root with a user-provided owner, validates it, publishes it, and atomically commits the OS-local pointer last. Existing nonempty locations are never reused or overwritten.
+- **Data Root Relocation & Switching**: Existing roots are inspected and confirmed before atomic switching. Move creates a verified safety backup and copies only runtime `Database/` and `Backups/` payload with exact inventory verification; source `Codebase/` and `Documentation/` trees are excluded and the old root is retained.
+- **First-Run Restore**: A verified backup source is restored into a separately selected empty destination through staging, then activated pointer-last; the backup source remains unchanged.
+- **Disconnected / Invalid Location Recovery**: Reachable backend plus missing, malformed, or invalid root opens the appropriate recovery flow, while actual backend failure alone opens service-failure UX. Empty databases are never created silently.
 
 ## Architecture
 
