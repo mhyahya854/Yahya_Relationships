@@ -18,22 +18,22 @@ router = APIRouter(prefix="/api/backups", tags=["backups"])
 
 
 class CreateBackupRequest(BaseModel):
-    label: str = Field(default="manual", description="Optional descriptive label for backup")
+    label: str | None = Field(default=None, description="Optional descriptive label for backup")
 
 
 class RestoreBackupRequest(BaseModel):
-    confirmation_token: str = Field(default="RESTORE", description="Must be 'RESTORE' to confirm")
+    confirmation_token: str = Field(default="", description="Must be 'RESTORE' to confirm")
 
 
 @router.get("")
 def get_backups():
-    return {"backups": list_backups()}
+    return {"ok": True, "backups": list_backups()}
 
 
 @router.post("")
 def create(req: CreateBackupRequest | None = None):
     try:
-        label = req.label if req else "manual"
+        label = req.label if req and req.label else "Snapshot"
         res = execute_create_backup(label=label)
         backup_obj = {
             "id": res["id"],
@@ -50,7 +50,7 @@ def create(req: CreateBackupRequest | None = None):
 @router.get("/{backup_id}")
 def details(backup_id: str):
     try:
-        return get_backup_details(backup_id)
+        return {"ok": True, "backup": get_backup_details(backup_id)}
     except DataRootError as exc:
         raise HTTPException(status_code=404, detail=exc.to_dict()) from exc
 
@@ -67,7 +67,7 @@ def verify(backup_id: str):
 @router.post("/{backup_id}/restore")
 def restore(backup_id: str, req: RestoreBackupRequest | None = None):
     try:
-        token = req.confirmation_token if req else "RESTORE"
+        token = req.confirmation_token if req else ""
         return execute_restore_backup(backup_id, confirmation_token=token)
     except DataRootError as exc:
         raise HTTPException(status_code=400, detail=exc.to_dict()) from exc

@@ -5,17 +5,7 @@ export function BackupDetailsDialog({
   backup,
   onClose,
 }: {
-  backup: BackupInfo & {
-    timestamp?: string;
-    app_version?: string;
-    schema_version?: number;
-    file_count?: number;
-    total_size_bytes?: number;
-    person_count?: number;
-    journal_count?: number;
-    verified?: boolean;
-    integrity_status?: string;
-  };
+  backup: BackupInfo;
   onClose: () => void;
 }) {
   return (
@@ -25,15 +15,15 @@ export function BackupDetailsDialog({
           style={{
             padding: "10px 14px",
             borderRadius: "8px",
-            background: backup.verified !== false ? "var(--ok-soft, #eef9f5)" : "var(--warn-soft, #fff8ec)",
-            border: `1px solid ${backup.verified !== false ? "#b7eb8f" : "#ffe58f"}`,
+            background: backup.verified ? "var(--ok-soft, #eef9f5)" : "var(--warn-soft, #fff8ec)",
+            border: `1px solid ${backup.verified ? "#b7eb8f" : "#ffe58f"}`,
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
           }}
         >
           <div>
-            <strong>Verification Status: {backup.verified !== false ? "VERIFIED ✓" : "CORRUPTED ⚠"}</strong>
+            <strong>Verification Status: {backup.verified ? "VERIFIED ✓" : "NOT RESTORABLE ⚠"}</strong>
             <div className="muted small">{backup.path}</div>
           </div>
           <span className="chip">{backup.integrity_status || "ok"}</span>
@@ -43,9 +33,12 @@ export function BackupDetailsDialog({
           <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
             <h4 style={{ margin: "0 0 8px 0" }}>Metadata</h4>
             <div className="small muted">Backup ID: <code>{backup.name}</code></div>
+            <div className="small muted">Category: <strong>{backup.category}{backup.safety_reason ? ` / ${backup.safety_reason.replace(/_/g, " ")}` : ""}</strong></div>
             <div className="small muted">Created: <strong>{backup.created || backup.timestamp || "Unknown"}</strong></div>
-            <div className="small muted">App Version: <strong>{backup.app_version || "1.0.0"}</strong></div>
-            <div className="small muted">Schema Version: <strong>{backup.schema_version ?? 1}</strong></div>
+            <div className="small muted">App Version: <strong>{backup.app_version || "Legacy / unknown"}</strong></div>
+            <div className="small muted">Backup Format: <strong>{backup.backup_format_version ?? "Legacy / unknown"}</strong></div>
+            <div className="small muted">Schema Version: <strong>{backup.schema_version ?? "Unknown"}</strong></div>
+            <div className="small muted">Compatibility: <strong>{backup.compatibility.status}</strong></div>
           </div>
 
           <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>

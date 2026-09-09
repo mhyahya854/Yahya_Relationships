@@ -9,11 +9,7 @@ export function RestoreBackupDialog({
   onClose,
   onSuccess,
 }: {
-  backup: BackupInfo & {
-    timestamp?: string;
-    person_count?: number;
-    journal_count?: number;
-  };
+  backup: BackupInfo;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -23,32 +19,16 @@ export function RestoreBackupDialog({
   const [error, setError] = useState<unknown>(null);
 
   async function handleRestore() {
-    if (tokenInput.trim() !== "RESTORE") return;
+    if (tokenInput !== "RESTORE" || !backup.verified || !backup.compatibility.ok) return;
     setBusy(true);
     setError(null);
     setStage("verifying");
-
     try {
-      // Step 1: Precheck / verify
-      await api.backups.verify(backup.name);
-
-      // Step 2: Progress through restore stages
-      setStage("safety_backup");
-      await new Promise((r) => setTimeout(r, 400));
-      setStage("staging");
-      await new Promise((r) => setTimeout(r, 400));
-      setStage("validating");
-
-      // Execute atomic restore
-      const res = await api.backups.restore(backup.name, "RESTORE");
-
-      setStage("switching");
-      await new Promise((r) => setTimeout(r, 400));
+      const verification = await api.backups.verify(backup.id);
+      if (!verification.ok) throw new Error("Backup verification failed. Restore was not started.");
+      setStage("restoring");
+      await api.backups.restore(backup.id, "RESTORE");
       setStage("complete");
-
-      setTimeout(() => {
-        onSuccess();
-      }, 1000);
     } catch (err) {
       setError(err);
       setStage(null);
@@ -57,76 +37,55 @@ export function RestoreBackupDialog({
     }
   }
 
+  if (stage === "complete") {
+    return (
+      <section
+        className="card"
+        aria-label={`Restore Backup: ${backup.label || backup.name}`}
+        style={{ marginTop: 16 }}
+      >
+        <RestoreProgress currentStage="complete" />
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+          <Button kind="primary" onClick={onSuccess}>Reload Restored Data</Button>
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <Modal title={`Restore Backup: ${backup.label || backup.name}`} onClose={onClose}>
-      <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-        <div
-          style={{
-            background: "#fffbe6",
-            border: "1px solid #ffe58f",
-            borderRadius: "8px",
-            padding: "12px",
-            fontSize: "13px",
-            color: "#8c6b00",
-          }}
-        >
-          <strong>⚠ Important Data Safety Guarantee</strong>
-          <p style={{ margin: "4px 0 0 0" }}>
-            Restoring this backup will replace your current SQLite database and journals with the state from{" "}
-            <strong>{backup.created || backup.timestamp || backup.name}</strong>.
-          </p>
-          <p style={{ margin: "4px 0 0 0" }}>
-            A safety snapshot of your current state will automatically be created first (e.g. <code>pre-restore-...</code>).
-          </p>
+    <Modal title={`Restore Backup: ${backup.label || backup.name}`} onClose={() => !busy && onClose()}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ background: "#fffbe6", border: "1px solid #ffe58f", borderRadius: 8, padding: 12, fontSize: 13, color: "#8c6b00" }}>
+          <strong>Current data will be replaced</strong>
+          <p style={{ margin: "4px 0 0" }}>The current database, People folders, Journals, and portable Config will be replaced with this verified backup state.</p>
+          <p style={{ margin: "4px 0 0" }}>A verified Safety / Pre-Restore snapshot of the current state must complete before any active data changes.</p>
         </div>
 
-        <div style={{ background: "#f8fafc", padding: "10px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "12.5px" }}>
-          <div>Backup Label: <strong>{backup.label || "Snapshot"}</strong></div>
-          <div>Backup Timestamp: <strong>{backup.created || backup.timestamp || "N/A"}</strong></div>
-          {backup.person_count != null && <div>People Included: <strong>{backup.person_count}</strong></div>}
-          {backup.journal_count != null && <div>Journals Included: <strong>{backup.journal_count}</strong></div>}
+        <div style={{ background: "#f8fafc", padding: "10px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12.5 }}>
+          <div>Label: <strong>{backup.label || "Snapshot"}</strong></div>
+          <div>Created: <strong>{backup.created || "Unknown"}</strong></div>
+          <div>Category: <strong>{backup.category}{backup.safety_reason ? ` / ${backup.safety_reason.replace(/_/g, " ")}` : ""}</strong></div>
+          <div>People / Journals: <strong>{backup.person_count ?? 0} / {backup.journal_count ?? 0}</strong></div>
+          <div>Size / Schema: <strong>{backup.total_size_bytes ?? 0} bytes / {backup.schema_version ?? "unknown"}</strong></div>
+          <div>Verification / Compatibility: <strong>{backup.integrity_status} / {backup.compatibility.status}</strong></div>
         </div>
 
-        {stage ? (
-          <RestoreProgress currentStage={stage} />
-        ) : (
+        {stage ? <RestoreProgress currentStage={stage} /> : (
           <div>
-            <label className="small muted" style={{ display: "block", marginBottom: "6px" }}>
-              To confirm restore, type <strong>RESTORE</strong> below:
+            <label className="small muted" htmlFor="restore-confirmation" style={{ display: "block", marginBottom: 6 }}>
+              Type <strong>RESTORE</strong> exactly to continue:
             </label>
-            <input
-              type="text"
-              placeholder="Type RESTORE to confirm"
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              disabled={busy}
-              style={{
-                width: "100%",
-                padding: "8px 10px",
-                borderRadius: "6px",
-                border: "1px solid #ccc",
-                fontSize: "13px",
-              }}
-            />
+            <input id="restore-confirmation" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} disabled={busy} autoComplete="off" placeholder="RESTORE" />
           </div>
         )}
 
         <ErrorNote error={error} />
-
-        {!stage && (
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "8px" }}>
-            <Button kind="ghost" onClick={onClose} disabled={busy}>
-              Cancel
-            </Button>
-            <Button
-              kind="danger"
-              disabled={busy || tokenInput.trim() !== "RESTORE"}
-              onClick={() => void handleRestore()}
-            >
-              Confirm Restore
-            </Button>
-          </div>
-        )}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <Button kind="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button kind="danger" disabled={busy || tokenInput !== "RESTORE" || !backup.verified || !backup.compatibility.ok} onClick={() => void handleRestore()}>
+            {busy ? "Restoring…" : "Confirm Restore"}
+          </Button>
+        </div>
       </div>
     </Modal>
   );

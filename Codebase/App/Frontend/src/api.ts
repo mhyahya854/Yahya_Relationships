@@ -1,6 +1,7 @@
 import type {
   AppState,
   BackupInfo,
+  BackupVerification,
   CompareResult,
   DuplicateCandidate,
   GeneralRelationshipFact,
@@ -393,17 +394,11 @@ export const api = {
         body: JSON.stringify({ label: label ?? null }),
       }),
     details: (name: string) =>
-      request<Record<string, unknown>>(`/api/backups/${encodeURIComponent(name)}`),
+      request<{ ok: boolean; backup: BackupInfo & { verification: BackupVerification; replaces: string[] } }>(
+        `/api/backups/${encodeURIComponent(name)}`,
+      ),
     verify: (name: string) =>
-      request<{
-        ok: boolean;
-        name: string;
-        ok_backup: boolean;
-        problems: string[];
-        files_checked: number;
-        status?: string;
-        issues?: string[];
-      }>(`/api/backups/${encodeURIComponent(name)}/verify`, { method: "POST" }),
+      request<BackupVerification>(`/api/backups/${encodeURIComponent(name)}/verify`, { method: "POST" }),
     restore: (name: string, confirmationToken: string = "RESTORE") =>
       request<{
         ok: boolean;

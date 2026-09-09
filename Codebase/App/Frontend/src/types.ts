@@ -123,12 +123,46 @@ export interface SearchResponse {
 }
 
 export interface BackupInfo {
+  id: string;
   name: string;
   path: string;
   has_manifest: boolean;
+  category: "manual" | "automatic" | "safety" | "legacy";
+  safety_reason?: string | null;
+  timestamp?: string;
   created?: string;
   label?: string | null;
   files?: number;
+  file_count?: number;
+  total_size_bytes?: number;
+  person_count?: number;
+  journal_count?: number;
+  app_version?: string | null;
+  backup_format_version?: number | null;
+  schema_version?: number | null;
+  verified: boolean;
+  integrity_status: string;
+  compatibility: {
+    ok: boolean;
+    status: string;
+    backup_schema?: number | null;
+    current_schema?: number;
+  };
+}
+
+export interface BackupIssue {
+  code: string;
+  message: string;
+  path?: string;
+}
+
+export interface BackupVerification {
+  ok: boolean;
+  status: string;
+  issues: BackupIssue[];
+  db_integrity: string;
+  files_checked?: number;
+  compatibility: BackupInfo["compatibility"];
 }
 
 export interface HermesToolDef {

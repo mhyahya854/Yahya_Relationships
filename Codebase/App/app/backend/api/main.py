@@ -33,7 +33,6 @@ from ..domain.relationships import (  # noqa: E402
     path_service,
 )
 from ..services import (  # noqa: E402
-    backups,
     errors,
     family,
     general,
@@ -838,31 +837,6 @@ def api_search(
         "ok": True,
         **search.search(q, limit=limit, perspective_id=perspective_id),
     }
-
-
-# ---------------------------------------------------------------------------
-# Backups
-# ---------------------------------------------------------------------------
-
-
-class BackupCreate(BaseModel):
-    label: str | None = None
-
-
-@app.post("/api/backups")
-def api_create_backup(payload: BackupCreate | None = None) -> dict:
-    label = payload.label if payload else None
-    return {"ok": True, "backup": backups.create_backup(label=label)}
-
-
-@app.get("/api/backups")
-def api_list_backups() -> dict:
-    return {"ok": True, "backups": backups.list_backups()}
-
-
-@app.get("/api/backups/{name}/verify")
-def api_verify_backup(name: str) -> dict:
-    return {"ok": True, **backups.verify_backup(name)}
 
 
 # ---------------------------------------------------------------------------

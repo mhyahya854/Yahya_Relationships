@@ -18,7 +18,7 @@ from ..data_root.errors import (
     DataRootNotFoundError,
     DataRootReadOnlyError,
 )
-from ..domain.backups import create_backup, restore_backup, verify_backup
+from ..domain.backups import BackupCategory, SafetyReason, create_backup, restore_backup, verify_backup
 from ..domain.maintenance import MaintenanceLockContext, is_maintenance_locked
 
 
@@ -68,7 +68,13 @@ def move_data_root(destination_path: str) -> Dict[str, Any]:
 
     with MaintenanceLockContext(f"MOVE_DATA_ROOT:{dest.name}"):
         # 1. Create Pre-Move Safety Backup
-        safety_backup = create_backup(label=f"pre-move-{dest.name}", root=active_root)
+        safety_backup = create_backup(
+            label=f"Before moving to {dest.name}",
+            category=BackupCategory.SAFETY,
+            safety_reason=SafetyReason.PRE_ORGANIZATION,
+            root=active_root,
+            _maintenance_held=True,
+        )
 
         # 2. Stage Copy to Destination
         dest.mkdir(parents=True, exist_ok=True)
@@ -199,7 +205,14 @@ def restore_backup_to_data_root(
     dest.mkdir(parents=True, exist_ok=True)
     DataRootManager.ensure_structure(dest, create=True)
 
-    result = restore_backup(str(b_path), confirmation_token="RESTORE", root=dest)
+    had_active_database = DataRootManager.get_database_path(dest).is_file()
+    result = restore_backup(
+        b_path,
+        confirmation_token="RESTORE",
+        root=dest,
+        _allow_path=True,
+        _require_safety_backup=had_active_database,
+    )
     DataRootManager.set_active_root_pointer(dest)
     health = audit_data_root(dest)
 

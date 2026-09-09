@@ -42,7 +42,7 @@ journal prose; Hermes calls tiny deterministic tools.
 
 - **Canonical Data Root**: Centralized path resolution via `DataRootManager`. Resolves database (`Database/Main/family.db`), `Database/People/`, `Backups/`, `Database/Config/`, and `Database/Exports/` (legacy layouts — `data/family.db`, root `family.db`, `people/`, `backups/`, `config/`, `exports/` — are still recognized as fallbacks).
 - **Filesystem-Aware Undo**: Single-step Undo tracks structured DB changes AND filesystem actions (folder creations/moves). Protects externally modified journals via structured `UNDO_FILESYSTEM_CONFLICT` error.
-- **Guided Backup Restore**: Full human-facing restore flow with pre-restore SHA-256 and SQLite integrity verification, mandatory automated pre-restore safety backups (`pre-restore-<timestamp>`), staged atomic execution, and automatic rollback on failure.
+- **Guided Backup Restore**: Full human-facing restore flow with strict manifest/path/hash/size/count/schema verification, mandatory verified `Safety/Pre-Restore` snapshots, reversible staged DB/People/Config switching, exact rollback, and post-restore health checks.
 - **Data Root Health Audit**: Deterministic, non-destructive audit (`audit_data_root()`) checking SQLite integrity and filesystem alignment (detects missing folders, missing journals, orphan folders, and archived-active mismatches). Includes `safe_repair_data_root()` for safe repairs.
 - **Data Root Relocation & Switching**: Supports moving the active data root across drives with copy-verify-switch staging, or switching to an existing valid data root.
 - **Disconnected Media Recovery**: If active data root is missing or disconnected on launch, shows a recovery screen offering retry, alternate root selection, or backup restore. Empty databases are never created silently.
@@ -84,7 +84,7 @@ Family Relationships/
     Config/state.json    UI perspective state
     Sources/             provenance source batches
     Exports/Family/      family.html / family.md (still generated)
-  Backups/<Category>/<timestamp>/  full snapshots + manifest.json
+  Backups/<Category>/<backup-id>/  full snapshots + manifest.json
   Documentation/         architecture, API, database, testing docs + archive
 ```
 
@@ -226,17 +226,21 @@ No tool exposes SQL, internal paths, or the repository structure.
 ## Backups
 
 `Create Backup` in the Backups screen (or the `create_backup` Hermes tool)
-snapshots the whole state into `Backups/` (categorized under `Manual/`,
-`Automatic/` or `Safety/…`; each snapshot folder is named
-`backup-<UTC-timestamp>-<label>`):
+snapshots the restore-critical state into `Backups/` (categorized under `Manual/`,
+`Automatic/` or `Safety/…`; valid older top-level snapshots remain available as
+Legacy). Automatic is a supported category, but scheduling is not configured in
+V1. Each new folder has a collision-safe timestamp/UUID/label ID:
 
-- `data/family.db` (SQLite copy)
+- `data/family.db` (WAL-safe SQLite online snapshot)
 - `people/` (every journal folder, UTF-8)
 - `config/`
 - `manifest.json` — app/schema version, file list with sizes and SHA-256
 
-Snapshots can be verified against the manifest and restored by copying files
-back (the database file is a plain SQLite file; journals are plain Markdown).
+Snapshots are fully verified before publication and before restore. Restore first
+creates a verified `Safety/Pre-Restore` snapshot, then reversibly switches the
+database, People/Journals, and portable Config and rolls all three back on any
+failure. These local snapshots contain readable private family data and are never
+uploaded or included in release artifacts.
 
 ## Development
 

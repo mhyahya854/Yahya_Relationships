@@ -227,6 +227,8 @@ class DataRootManager:
         (r / "Backups" / "Automatic").mkdir(parents=True, exist_ok=True)
         (r / "Backups" / "Safety" / "Pre-Upgrade").mkdir(parents=True, exist_ok=True)
         (r / "Backups" / "Safety" / "Pre-Organization").mkdir(parents=True, exist_ok=True)
+        (r / "Backups" / "Safety" / "Pre-Restore").mkdir(parents=True, exist_ok=True)
+        (r / "Backups" / "Safety" / "Pre-Repair").mkdir(parents=True, exist_ok=True)
 
         meta_file = cls.get_config_dir(r) / "data-root.json"
         meta_file.parent.mkdir(parents=True, exist_ok=True)

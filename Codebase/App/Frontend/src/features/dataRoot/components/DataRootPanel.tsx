@@ -30,7 +30,7 @@ export function DataRootPanel({ onDataChanged }: { onDataChanged?: () => void })
     if (!status) return;
     const msg = await openFolder(status.active_root);
     if (msg && !msg.startsWith("Opened")) {
-      window.alert(msg);
+      setError(new Error(msg));
     }
   }
 
