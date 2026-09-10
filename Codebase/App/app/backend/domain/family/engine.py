@@ -2129,10 +2129,10 @@ def build_mermaid(data):
         "  %% Current master layout: maternal left, bridge center, paternal right.",
         "  %% Couple clusters are colored visual units only. Junctions (j_*) are",
         "  %% layout-only helpers: not people and never written back to family.db.",
-        "  classDef person fill:#ffffff,stroke:#6b7280,color:#111111;",
-        "  classDef matperson fill:#FFE9EF,stroke:#DBA3B4,color:#111111;",
-        "  classDef patperson fill:#E1EEFF,stroke:#97B6DE,color:#111111;",
-        "  classDef focus stroke:#c62828,stroke-width:3px,color:#111111;",
+        "  classDef person fill:#fffefa,stroke:#7b817c,color:#202823;",
+        "  classDef matperson fill:#f8e9ed,stroke:#c99ead,color:#202823;",
+        "  classDef patperson fill:#e9f0f2,stroke:#96afb5,color:#202823;",
+        "  classDef focus stroke:#35695e,stroke-width:3px,color:#202823;",
         "  classDef junc fill:none,stroke:none,color:none;",
         "  classDef route fill:none,stroke:none,color:none;",
     ]
@@ -2586,7 +2586,7 @@ _VIEWER_CSS = """
   .compare-row button:hover { background: #eef4ff; }
   #compare-out { margin-top: 8px; }
   #compare-out h4 { margin: 10px 0 4px 0; font-size: 14px; }
-  .viewer-ring { fill: none; stroke: #d84315; stroke-width: 5; pointer-events: none; }
+  .viewer-ring { fill: none; stroke: #35695e; stroke-width: 5; pointer-events: none; }
   g.node { cursor: pointer; }
 """
 

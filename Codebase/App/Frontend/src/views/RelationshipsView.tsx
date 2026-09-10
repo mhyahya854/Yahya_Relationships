@@ -72,15 +72,15 @@ function buildFlowEdges(
       target: dto.target,
       type: "default",
       style: {
-        stroke: focusPath && !isPath ? "#c3c9d4" : visual.stroke,
+        stroke: focusPath && !isPath ? "#c8ccc6" : visual.stroke,
         strokeWidth: isPath ? 3 : visual.strokeWidth,
         strokeDasharray: visual.strokeDasharray,
         opacity: focusPath && !isPath ? 0.28 : 1,
       },
       className: focusPath && isPath ? "rf-edge-path" : undefined,
       label: focusPath && isPath ? pathRoleMap.get(pair) : undefined,
-      labelStyle: { fontSize: 11, fill: "#40536f", fontWeight: 600 },
-      labelBgStyle: { fill: "#ffffff", fillOpacity: 0.92 },
+      labelStyle: { fontSize: 11, fill: "#405149", fontWeight: 600 },
+      labelBgStyle: { fill: "#fffefa", fillOpacity: 0.94 },
       labelBgPadding: [6, 3] as [number, number],
     };
   });
@@ -512,8 +512,8 @@ function RelationshipsContent({
               zoomable
               nodeColor={(node) => {
                 const data = node.data as { isPerspective?: boolean };
-                if (node.className?.includes("rf-dim")) return "#d6dae2";
-                return data?.isPerspective ? "#31547f" : "#aebdd0";
+                if (node.className?.includes("rf-dim")) return "#d6d8d2";
+                return data?.isPerspective ? "#35695e" : "#aebbb4";
               }}
             />
           </ReactFlow>

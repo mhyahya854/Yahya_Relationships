@@ -212,12 +212,12 @@ fn check_backend_http_health(port: u16) -> Result<(), String> {
         .write_all(request.as_bytes())
         .map_err(|e| format!("Failed to send HTTP request: {e}"))?;
 
-    let mut buffer = [0u8; 4096];
-    let n = stream
-        .read(&mut buffer)
+    let mut response = Vec::with_capacity(4096);
+    stream
+        .read_to_end(&mut response)
         .map_err(|e| format!("Failed to read HTTP response: {e}"))?;
 
-    let response_str = String::from_utf8_lossy(&buffer[..n]);
+    let response_str = String::from_utf8_lossy(&response);
     let first_line = response_str.lines().next().unwrap_or("");
 
     if !first_line.contains("200") {

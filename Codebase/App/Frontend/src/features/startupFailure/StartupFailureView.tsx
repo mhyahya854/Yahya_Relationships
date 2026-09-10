@@ -50,9 +50,9 @@ export function StartupFailureView({
 
   return (
     <div className="root-unavailable-overlay">
-      <div className="root-unavailable-modal" style={{ maxWidth: 540 }}>
+      <div className="root-unavailable-modal">
         <div className="modal-header">
-          <div className="warning-icon" style={{ background: "#fee2e2", color: "#dc2626" }}>
+          <div className="warning-icon warning-icon-danger">
             ⚠
           </div>
           <div>
@@ -63,14 +63,14 @@ export function StartupFailureView({
           </div>
         </div>
 
-        <div className="modal-body" style={{ marginTop: 16 }}>
-          <p style={{ color: "var(--color-muted, #64748b)", lineHeight: 1.6, fontSize: 14 }}>
+        <div className="modal-body startup-failure-body">
+          <p className="startup-failure-copy">
             The background application service on loopback address <code>127.0.0.1</code> did not
             respond to health checks within the startup window. Your relationship data and journals
             are safe on disk.
           </p>
 
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 20 }}>
+          <div className="startup-failure-actions">
             <Button
               kind="primary"
               disabled={retrying}
@@ -99,20 +99,7 @@ export function StartupFailureView({
           </div>
 
           {showDetails && (
-            <div
-              style={{
-                marginTop: 16,
-                padding: 12,
-                borderRadius: 6,
-                background: "var(--color-bg-subtle, #f1f5f9)",
-                border: "1px solid var(--color-border, #cbd5e1)",
-                fontSize: 12,
-                fontFamily: "monospace",
-                color: "#334155",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-all",
-              }}
-            >
+            <div className="technical-details">
               <div><strong>Port:</strong> {port ?? "default (8765)"}</div>
               <div><strong>Endpoint:</strong> http://127.0.0.1:{port ?? 8765}/api/health</div>
               <div><strong>Diagnostics:</strong> {errorMessage || "Connection timed out during startup readiness check."}</div>

@@ -109,10 +109,10 @@ export function BackupsView() {
       {SECTIONS.map((section) => {
         const items = backups.filter((backup) => backup.category === section.id);
         return (
-          <section key={section.id} aria-label={`${section.title} backups`} style={{ marginTop: 20 }}>
-            <div className="backups-header" style={{ marginBottom: 8 }}>
+          <section className="backup-section" key={section.id} aria-label={`${section.title} backups`}>
+            <div className="backups-header">
               <div>
-                <h3 style={{ margin: 0, fontSize: 16 }}>{section.title}</h3>
+                <h3>{section.title}</h3>
                 <div className="muted tiny">{section.note}</div>
               </div>
               <span className="chip">{items.length}</span>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { Avatar, Button } from "./components/ui";
 import { PerspectiveProvider, usePerspective } from "./state";
@@ -20,14 +20,26 @@ type ReturnContext = {
   label: string;
 };
 
-const NAV: Array<{ id: Screen; label: string; icon: string }> = [
-  { id: "people", label: "People", icon: "◉" },
-  { id: "relationships", label: "Relationships", icon: "⌁" },
-  { id: "family", label: "Family", icon: "❖" },
-  { id: "search", label: "Search", icon: "⌕" },
-  { id: "hermes", label: "Hermes", icon: "◇" },
-  { id: "backups", label: "Backups", icon: "▤" },
+const NAV: Array<{ id: Screen; label: string }> = [
+  { id: "people", label: "People" },
+  { id: "relationships", label: "Relationships" },
+  { id: "family", label: "Family" },
+  { id: "search", label: "Search" },
+  { id: "hermes", label: "Hermes" },
+  { id: "backups", label: "Backups" },
 ];
+
+function NavIcon({ screen }: { screen: Screen }) {
+  const paths: Record<Screen, ReactNode> = {
+    people: <><circle cx="8" cy="7" r="3" /><path d="M2.8 17c.5-3 2.2-4.5 5.2-4.5s4.7 1.5 5.2 4.5" /><circle cx="16" cy="8" r="2.3" /><path d="M14 13c2.7-.5 4.4.8 5 3" /></>,
+    relationships: <><circle cx="5" cy="12" r="2.5" /><circle cx="17" cy="6" r="2.5" /><circle cx="17" cy="18" r="2.5" /><path d="M7.3 10.8 14.6 7M7.3 13.2l7.3 3.8" /></>,
+    family: <><circle cx="12" cy="5" r="2.5" /><circle cx="5" cy="18" r="2.5" /><circle cx="19" cy="18" r="2.5" /><path d="M12 7.5v4M5 15.5v-4h14v4" /></>,
+    search: <><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 4 4" /></>,
+    hermes: <><path d="M12 3.2 20 8l-8 4.8L4 8 12 3.2Z" /><path d="m4 12 8 4.8 8-4.8M4 16l8 4.8 8-4.8" /></>,
+    backups: <><path d="M4 7h16v13H4zM6 4h12v3" /><path d="M8 11h8M8 15h5" /></>,
+  };
+  return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true">{paths[screen]}</svg>;
+}
 
 function PerspectiveSelector() {
   const { perspectiveId, perspectivePerson, defaultId, setPerspective, returnToDefault } =
@@ -199,7 +211,14 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">PR</div>
+          <div className="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32">
+              <circle cx="9" cy="10" r="4" />
+              <circle cx="23" cy="10" r="4" />
+              <circle cx="16" cy="23" r="4" />
+              <path d="M12.5 12.4 14.8 19M19.5 12.4 17.2 19M13 10h6" />
+            </svg>
+          </div>
           <div>
             <div className="brand-title">People</div>
             <div className="brand-sub">Relationships</div>
@@ -214,7 +233,7 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
               aria-current={screen === item.id ? "page" : undefined}
               onClick={() => handlePrimaryNavigate(item.id)}
             >
-              <span className="nav-icon">{item.icon}</span>
+              <NavIcon screen={item.id} />
               <span>{item.label}</span>
             </button>
           ))}
@@ -223,22 +242,22 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
           <div className="muted small">
             Owner: {perspectivePerson?.name ?? "…"}
           </div>
-          <div className="muted tiny">Local-first · SQLite · Markdown</div>
+          <div className="muted tiny">Private · Local-first</div>
         </div>
       </aside>
       <main className="main">
         {rootStatus.state === "READ_ONLY" && (
-          <div role="status" className="info-note" style={{ margin: "12px 18px 0" }}>
+          <div role="status" className="status-banner info-note">
             <strong>Read-only Data Root.</strong> Viewing and searching are available, but changes cannot be saved until this folder is writable or another Data Root is selected.
           </div>
         )}
         {rootStatus.state === "REPAIRABLE" && (
-          <div role="status" className="info-note" style={{ margin: "12px 18px 0" }}>
+          <div role="status" className="status-banner info-note">
             <strong>Data Root has repairable alignment issues.</strong> Reads remain available; review Data Root health before editing.
           </div>
         )}
         {rootStatus.state === "MAINTENANCE" && (
-          <div role="status" className="info-note" style={{ margin: "12px 18px 0" }}>
+          <div role="status" className="status-banner info-note">
             <strong>Data maintenance is in progress.</strong> {rootStatus.maintenance_operation ?? "Root-changing actions are temporarily disabled."}
           </div>
         )}
@@ -369,7 +388,7 @@ export function App() {
   }
 
   if (checking || !rootStatus) {
-    return <main style={{ minHeight: "100vh", display: "grid", placeItems: "center" }} role="status">Checking local data service and Data Root…</main>;
+    return <main className="startup-check" role="status">Checking local data service and Data Root…</main>;
   }
 
   if (!checking && rootUnavailable) {

@@ -180,8 +180,8 @@ export function RootUnavailableView({
         : "The saved location exists but is not safe to open normally.";
 
   return (
-    <main className="root-unavailable-view" aria-busy={busy} style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-      <div style={{ width: "min(680px, 100%)", background: "#fff", border: "1px solid var(--line, #e2e8f0)", borderRadius: 12, padding: 32, boxShadow: "0 10px 25px rgba(0,0,0,.08)" }}>
+    <main className="root-unavailable-view" aria-busy={busy}>
+      <div className="root-unavailable-card">
         <h1 ref={headingRef} tabIndex={-1} style={{ marginTop: 0, outline: "none" }}>{flow ? ({ existing: "Use Existing Data Root", restore: "Restore From Backup", create: "Create New Data Root" }[flow]) : title}</h1>
         {!flow && <p className="muted">{subtitle}</p>}
         {!flow && lastLocation && <div className="info-note" style={{ overflowWrap: "anywhere" }}><strong>Last known location</strong><br />{lastLocation}</div>}
@@ -196,13 +196,13 @@ export function RootUnavailableView({
         )}
 
         {!flow && !completed && (
-          <div style={{ display: "grid", gap: 10, marginTop: 20 }}>
+          <div className="recovery-routes">
             {!isFirstRun && <Button kind="primary" disabled={busy} onClick={() => void retry()}>Retry</Button>}
             <Button kind={isFirstRun ? "primary" : "default"} disabled={busy} onClick={() => reset("existing")}>Use Existing Data Root</Button>
             <span className="muted small">Validate another existing Data Root and make it active without copying current data.</span>
             <Button kind="default" disabled={busy} onClick={() => reset("restore")}>Restore From Backup</Button>
             <span className="muted small">Verify a backup snapshot, then restore it into a separate new location.</span>
-            <div style={!isFirstRun ? { borderTop: "1px solid #e2e8f0", paddingTop: 12, marginTop: 6 } : undefined}>
+            <div className={!isFirstRun ? "recovery-route-separated" : undefined}>
               <Button kind="default" disabled={busy} onClick={() => reset("create")}>Create New Data Root</Button>
               <div className="muted small">Start fresh with your name and one initial person record. This does not recover missing data.</div>
             </div>
@@ -211,7 +211,7 @@ export function RootUnavailableView({
         )}
 
         {flow === "existing" && !completed && (
-          <div style={{ display: "grid", gap: 14 }}>
+          <div className="recovery-flow">
             <p className="muted">This does not copy current data. You will review health and counts before switching.</p>
             <PathField id="existing-root-path" label="Existing Data Root" value={candidatePath} onChange={(value) => { setCandidatePath(value); setCandidate(null); }} disabled={busy} />
             <Button kind="primary" disabled={busy || !candidatePath.trim()} onClick={() => void inspectExisting()}>Inspect Data Root</Button>
@@ -221,11 +221,11 @@ export function RootUnavailableView({
         )}
 
         {flow === "create" && !completed && (
-          <div style={{ display: "grid", gap: 14 }}>
+          <div className="recovery-flow">
             <p className="muted">Create a fresh schema-v2 Data Root. Existing non-empty folders are never reused or overwritten.</p>
             <PathField id="new-root-path" label="New Data Root location" value={destinationPath} onChange={(value) => { setDestinationPath(value); setCandidate(null); }} disabled={busy} />
-            <div style={{ textAlign: "left" }}><label htmlFor="owner-name" className="small">Your name</label><input id="owner-name" value={ownerName} onChange={(event) => setOwnerName(event.target.value)} disabled={busy} style={{ width: "100%", padding: "8px 10px" }} /></div>
-            <div style={{ textAlign: "left" }}><label htmlFor="owner-gender" className="small">Gender (optional)</label><select id="owner-gender" value={ownerGender} onChange={(event) => setOwnerGender(event.target.value)} disabled={busy} style={{ width: "100%", padding: "8px 10px" }}><option value="">Unspecified</option><option value="unknown">Unknown</option><option value="female">Female</option><option value="male">Male</option></select></div>
+            <div className="recovery-field"><label htmlFor="owner-name" className="small">Your name</label><input className="text-input" id="owner-name" value={ownerName} onChange={(event) => setOwnerName(event.target.value)} disabled={busy} /></div>
+            <div className="recovery-field"><label htmlFor="owner-gender" className="small">Gender (optional)</label><select className="select-input" id="owner-gender" value={ownerGender} onChange={(event) => setOwnerGender(event.target.value)} disabled={busy}><option value="">Unspecified</option><option value="unknown">Unknown</option><option value="female">Female</option><option value="male">Male</option></select></div>
             <Button kind="primary" disabled={busy || !destinationPath.trim() || !ownerName.trim()} onClick={() => void reviewDestination()}>Review New Data Root</Button>
             {candidate && <section aria-label="New Data Root summary" className="info-note" style={{ textAlign: "left" }}><strong>Ready to create</strong><div>{destinationPath}</div><div>Initial owner: {ownerName.trim()}</div><div>Schema: 2 · one owner · default perspective</div></section>}
             {candidate && (!candidate.exists || candidate.is_empty) && <Button kind="primary" disabled={busy} onClick={() => void confirmCreate()}>Confirm Create New Data Root</Button>}
@@ -233,7 +233,7 @@ export function RootUnavailableView({
         )}
 
         {flow === "restore" && !completed && (
-          <div style={{ display: "grid", gap: 14 }}>
+          <div className="recovery-flow">
             <p className="muted">The backup snapshot and the new active Data Root are two separate locations.</p>
             <PathField id="backup-source-path" label="Backup snapshot source" value={candidatePath} onChange={(value) => { setCandidatePath(value); setBackup(null); }} disabled={busy} />
             <Button kind="primary" disabled={busy || !candidatePath.trim()} onClick={() => void verifyBackup()}>Verify Backup</Button>

@@ -12,8 +12,18 @@ import mermaid from "mermaid";
 
 mermaid.initialize({
   startOnLoad: false,
-  theme: "neutral",
+  theme: "base",
   securityLevel: "strict",
+  themeVariables: {
+    background: "#f8f7f3",
+    primaryColor: "#fffefa",
+    primaryTextColor: "#202823",
+    primaryBorderColor: "#7e9188",
+    lineColor: "#6f756f",
+    secondaryColor: "#e3efeb",
+    tertiaryColor: "#f7f5f0",
+    fontFamily: "Segoe UI, system-ui, sans-serif",
+  },
   flowchart: {
     useMaxWidth: false,
     htmlLabels: true,
@@ -197,11 +207,15 @@ export function FamilyView({
     );
     if (!node) return;
     node.classList.add("family-highlight");
-    try {
-      node.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
-    } catch {
-      node.scrollIntoView();
-    }
+    const viewport = container.closest<HTMLElement>(".family-canvas-wrap");
+    if (!viewport) return;
+    const nodeBounds = node.getBoundingClientRect();
+    const viewportBounds = viewport.getBoundingClientRect();
+    viewport.scrollTo({
+      left: viewport.scrollLeft + nodeBounds.left - viewportBounds.left - (viewport.clientWidth - nodeBounds.width) / 2,
+      top: viewport.scrollTop + nodeBounds.top - viewportBounds.top - (viewport.clientHeight - nodeBounds.height) / 2,
+      behavior: "smooth",
+    });
   }
 
   useEffect(() => {
@@ -327,7 +341,7 @@ export function FamilyView({
     <div className="view">
       <div className="view-head">
         <div>
-          <h1>❖ Family Tree / خاندانی شجرہ</h1>
+          <h1>Family Tree / خاندانی شجرہ</h1>
           <p className="muted">
             Genealogical structure and lineage derived by Python kinship engine — labels follow focus.
           </p>
@@ -415,7 +429,7 @@ export function FamilyView({
           <div className="legend-item">
             <span className="legend-swatch focus" />
             <span>
-              <strong>Central Focus:</strong> {focusPerson?.name ?? "Selected Focus"} (Red border)
+              <strong>Central Focus:</strong> {focusPerson?.name ?? "Selected Focus"} (Accent border)
             </span>
           </div>
           <div className="legend-item">

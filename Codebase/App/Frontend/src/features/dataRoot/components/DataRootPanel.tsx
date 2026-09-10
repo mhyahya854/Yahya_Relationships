@@ -41,40 +41,21 @@ export function DataRootPanel({ onDataChanged }: { onDataChanged?: () => void })
   const isHealthy = status.state === "HEALTHY";
 
   return (
-    <div
-      className="data-root-panel"
-      style={{
-        background: "#ffffff",
-        border: "1px solid var(--line, #e2e8f0)",
-        borderRadius: "10px",
-        padding: "16px",
-        marginBottom: "20px",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+    <div className="data-root-panel">
+      <div className="data-root-panel-row">
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>Active Data Root Location</h3>
-            <span
-              style={{
-                fontSize: "11px",
-                padding: "2px 8px",
-                borderRadius: "999px",
-                fontWeight: 600,
-                background: isHealthy ? "var(--ok-soft, #eef9f5)" : "var(--warn-soft, #fff8ec)",
-                color: isHealthy ? "var(--ok, #2e7d32)" : "var(--warn, #d97706)",
-                border: `1px solid ${isHealthy ? "#b7eb8f" : "#ffe58f"}`,
-              }}
-            >
+          <div className="data-root-heading">
+            <h3>Active Data Root Location</h3>
+            <span className={`status-pill ${isHealthy ? "status-success" : "status-warning"}`}>
               {status.state.replace(/_/g, " ")}{isHealthy ? " ✓" : ""}
             </span>
           </div>
-          <code style={{ fontSize: "12.5px", background: "#f1f5f9", padding: "2px 6px", borderRadius: "4px" }}>
+          <code className="path-value" title={status.active_root ?? undefined}>
             {status.active_root ?? "No active location"}
           </code>
         </div>
 
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div className="data-root-actions">
           <Button kind="default" onClick={() => void handleOpenFolder()}>
             Open Folder
           </Button>
