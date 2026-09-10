@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { Avatar, Button, ErrorNote, PersonSearch } from "../components/ui";
+import { Avatar, Button, ErrorNote, Icon, PersonSearch } from "../components/ui";
 import { JournalModal, useRelationship } from "../components/PersonDetail";
 import { usePerspective } from "../state";
 import type { Group, Person, RelationshipEntry } from "../types";
@@ -15,14 +15,14 @@ mermaid.initialize({
   theme: "base",
   securityLevel: "strict",
   themeVariables: {
-    background: "#f8f7f3",
-    primaryColor: "#fffefa",
-    primaryTextColor: "#202823",
-    primaryBorderColor: "#7e9188",
-    lineColor: "#6f756f",
-    secondaryColor: "#e3efeb",
-    tertiaryColor: "#f7f5f0",
-    fontFamily: "Segoe UI, system-ui, sans-serif",
+    background: "#f7f9f8",
+    primaryColor: "#ffffff",
+    primaryTextColor: "#12302a",
+    primaryBorderColor: "#83a79e",
+    lineColor: "#7e918c",
+    secondaryColor: "#e3f3ee",
+    tertiaryColor: "#f2f6f4",
+    fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
   },
   flowchart: {
     useMaxWidth: false,
@@ -338,7 +338,7 @@ export function FamilyView({
   const isPrimaryStored = Boolean(primaryEntry && primaryEntry.derived === false);
 
   return (
-    <div className="view">
+    <div className="view family-view">
       <div className="view-head">
         <div>
           <h1>Family Tree / خاندانی شجرہ</h1>
@@ -346,40 +346,47 @@ export function FamilyView({
             Genealogical structure and lineage derived by Python kinship engine — labels follow focus.
           </p>
         </div>
-        <div className="family-controls">
+        <div className="family-controls glass-panel" aria-label="Family tree controls">
           <Button
+            className="icon-button"
             onClick={() => setShowLegend((v) => !v)}
             title={showLegend ? "Hide Legend" : "Show Legend"}
+            ariaLabel={showLegend ? "Hide Legend" : "Show Legend"}
+            ariaExpanded={showLegend}
           >
-            {showLegend ? "Hide Legend" : "Show Legend"}
+            <Icon name="legend" />
+            <span className="control-label">{showLegend ? "Hide Legend" : "Show Legend"}</span>
           </Button>
-          <Button onClick={() => setZoom((v) => Math.min(2.5, +(v * 1.2).toFixed(2)))} title="Zoom in">
-            + Zoom
+          <Button className="icon-button" ariaLabel="Zoom in" onClick={() => setZoom((v) => Math.min(2.5, +(v * 1.2).toFixed(2)))} title="Zoom in">
+            <Icon name="zoom-in" /><span className="sr-only">+ Zoom</span>
           </Button>
-          <Button onClick={() => setZoom((v) => Math.max(0.3, +(v / 1.2).toFixed(2)))} title="Zoom out">
-            − Zoom
+          <Button className="icon-button" ariaLabel="Zoom out" onClick={() => setZoom((v) => Math.max(0.3, +(v / 1.2).toFixed(2)))} title="Zoom out">
+            <Icon name="zoom-out" /><span className="sr-only">− Zoom</span>
           </Button>
-          <Button onClick={handleFit} title="Fit diagram to viewport">
-            Fit
+          <Button className="icon-button" ariaLabel="Fit diagram to viewport" onClick={handleFit} title="Fit diagram to viewport">
+            <Icon name="fit" /><span className="sr-only">Fit</span>
           </Button>
-          <Button onClick={handleCenterFocus} title="Reset view and center on focus person">
-            Center Focus
+          <Button className="icon-button" ariaLabel="Center focus person" onClick={handleCenterFocus} title="Reset view and center on focus person">
+            <Icon name="target" /><span className="sr-only">Center Focus</span>
           </Button>
           <Button
+            className="icon-button"
             disabled={loading || rendering}
+            title="Reload family tree"
+            ariaLabel="Reload family tree"
             onClick={() => {
               void loadPeopleAndGroups();
               void loadFamilyData(currentFocusId);
             }}
           >
-            Reload
+            <Icon name="reload" /><span className="sr-only">Reload</span>
           </Button>
         </div>
       </div>
 
       {/* Focus Person Control Bar */}
-      <div className="family-focus-bar">
-        <span className="family-focus-label">Family Focus:</span>
+      <div className="family-focus-bar glass-panel">
+        <span className="family-focus-label">Family focus</span>
         <div className="family-focus-current">
           {focusPerson && (
             <Avatar
@@ -425,7 +432,7 @@ export function FamilyView({
 
       {/* Diagram Legend */}
       {showLegend && (
-        <div className="family-legend">
+        <div className="family-legend glass-panel">
           <div className="legend-item">
             <span className="legend-swatch focus" />
             <span>
@@ -483,7 +490,7 @@ export function FamilyView({
         </div>
 
         {selected && (
-          <aside className="family-side">
+          <aside className="family-side glass-panel">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div className="side-profile-row">
                 <Avatar person={selected} size={42} />
@@ -497,8 +504,8 @@ export function FamilyView({
                   )}
                 </div>
               </div>
-              <Button kind="ghost" onClick={() => handleSelectPerson(null)} title="Close context panel">
-                ✕
+              <Button kind="ghost" className="icon-button" onClick={() => handleSelectPerson(null)} title="Close context panel" ariaLabel="Close family inspector">
+                <Icon name="close" />
               </Button>
             </div>
 
@@ -597,6 +604,7 @@ export function FamilyView({
                 onClick={() => handleFocusChange(selected.id)}
                 title="Re-orient entire family tree around this person"
               >
+                <Icon name="target" />
                 Make Family Focus
               </Button>
               {onNavigateToProfile && (
@@ -604,18 +612,20 @@ export function FamilyView({
                   onClick={() => onNavigateToProfile(selected.id)}
                   title="Open canonical Person Profile"
                 >
+                  <Icon name="profile" />
                   View Profile
                 </Button>
               )}
               {onNavigateToRelationships && (
                 <Button
                   onClick={() => onNavigateToRelationships(selected.id, currentFocusId)}
-                  title="Explore detailed proof paths in Relationships view"
+                  title="Explore detailed proof paths in Connections view"
                 >
-                  View in Relationships
+                  <Icon name="path" />
+                  View in Connections<span className="sr-only"> View in Relationships</span>
                 </Button>
               )}
-              <Button onClick={() => setJournalFor(selected)}>Journal</Button>
+              <Button onClick={() => setJournalFor(selected)}><Icon name="journal" />Journal</Button>
             </div>
 
             {/* Fact Editor Actions */}

@@ -6,6 +6,7 @@ import {
   Avatar,
   Button,
   ErrorNote,
+  Icon,
   Modal,
   RelationshipEntryList,
 } from "./ui";
@@ -129,6 +130,7 @@ export function PersonProfile({
   const [activeTab, setActiveTab] = useState<"overview" | "relationships" | "journal">("overview");
 
   const [journalDirty, setJournalDirty] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [pendingTab, setPendingTab] = useState<"overview" | "relationships" | null>(null);
 
   const reportJournalDirty = useCallback((dirty: boolean) => {
@@ -163,10 +165,12 @@ export function PersonProfile({
       setPendingTab(next);
       return;
     }
+    setMoreOpen(false);
     setActiveTab(next);
   };
 
-  const facts: Array<[string, string]> = [];
+  const facts: Array<[string, string]> = [["Name", person.name]];
+  if (person.aliases.length) facts.push(["Nickname / Alias", person.aliases.join(" · ")]);
   if (person.birth_year) facts.push(["Born", String(person.birth_year)]);
   if (person.gender) {
     facts.push([
@@ -174,129 +178,107 @@ export function PersonProfile({
       { male: "Male", female: "Female", unknown: "Unknown" }[person.gender] ?? person.gender,
     ]);
   }
-  if (person.marital_status) facts.push(["Marital status", "Single"]);
+  if (person.groups.length) facts.push(["Groups", person.groups.map((group) => group.name).join(" · ")]);
+  if (person.marital_status) facts.push(["Marital status", person.marital_status.replace(/_/g, " ")]);
   if (person.branch) facts.push(["Branch", person.branch]);
-  if (person.folder) facts.push(["Folder", person.folder]);
 
   const perspectiveRel = profileData?.perspective;
   const primaryRel = perspectiveRel?.primary?.[0];
   const additionalRels = perspectiveRel?.additional || [];
 
   return (
-    <div className="person-profile-container" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* HEADER */}
-      <div className="profile-head" style={{ alignItems: "flex-start", gap: 16 }}>
-        <Avatar person={person} size={64} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <h2 style={{ margin: 0 }}>{person.name}</h2>
-            {person.aliases.length > 0 && (
-              <span className="muted small">({person.aliases.join(" / ")})</span>
-            )}
-          </div>
-
-          <div className="group-chips" style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
+    <div className="person-profile-container">
+      <div className="profile-identity">
+        <Avatar person={person} size={82} />
+        <div className="profile-identity-copy">
+          <h2>{person.name}</h2>
+          {person.aliases.length > 0 && (
+            <div className="profile-alias" dir="auto">{person.aliases.join(" · ")}</div>
+          )}
+          <div className="group-chips">
             {person.groups.map((group) => (
               <span className="chip chip-group" key={group.id}>
                 {group.name}
-                {group.is_primary ? " · primary" : ""}
               </span>
             ))}
+            {person.groups.some((group) => group.is_primary) && <span className="chip chip-primary">Primary</span>}
           </div>
-
-          {/* PERSPECTIVE RELATIONSHIP HIGHLIGHT */}
-          {perspectiveRel && (
-            <div
-              className="perspective-highlight-card"
-              style={{
-                marginTop: 12,
-                padding: "10px 14px",
-                background: "var(--accent-soft)",
-                borderRadius: 8,
-                border: "1px solid var(--line-strong)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-                <div>
-                  <span className="tiny muted" style={{ textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>
-                    Relationship to {perspectiveName || "Current Perspective"}
-                  </span>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent-strong)", marginTop: 2 }}>
-                    {primaryRel ? primaryRel.label_en : "No direct kinship derived"}
-                    {primaryRel?.label_ur && (
-                      <span className="urdu-label" style={{ marginLeft: 8, fontWeight: 400, opacity: 0.85 }}>
-                        ({primaryRel.label_ur})
-                      </span>
-                    )}
-                  </div>
-                  {additionalRels.length > 0 && (
-                    <div className="tiny muted" style={{ marginTop: 4 }}>
-                      <strong>Additional paths:</strong>{" "}
-                      {additionalRels.map((r) => r.label_en + (r.label_ur ? ` (${r.label_ur})` : "")).join(" · ")}
-                    </div>
-                  )}
-                </div>
-
-                {onShowRelationshipPath && primaryRel && (
-                  <button
-                    type="button"
-                    className="btn btn-outline"
-                    style={{ fontSize: 12, padding: "5px 12px", background: "#fff" }}
-                    disabled={journalDirty}
-                    onClick={() => onShowRelationshipPath(person.id)}
-                    title="View relationship connection on the diagram"
-                  >
-                    Show Relationship Path →
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* ACTION BAR */}
-      <div className="profile-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      {perspectiveRel && (
+        <section className="profile-relationship" aria-label="Relationship summary">
+          <div className="profile-relationship-icon"><Icon name="family" size={24} /></div>
+          <div className="profile-relationship-copy">
+            <div className="profile-relationship-value">
+              {primaryRel ? primaryRel.label_en : "No direct kinship derived"}
+              {primaryRel?.label_ur && <span dir="rtl" lang="ur"> · {primaryRel.label_ur}</span>}
+            </div>
+            <div className="profile-relationship-context">
+              From the perspective of {perspectiveName || "the current person"}
+            </div>
+            {additionalRels.length > 0 && (
+              <div className="tiny muted">
+                Additional paths: {additionalRels.map((r) => r.label_en + (r.label_ur ? ` (${r.label_ur})` : "")).join(" · ")}
+              </div>
+            )}
+          </div>
+          {onShowRelationshipPath && primaryRel && (
+            <Button
+              className="profile-path-button"
+              disabled={journalDirty}
+              onClick={() => onShowRelationshipPath(person.id)}
+              title="View relationship connection on the diagram"
+            >
+              Show Relationship Path <Icon name="path" />
+            </Button>
+          )}
+        </section>
+      )}
+
+      <div className="profile-actions">
         <Button kind="primary" onClick={() => onViewFrom(person.id)}>
-          View from this person
+          <Icon name="view" /> View from this person
         </Button>
         {onViewFamily && (
           <Button disabled={journalDirty} onClick={() => onViewFamily(person.id)}>
-            View Family
+            <Icon name="family" /> View Family Tree<span className="sr-only"> View Family</span>
           </Button>
         )}
         {onEdit && (
           <Button onClick={() => onEdit(person)}>
-            Edit Person
+            <Icon name="edit" /> Edit Person
           </Button>
         )}
         {onCompare && (
           <Button onClick={() => onCompare(person.id)}>
-            Compare
+            <Icon name="compare" /> Compare
           </Button>
         )}
         {onDelete && (
-          <Button kind="danger" onClick={() => onDelete(person)}>
-            Remove Person
-          </Button>
+          <details className="profile-more" open={moreOpen} onToggle={(event) => setMoreOpen(event.currentTarget.open)}>
+            <summary className="btn" aria-label="More profile actions" title="More profile actions"><Icon name="more" /></summary>
+            <div className="profile-more-menu">
+              <Button kind="danger" onClick={() => { setMoreOpen(false); onDelete(person); }}>Remove Person</Button>
+            </div>
+          </details>
         )}
       </div>
 
-      {/* NAVIGATION TABS */}
-      <div className="tabs" style={{ margin: "4px 0" }}>
+      <div className="tabs profile-tabs">
         <button
           type="button"
           className={`tab profile-tab ${activeTab === "overview" ? "active" : ""}`}
           onClick={() => selectTab("overview")}
         >
-          Overview &amp; Facts
+          Overview
         </button>
         <button
           type="button"
           className={`tab profile-tab ${activeTab === "relationships" ? "active" : ""}`}
           onClick={() => selectTab("relationships")}
         >
-          Relationships
+          Connections<span className="sr-only"> Relationships</span>
         </button>
         <button
           type="button"
@@ -320,31 +302,34 @@ export function PersonProfile({
         <div className="profile-tab-content" style={{ minHeight: 220 }}>
           {/* TAB 1: OVERVIEW */}
           {activeTab === "overview" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div className="fact-grid">
-                {facts.map(([label, value]) => (
-                  <div className="fact" key={label}>
-                    <span className="muted small">{label}</span>
-                    <span style={{ wordBreak: "break-all" }}>{value}</span>
-                  </div>
-                ))}
-              </div>
-
-              {person.note_en && (
-                <div className="diff-card" style={{ background: "#fafbfc" }}>
-                  <span className="muted small" style={{ fontWeight: 600 }}>Note (English):</span>
-                  <p style={{ margin: "4px 0 0" }}>{person.note_en}</p>
+            <div className="profile-overview">
+              <section className="profile-section profile-details-section">
+                <div className="profile-section-head">
+                  <h3>Details</h3>
+                  {onEdit && <Button kind="ghost" onClick={() => onEdit(person)}><Icon name="edit" /> Edit</Button>}
                 </div>
-              )}
-
-              {person.note_ur && (
-                <div className="diff-card" style={{ background: "#fafbfc" }}>
-                  <span className="muted small" style={{ fontWeight: 600 }}>Note (Urdu):</span>
-                  <p style={{ margin: "4px 0 0", fontFamily: "'Noto Naskh Arabic', serif", fontSize: 16 }}>
-                    {person.note_ur}
-                  </p>
+                <div className="fact-grid">
+                  {facts.map(([label, value]) => (
+                    <div className="fact" key={label}>
+                      <span className="muted small">{label}</span>
+                      <span dir="auto">{value}</span>
+                    </div>
+                  ))}
                 </div>
-              )}
+                {person.folder && (
+                  <details className="technical-disclosure">
+                    <summary>Technical Details</summary>
+                    <div className="technical-details"><strong>Canonical folder</strong><br />{person.folder}</div>
+                  </details>
+                )}
+              </section>
+
+              <section className="profile-section profile-about-section">
+                <div className="profile-section-head"><h3>About</h3></div>
+                {person.note_en && <p dir="auto">{person.note_en}</p>}
+                {person.note_ur && <p className="urdu-note" dir="rtl" lang="ur">{person.note_ur}</p>}
+                {!person.note_en && !person.note_ur && <div className="empty-inline">No notes recorded yet.</div>}
+              </section>
             </div>
           )}
 
@@ -354,7 +339,7 @@ export function PersonProfile({
               {/* FAMILY RELATIONSHIPS */}
               <div>
                 <h4 style={{ margin: "0 0 8px", color: "var(--ink)", borderBottom: "1px solid var(--line)", paddingBottom: 4 }}>
-                  Family Relationships (Direct facts)
+                  Family Connections <span className="sr-only">Relationships</span>
                 </h4>
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
@@ -463,7 +448,7 @@ export function PersonProfile({
               {/* GENERAL RELATIONSHIPS */}
               <div>
                 <h4 style={{ margin: "0 0 8px", color: "var(--ink)", borderBottom: "1px solid var(--line)", paddingBottom: 4 }}>
-                  General Relationships (Friends, Colleagues, Mentors)
+                  Friends, Colleagues &amp; Mentors
                 </h4>
 
                 {profileData.general.length === 0 ? (

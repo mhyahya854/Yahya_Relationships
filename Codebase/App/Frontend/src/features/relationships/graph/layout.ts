@@ -1,8 +1,8 @@
 import dagre from "@dagrejs/dagre";
 import type { Edge, Node } from "@xyflow/react";
 
-export const NODE_WIDTH = 205;
-export const NODE_HEIGHT = 64;
+export const NODE_WIDTH = 188;
+export const NODE_HEIGHT = 72;
 
 /**
  * Deterministic hierarchical layout. Input nodes/edges are sorted before
@@ -15,7 +15,7 @@ export function layoutGraph(
 ): Node[] {
   const graph = new dagre.graphlib.Graph();
   graph.setDefaultEdgeLabel(() => ({}));
-  graph.setGraph({ rankdir: direction, nodesep: 70, ranksep: 80, marginx: 30, marginy: 30 });
+  graph.setGraph({ rankdir: direction, nodesep: 14, ranksep: 72, marginx: 24, marginy: 24 });
 
   const sortedNodes = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
   const sortedEdges = [...edges].sort((a, b) =>

@@ -6,9 +6,7 @@ import type { HermesToolDef } from "../types";
 export function HermesView() {
   const [tools, setTools] = useState<HermesToolDef[]>([]);
   const [tool, setTool] = useState("get_relationship");
-  const [argumentsText, setArgumentsText] = useState(
-    '{\n  "perspective": "mohammad_yahya_hussain",\n  "target": "ezan_asif"\n}',
-  );
+  const [argumentsText, setArgumentsText] = useState("{}");
   const [output, setOutput] = useState<string>("");
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);

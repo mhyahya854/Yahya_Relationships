@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../../api";
 import { Markdown } from "../../markdown";
 import type { Journal, Person } from "../../types";
-import { Button, ErrorNote } from "../../components/ui";
+import { Button, ErrorNote, Icon } from "../../components/ui";
 
 type Mode = "view" | "edit" | "preview";
 
@@ -247,20 +247,26 @@ export function JournalEditor({
       </div>
 
       <div className="journal-toolbar" role="toolbar" aria-label="Journal actions">
-        <Button onClick={() => setMode("view")} disabled={mode === "view"}>View</Button>
-        <Button onClick={() => setMode("edit")} disabled={mode === "edit" || writesBlocked}>Edit</Button>
-        <Button onClick={() => setMode("preview")} disabled={mode === "preview" || !dirty}>Preview</Button>
-        <Button kind="primary" onClick={() => void save()} disabled={!dirty || writesBlocked || busy}>Save</Button>
-        <Button onClick={requestCancel} disabled={mode === "view"}>Cancel</Button>
-        <Button onClick={() => journal && setDraft(journal.content)} disabled={!dirty}>Revert</Button>
-        <Button
-          onClick={() => setAppendOpen(true)}
-          disabled={dirty || writesBlocked || busy}
-          title={dirty ? "Save or discard the current draft before Quick Append." : undefined}
-        >
-          Quick Append
-        </Button>
-        <Button onClick={() => void load("reload")} disabled={busy}>Reload</Button>
+        <div className="journal-mode-switch" aria-label="Journal mode">
+          <Button className="journal-mode" ariaPressed={mode === "view"} onClick={() => setMode("view")} disabled={mode === "view"}><Icon name="view" />View</Button>
+          <Button className="journal-mode" ariaPressed={mode === "edit"} onClick={() => setMode("edit")} disabled={mode === "edit" || writesBlocked}><Icon name="edit" />Edit</Button>
+          <Button className="journal-mode" ariaPressed={mode === "preview"} onClick={() => setMode("preview")} disabled={mode === "preview" || !dirty}><Icon name="profile" />Preview</Button>
+        </div>
+        <div className="journal-primary-actions">
+          <Button kind="primary" onClick={() => void save()} disabled={!dirty || writesBlocked || busy}>Save</Button>
+          <Button onClick={requestCancel} disabled={mode === "view"}>Cancel</Button>
+        </div>
+        <div className="journal-secondary-actions">
+          <Button onClick={() => journal && setDraft(journal.content)} disabled={!dirty}>Revert</Button>
+          <Button
+            onClick={() => setAppendOpen(true)}
+            disabled={dirty || writesBlocked || busy}
+            title={dirty ? "Save or discard the current draft before Quick Append." : undefined}
+          >
+            Quick Append
+          </Button>
+          <Button className="icon-button" ariaLabel="Reload journal" title="Reload journal" onClick={() => void load("reload")} disabled={busy}><Icon name="reload" /><span className="sr-only">Reload</span></Button>
+        </div>
       </div>
 
       {writesBlocked && (
@@ -317,9 +323,12 @@ export function JournalEditor({
         <div className="empty-state">No journal prose recorded yet.</div>
       )}
 
-      <div className="muted tiny journal-hint">
-        Canonical source: <code>journal.md</code> · UTF-8 · LF · revision {journal.sha256?.slice(0, 12) ?? "missing"}
-      </div>
+      <details className="technical-disclosure journal-hint">
+        <summary>Journal details</summary>
+        <div className="muted tiny">
+          Canonical source: <code>journal.md</code> · UTF-8 · LF · revision {journal.sha256?.slice(0, 12) ?? "missing"}
+        </div>
+      </details>
 
       {appendOpen && (
         <div

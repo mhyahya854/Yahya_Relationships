@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { initialsOf } from "../../../markdown";
 import type { PersonNodeData } from "../types";
 
 export const PersonNode = memo(function PersonNode({
@@ -18,22 +19,19 @@ export const PersonNode = memo(function PersonNode({
   return (
     <div className={classes}>
       <Handle type="target" position={Position.Top} />
-      <div className="person-node-name">
-        {personData.name}
-        {personData.isPerspective && (
-          <span className="node-perspective-mark">★</span>
+      <span className="person-node-avatar" aria-hidden="true">{initialsOf(personData.name)}</span>
+      <div className="person-node-copy">
+        <div className="person-node-name">
+          {personData.name}
+          {personData.isPerspective && <span className="node-perspective-mark">•</span>}
+        </div>
+        {personData.subtitle && (
+          <div className="person-node-subtitle">
+            <span className="node-sub-en">{personData.subtitle}</span>
+            {personData.subtitleUr && <span className="node-sub-ur" dir="rtl" lang="ur"> · {personData.subtitleUr}</span>}
+          </div>
         )}
       </div>
-      {personData.subtitle && (
-        <div className="person-node-subtitle">
-          <span className="node-sub-en">{personData.subtitle}</span>
-          {personData.subtitleUr && (
-            <span className="node-sub-ur" dir="rtl" lang="ur">
-              {personData.subtitleUr}
-            </span>
-          )}
-        </div>
-      )}
       <Handle type="source" position={Position.Bottom} />
     </div>
   );

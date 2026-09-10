@@ -55,7 +55,7 @@ function CandidateSummary({ candidate }: { candidate: DataRootCandidate }) {
       <div className="small" style={{ overflowWrap: "anywhere" }}>{candidate.path}</div>
       <div className="small">People: {candidate.person_count} · Journals: {candidate.journal_count} · Schema: {candidate.schema_version ?? "unknown"}</div>
       <div className="small">Data Root format: {candidate.data_root_format_version ?? "legacy compatible"} · {candidate.read_only ? "Read-only" : "Writable"}</div>
-      {candidate.root_id && <div className="small">Root identity: {candidate.root_id}</div>}
+      {candidate.root_id && <details className="technical-disclosure"><summary>Technical identity</summary><div className="small">Root identity: {candidate.root_id}</div></details>}
       {candidate.issues.length > 0 && (
         <ul>{candidate.issues.map((issue) => <li key={`${issue.code}-${issue.message}`}>{issue.code}: {issue.message}</li>)}</ul>
       )}
@@ -184,7 +184,7 @@ export function RootUnavailableView({
       <div className="root-unavailable-card">
         <h1 ref={headingRef} tabIndex={-1} style={{ marginTop: 0, outline: "none" }}>{flow ? ({ existing: "Use Existing Data Root", restore: "Restore From Backup", create: "Create New Data Root" }[flow]) : title}</h1>
         {!flow && <p className="muted">{subtitle}</p>}
-        {!flow && lastLocation && <div className="info-note" style={{ overflowWrap: "anywhere" }}><strong>Last known location</strong><br />{lastLocation}</div>}
+        {!flow && lastLocation && <details className="technical-disclosure info-note" style={{ overflowWrap: "anywhere" }}><summary>Last known location</summary><div>{lastLocation}</div></details>}
         {!flow && <IssueList issues={issues} />}
         <ErrorNote error={error} />
         {busy && <div role="status" className="info-note">Checking and verifying…</div>}

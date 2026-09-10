@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { JournalModal } from "../components/PersonDetail";
-import { Button, ErrorNote } from "../components/ui";
+import { Avatar, Button, ErrorNote, Icon } from "../components/ui";
 import { usePerspective } from "../state";
 import type { Person, SearchResult } from "../types";
 
@@ -10,7 +10,7 @@ type SearchFilter = "ALL" | SearchResult["category"];
 const FILTERS: Array<{ id: SearchFilter; label: string }> = [
   { id: "ALL", label: "All" },
   { id: "PERSON", label: "People" },
-  { id: "RELATIONSHIP", label: "Relationships" },
+  { id: "RELATIONSHIP", label: "Connections" },
   { id: "GROUP", label: "Groups" },
   { id: "JOURNAL", label: "Journals" },
 ];
@@ -122,7 +122,7 @@ export function SearchView({
           <h1>Search</h1>
           <p className="muted">
             Deterministic local search from <strong>{perspectivePerson?.name ?? "the current perspective"}</strong>
-            {" "}across people, aliases, relationships, groups, and Journal Markdown. No AI or network search.
+            {" "}across people, aliases, connections, groups, and Journal Markdown. No AI or network search.
           </p>
         </div>
       </div>
@@ -183,7 +183,7 @@ export function SearchView({
                 aria-pressed={filter === item.id}
                 onClick={() => setFilter(item.id)}
               >
-                {item.label} ({count})
+                {item.label}{item.id === "RELATIONSHIP" && <span className="sr-only"> Relationships</span>} ({count})
               </button>
             );
           })}
@@ -214,14 +214,15 @@ export function SearchView({
               (!matchedForward && !matchedReverse && result.direction_from === result.person_b_id));
           return (
             <article className="search-result" key={result.result_id} data-result-id={result.result_id}>
-              <span className={`tag tag-${result.category.toLowerCase()}`}>
-                {result.relationship_kind === "family"
-                  ? "Family relationship"
-                  : result.relationship_kind === "general"
-                    ? "General relationship"
-                    : FILTERS.find((item) => item.id === result.category)?.label.replace(/s$/, "")}
-              </span>
+              {person && <Avatar person={person} size={42} />}
               <div className="search-result-main">
+                <span className={`tag tag-${result.category.toLowerCase()}`}>
+                  {result.relationship_kind === "family"
+                    ? "Family relationship"
+                    : result.relationship_kind === "general"
+                      ? "General relationship"
+                      : FILTERS.find((item) => item.id === result.category)?.label.replace(/s$/, "")}
+                </span>
                 <strong>{result.title}</strong>
                 <span className="muted tiny">{result.subtitle}</span>
                 {result.relationship_kind === "general" ? (
@@ -244,19 +245,19 @@ export function SearchView({
               <div className="row-actions search-result-actions">
                 {result.category === "PERSON" && person && (
                   <>
-                    <Button kind="primary" onClick={() => onNavigateToProfile(person.id)}>Details</Button>
-                    <Button onClick={() => void onNavigateToRelationships(person.id)}>View in Relationships</Button>
-                    <Button onClick={() => onNavigateToFamily(person.id)}>View Family</Button>
-                    <Button onClick={() => setJournalFor(person)}>Journal</Button>
+                    <Button kind="primary" onClick={() => onNavigateToProfile(person.id)}><Icon name="profile" />Details</Button>
+                    <Button onClick={() => void onNavigateToRelationships(person.id)}><Icon name="path" />View in Connections<span className="sr-only"> View in Relationships</span></Button>
+                    <Button onClick={() => onNavigateToFamily(person.id)}><Icon name="family" />Family Tree<span className="sr-only"> View Family</span></Button>
+                    <Button onClick={() => setJournalFor(person)}><Icon name="journal" />Journal</Button>
                   </>
                 )}
                 {result.relationship_kind === "family" && person && result.perspective_id && (
                   <>
                     <Button kind="primary" onClick={() => onNavigateToRelationships(person.id, result.perspective_id)}>
-                      View in Relationships
+                      <Icon name="path" />View in Connections<span className="sr-only"> View in Relationships</span>
                     </Button>
                     <Button onClick={() => onNavigateToProfile(person.id)}>Details</Button>
-                    <Button onClick={() => onNavigateToFamily(person.id)}>View Family</Button>
+                    <Button onClick={() => onNavigateToFamily(person.id)}>Family Tree<span className="sr-only"> View Family</span></Button>
                   </>
                 )}
                 {result.relationship_kind === "general" && personA && personB && (

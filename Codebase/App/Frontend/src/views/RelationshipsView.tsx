@@ -3,7 +3,6 @@ import {
   Background,
   BackgroundVariant,
   Controls,
-  MiniMap,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
@@ -17,6 +16,7 @@ import {
   Avatar,
   Button,
   ErrorNote,
+  Icon,
   Modal,
   PersonSearch,
 } from "../components/ui";
@@ -122,6 +122,7 @@ function RelationshipsContent({
   const [comparePicker, setComparePicker] = useState(false);
   const [compareTarget, setCompareTarget] = useState<Person | null>(null);
   const [journalFor, setJournalFor] = useState<Person | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const expandedCountRef = useRef(0);
 
@@ -412,7 +413,8 @@ function RelationshipsContent({
   }, [graph.expansions, perspectiveId, selected]);
 
   const focusSearch = useCallback(() => {
-    searchInputRef.current?.focus();
+    setSearchOpen(true);
+    window.requestAnimationFrame(() => searchInputRef.current?.focus());
   }, []);
 
   const showPrimaryPath = useCallback(() => {
@@ -448,33 +450,9 @@ function RelationshipsContent({
 
   return (
     <div className="view relationships-view">
-      <div className="view-head relationships-head">
-        <div>
-          <h1 style={{ margin: 0 }}>Relationships</h1>
-          <p className="muted" style={{ marginTop: 4 }}>
-            Diagram-first navigation from <strong>{perspectiveName}</strong>’s perspective.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          {selected && (
-            <Button
-              kind="primary"
-              onClick={() => setShowAddRel(true)}
-            >
-              + Add Relationship
-            </Button>
-          )}
-          <div className="relationships-search-wrap">
-            <PersonSearch
-              people={people}
-              onSelect={(person) => selectPerson(person)}
-              placeholder="Search people… (Ctrl+K)"
-              inputRef={(node) => {
-                searchInputRef.current = node;
-              }}
-            />
-          </div>
-        </div>
+      <div className="relationships-head view-head sr-only">
+        <h1>Connections <span>Relationships</span></h1>
+        <p>Connections from {perspectiveName}’s perspective.</p>
       </div>
       <ErrorNote error={graph.error || relationshipError} />
 
@@ -484,7 +462,7 @@ function RelationshipsContent({
             nodes={flowNodes}
             edges={flowEdges}
             nodeTypes={nodeTypes}
-            minZoom={0.1}
+            minZoom={0.3}
             maxZoom={2.5}
             nodesDraggable={false}
             nodesConnectable={false}
@@ -507,24 +485,48 @@ function RelationshipsContent({
           >
             <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} />
             <Controls showInteractive={false} />
-            <MiniMap
-              pannable
-              zoomable
-              nodeColor={(node) => {
-                const data = node.data as { isPerspective?: boolean };
-                if (node.className?.includes("rf-dim")) return "#d6d8d2";
-                return data?.isPerspective ? "#35695e" : "#aebbb4";
-              }}
-            />
           </ReactFlow>
+          <div className="connections-search-dock">
+            <div
+              className={`relationships-search-wrap ${searchOpen ? "open" : "collapsed"}`}
+              onFocusCapture={() => setSearchOpen(true)}
+            >
+              <span className="connections-search-icon" aria-hidden="true"><Icon name="search" size={20} /></span>
+              <PersonSearch
+                people={people}
+                onSelect={(person) => {
+                  selectPerson(person);
+                  setSearchOpen(false);
+                }}
+                placeholder="Search people… (Ctrl+K)"
+                inputRef={(node) => {
+                  searchInputRef.current = node;
+                }}
+                onOpenChange={setSearchOpen}
+              />
+              {searchOpen && (
+                <Button
+                  kind="ghost"
+                  className="icon-button connections-search-close"
+                  onClick={() => {
+                    setSearchOpen(false);
+                    searchInputRef.current?.blur();
+                  }}
+                  ariaLabel="Close Connections search"
+                  title="Close search"
+                >
+                  <Icon name="close" />
+                </Button>
+              )}
+            </div>
+          </div>
           {focus && activePath && (
             <div className="graph-focus-badge">
               Path focus: {focus.entry.label_en} · press Esc to exit
             </div>
           )}
-        </div>
-
-        <aside className="relationships-panel">
+          {selected ? (
+        <aside className="relationships-panel glass-panel">
           {focus && activePath && selected ? (
             <PathFocusPanel
               entry={focus.entry}
@@ -548,6 +550,10 @@ function RelationshipsContent({
                     </div>
                   )}
                 </div>
+                <Button kind="ghost" className="icon-button inspector-close" onClick={() => {
+                  setSelected(null);
+                  onTargetChange?.(null);
+                }} ariaLabel="Close selected person" title="Close selected person"><Icon name="close" /></Button>
               </div>
 
               {/* Node Context Actions Toolbar */}
@@ -556,29 +562,18 @@ function RelationshipsContent({
                   + Add Relationship
                 </Button>
                 {onNavigateToProfile && (
-                  <Button onClick={() => onNavigateToProfile(selected.id)}>View Profile</Button>
+                  <Button onClick={() => onNavigateToProfile(selected.id)}><Icon name="profile" /> View Profile</Button>
                 )}
                 {onNavigateToFamily && (
-                  <Button onClick={() => onNavigateToFamily(selected.id)}>View Family</Button>
+                  <Button onClick={() => onNavigateToFamily(selected.id)}><Icon name="family" /> View Family Tree<span className="sr-only"> View Family</span></Button>
                 )}
-                <Button
-                  kind="ghost"
-                  onClick={() => {
-                    setPersonModalTarget(selected);
-                    setPersonModalMode("edit");
-                  }}
-                >
-                  Edit Person
-                </Button>
-                <Button
-                  kind="danger"
-                  onClick={() => {
-                    setPersonModalTarget(selected);
-                    setPersonModalMode("delete");
-                  }}
-                >
-                  Delete
-                </Button>
+                <details className="inspector-more">
+                  <summary className="btn" aria-label="More person actions"><Icon name="more" /></summary>
+                  <div className="inspector-more-menu">
+                    <Button kind="ghost" onClick={() => { setPersonModalTarget(selected); setPersonModalMode("edit"); }}><Icon name="edit" /> Edit Person</Button>
+                    <Button kind="danger" onClick={() => { setPersonModalTarget(selected); setPersonModalMode("delete"); }}>Delete</Button>
+                  </div>
+                </details>
               </div>
 
               <div className="rel-section-title">
@@ -619,32 +614,25 @@ function RelationshipsContent({
                 >
                   View from this person
                 </Button>
-                <Button onClick={() => setComparePicker(true)}>Compare</Button>
-                <Button onClick={() => setJournalFor(selected)}>Journal</Button>
+                <Button onClick={() => setComparePicker(true)}><Icon name="compare" /> Compare</Button>
+                <Button onClick={() => setJournalFor(selected)}><Icon name="journal" /> Journal</Button>
               </div>
             </div>
-          ) : (
-            <div className="empty-state panel-empty">
-              <strong>Selected Person</strong>
-              <p>
-                Search above or click a node to see every relationship from{" "}
-                {perspectiveName}’s perspective.
-              </p>
-            </div>
-          )}
+          ) : null}
         </aside>
-      </div>
+          ) : null}
 
-      <div className="relationships-footer">
-        <ExpandControls
-          personName={centerPerson?.name ?? "…"}
-          active={activeFilters}
-          onToggle={toggleExpansionForCenter}
-        />
-        <GraphLegend />
-        <div className="keyboard-hints muted tiny">
-          Ctrl+K search · V view from selected · C compare · P show primary · H
-          owner perspective · Esc exit path
+          <div className="relationships-footer glass-panel">
+            <ExpandControls
+              personName={centerPerson?.name ?? "…"}
+              active={activeFilters}
+              onToggle={toggleExpansionForCenter}
+            />
+            <GraphLegend />
+            <div className="keyboard-hints muted tiny">
+              Ctrl+K search · V view from selected · C compare · P show primary · H owner perspective · Esc exit path
+            </div>
+          </div>
         </div>
       </div>
 

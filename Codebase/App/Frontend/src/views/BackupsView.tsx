@@ -126,7 +126,10 @@ export function BackupsView() {
                     <div>
                       <strong>{backup.label || backup.name}</strong>
                       <div className="muted small">{backup.created || "Unknown date"} · {backup.category}{backup.safety_reason ? ` / ${backup.safety_reason.replace(/_/g, " ")}` : ""}</div>
-                      <div className="muted tiny">{backup.name}</div>
+                      <details className="technical-disclosure backup-technical-name">
+                        <summary>Snapshot identifier</summary>
+                        <div className="muted tiny">{backup.name}</div>
+                      </details>
                     </div>
                     <div className="backup-meta">
                       <span className="chip">{formatSize(backup.total_size_bytes)}</span>

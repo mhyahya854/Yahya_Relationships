@@ -15,6 +15,10 @@ export function Button({
   disabled,
   title,
   type = "button",
+  className = "",
+  ariaLabel,
+  ariaExpanded,
+  ariaPressed,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -22,14 +26,21 @@ export function Button({
   disabled?: boolean;
   title?: string;
   type?: "button" | "submit";
+  className?: string;
+  ariaLabel?: string;
+  ariaExpanded?: boolean;
+  ariaPressed?: boolean;
 }) {
   return (
     <button
       type={type}
-      className={`btn btn-${kind}`}
+      className={`btn btn-${kind} ${className}`.trim()}
       onClick={onClick}
       disabled={disabled}
       title={title}
+      aria-label={ariaLabel}
+      aria-expanded={ariaExpanded}
+      aria-pressed={ariaPressed}
     >
       {children}
     </button>
@@ -43,8 +54,60 @@ export function Avatar({ person, size = 34 }: { person: Person; size?: number })
       style={{ width: size, height: size, fontSize: size * 0.38 }}
       title={person.name}
     >
-      {initialsOf(person.name)}
+      {person.photo_path ? (
+        <img className="avatar-image" src={person.photo_path} alt="" />
+      ) : (
+        initialsOf(person.name)
+      )}
     </span>
+  );
+}
+
+export type IconName =
+  | "add"
+  | "back"
+  | "close"
+  | "compare"
+  | "edit"
+  | "family"
+  | "fit"
+  | "journal"
+  | "legend"
+  | "more"
+  | "path"
+  | "profile"
+  | "reload"
+  | "search"
+  | "target"
+  | "view"
+  | "zoom-in"
+  | "zoom-out";
+
+export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
+  const paths: Record<IconName, ReactNode> = {
+    add: <path d="M12 5v14M5 12h14" />,
+    back: <path d="m15 18-6-6 6-6" />,
+    close: <path d="m6 6 12 12M18 6 6 18" />,
+    compare: <><circle cx="9" cy="12" r="5" /><circle cx="15" cy="12" r="5" /></>,
+    edit: <><path d="m4 20 4.2-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z" /><path d="m13.8 7.2 3 3" /></>,
+    family: <><circle cx="12" cy="5" r="2.5" /><circle cx="5" cy="18" r="2.5" /><circle cx="19" cy="18" r="2.5" /><path d="M12 7.5v4M5 15.5v-4h14v4" /></>,
+    fit: <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />,
+    journal: <><path d="M6 3h11a2 2 0 0 1 2 2v16H8a3 3 0 0 1-3-3V4a1 1 0 0 1 1-1Z" /><path d="M8 7h7M8 11h7M8 15h4" /></>,
+    legend: <><path d="M4 7h4M11 7h9M4 12h4M11 12h9M4 17h4M11 17h9" /></>,
+    more: <><circle cx="5" cy="12" r="1" fill="currentColor" /><circle cx="12" cy="12" r="1" fill="currentColor" /><circle cx="19" cy="12" r="1" fill="currentColor" /></>,
+    path: <><circle cx="5" cy="17" r="2" /><circle cx="19" cy="7" r="2" /><path d="M7 17c5 0 5-10 10-10" /></>,
+    profile: <><circle cx="12" cy="8" r="4" /><path d="M5 21c.7-4.2 3-6.3 7-6.3s6.3 2.1 7 6.3" /></>,
+    reload: <><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 4v7h-7" /></>,
+    search: <><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 4 4" /></>,
+    target: <><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="2" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></>,
+    view: <><path d="M2.5 12s3.2-5.5 9.5-5.5 9.5 5.5 9.5 5.5-3.2 5.5-9.5 5.5S2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="2.5" /></>,
+    "zoom-in": <><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 4 4M10.5 7.5v6M7.5 10.5h6" /></>,
+    "zoom-out": <><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 4 4M7.5 10.5h6" /></>,
+  };
+  return (
+    <svg className="ui-icon" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      {paths[name]}
+    </svg>
   );
 }
 
@@ -54,12 +117,14 @@ export function Modal({
   onClose,
   wide,
   closeOnEscape = false,
+  className = "",
 }: {
   title: ReactNode;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
   closeOnEscape?: boolean;
+  className?: string;
 }) {
   return (
     <div
@@ -70,7 +135,7 @@ export function Modal({
       }}
     >
       <div
-        className={`modal ${wide ? "modal-wide" : ""}`}
+        className={`modal ${wide ? "modal-wide" : ""} ${className}`.trim()}
         onMouseDown={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -78,8 +143,8 @@ export function Modal({
       >
         <div className="modal-head">
           <h2>{title}</h2>
-          <Button kind="ghost" onClick={onClose} title="Close">
-            ✕
+          <Button kind="ghost" className="icon-button" onClick={onClose} title="Close" ariaLabel="Close dialog">
+            <Icon name="close" /><span className="sr-only">✕</span>
           </Button>
         </div>
         <div className="modal-body">{children}</div>
@@ -103,6 +168,7 @@ export function PersonSearch({
   inputRef,
   ariaLabel,
   disabled,
+  onOpenChange,
 }: {
   people: Person[];
   onSelect: (person: Person) => void;
@@ -111,6 +177,7 @@ export function PersonSearch({
   inputRef?: RefCallback<HTMLInputElement>;
   ariaLabel?: string;
   disabled?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -131,17 +198,19 @@ export function PersonSearch({
     function handleClick(event: MouseEvent) {
       if (boxRef.current && !boxRef.current.contains(event.target as Node)) {
         setOpen(false);
+        onOpenChange?.(false);
         setActiveIndex(-1);
       }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+  }, [onOpenChange]);
 
   const handleSelectPerson = (person: Person) => {
     onSelect(person);
     setQuery("");
     setOpen(false);
+    onOpenChange?.(false);
     setActiveIndex(-1);
   };
 
@@ -166,19 +235,25 @@ export function PersonSearch({
         onChange={(event) => {
           setQuery(event.target.value);
           setOpen(true);
+          onOpenChange?.(true);
           setActiveIndex(-1);
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          setOpen(true);
+          onOpenChange?.(true);
+        }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown") {
             event.preventDefault();
             setOpen(true);
+            onOpenChange?.(true);
             setActiveIndex((prev) =>
               matches.length === 0 ? -1 : prev + 1 < matches.length ? prev + 1 : 0,
             );
           } else if (event.key === "ArrowUp") {
             event.preventDefault();
             setOpen(true);
+            onOpenChange?.(true);
             setActiveIndex((prev) =>
               matches.length === 0 ? -1 : prev - 1 >= 0 ? prev - 1 : matches.length - 1,
             );
@@ -191,6 +266,7 @@ export function PersonSearch({
             }
           } else if (event.key === "Escape") {
             setOpen(false);
+            onOpenChange?.(false);
             setActiveIndex(-1);
           }
         }}

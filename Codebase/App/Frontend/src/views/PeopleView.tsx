@@ -3,7 +3,7 @@ import { api } from "../api";
 import { PersonEditorModal } from "../features/people/components/PersonEditorModal";
 import { UndoBar } from "../features/mutations/components/UndoBar";
 import { CompareModal, JournalModal, PersonProfile } from "../components/PersonDetail";
-import { Avatar, Button, ErrorNote, Modal } from "../components/ui";
+import { Avatar, Button, ErrorNote, Icon, Modal } from "../components/ui";
 import { usePerspective } from "../state";
 import type { Group, Person, RelationshipEntry } from "../types";
 
@@ -215,13 +215,13 @@ export function PeopleView({
   }, [people, groupFilter, query, sortBy, perspectiveRelationships]);
 
   return (
-    <div className="view">
+    <div className="view people-view">
       {/* HEADER */}
       <div className="view-head">
         <div>
           <h1>People</h1>
           <p className="muted">
-            Personal relationship directory. {people.length} canonical {people.length === 1 ? "person" : "people"} recorded.
+            Your private circle. {people.length} connected {people.length === 1 ? "person" : "people"} recorded.
           </p>
         </div>
         <Button
@@ -231,14 +231,14 @@ export function PeopleView({
             setPersonModalMode("add");
           }}
         >
-          + Add Person
+          <Icon name="add" /> Add Person
         </Button>
       </div>
 
       <ErrorNote error={error} />
 
       {/* GROUP FILTER TABS WITH CANONICAL COUNTS */}
-      <div className="tabs" style={{ marginBottom: 12, overflowX: "auto", flexWrap: "wrap" }}>
+      <div className="tabs people-filters" style={{ marginBottom: 12, overflowX: "auto" }}>
         <button
           type="button"
           className={`tab ${groupFilter === null ? "active" : ""}`}
@@ -279,7 +279,7 @@ export function PeopleView({
           >
             <option value="name-asc">Name (A → Z)</option>
             <option value="name-desc">Name (Z → A)</option>
-            <option value="relationship">Relationship to perspective</option>
+            <option value="relationship">Relationship</option>
             <option value="birth-asc">Birth Year (Oldest first)</option>
             <option value="birth-desc">Birth Year (Youngest first)</option>
           </select>
@@ -309,7 +309,7 @@ export function PeopleView({
       <div className="people-table">
         <div className="people-table-head" style={{ gridTemplateColumns: "1.6fr 1.3fr 1fr 1.2fr 160px" }}>
           <span>Person</span>
-          <span>Relationship to Perspective</span>
+          <span>Relationship</span>
           <span>Aliases</span>
           <span>Groups</span>
           <span>Actions</span>
@@ -396,7 +396,7 @@ export function PeopleView({
                 style={{ justifyContent: "flex-end" }}
               >
                 <Button kind="ghost" onClick={() => openProfile(person)}>
-                  Profile
+                  <Icon name="profile" /> Profile
                 </Button>
                 <Button
                   kind="ghost"
@@ -405,7 +405,7 @@ export function PeopleView({
                     setPersonModalMode("edit");
                   }}
                 >
-                  Edit
+                  <Icon name="edit" /> Edit
                 </Button>
                 <Button
                   kind="danger"
@@ -458,7 +458,7 @@ export function PeopleView({
 
       {/* PERSON PROFILE MODAL */}
       {selected && (
-        <Modal title={`${selected.name} — Profile`} onClose={requestProfileClose} wide closeOnEscape>
+        <Modal title={`${selected.name} — Profile`} onClose={requestProfileClose} wide closeOnEscape className="profile-modal">
           {returnLabel && onReturn && (
             <div className="navigation-return">
               <Button
@@ -468,6 +468,7 @@ export function PeopleView({
                 onClick={onReturn}
               >
                 ← Return to {returnLabel}
+                {returnLabel === "Connections" && <span className="sr-only">Return to Relationships</span>}
               </Button>
               <span className="muted small">Your {returnLabel} context is unchanged.</span>
             </div>

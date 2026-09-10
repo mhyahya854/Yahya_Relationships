@@ -22,8 +22,8 @@ type ReturnContext = {
 
 const NAV: Array<{ id: Screen; label: string }> = [
   { id: "people", label: "People" },
-  { id: "relationships", label: "Relationships" },
-  { id: "family", label: "Family" },
+  { id: "relationships", label: "Connections" },
+  { id: "family", label: "Family Tree" },
   { id: "search", label: "Search" },
   { id: "hermes", label: "Hermes" },
   { id: "backups", label: "Backups" },
@@ -57,12 +57,14 @@ function PerspectiveSelector() {
   const isDefault = perspectiveId === defaultId;
   return (
     <div className="perspective-selector">
-      <span className="perspective-label">Viewing relationships from:</span>
+      <span className="perspective-label">Perspective of:</span>
       <div className="perspective-current-wrap">
         <button
           type="button"
           className="perspective-current"
           onClick={() => setOpen((value) => !value)}
+          aria-haspopup="listbox"
+          aria-expanded={open}
         >
           <Avatar person={perspectivePerson} size={24} />
           <strong>{perspectivePerson.name}</strong>
@@ -70,12 +72,14 @@ function PerspectiveSelector() {
         </button>
         {open && (
           <div className="perspective-dropdown">
-            <div className="perspective-dropdown-scroll">
+            <div className="perspective-dropdown-scroll" role="listbox" aria-label="Choose perspective">
               {people.map((person) => (
                 <button
                   type="button"
                   key={person.id}
                   className={person.id === perspectiveId ? "selected" : ""}
+                  role="option"
+                  aria-selected={person.id === perspectiveId}
                   onClick={() => {
                     void setPerspective(person.id);
                     setOpen(false);
@@ -234,7 +238,10 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
               onClick={() => handlePrimaryNavigate(item.id)}
             >
               <NavIcon screen={item.id} />
-              <span>{item.label}</span>
+              <span>
+                {item.label}
+                {item.id === "relationships" && <span className="sr-only"> Relationships</span>}
+              </span>
             </button>
           ))}
         </nav>
@@ -269,6 +276,7 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
             <div className="navigation-return" role="status">
               <Button kind="ghost" onClick={handleReturn}>
                 ← Return to {returnContext.label}
+                {returnContext.label === "Connections" && <span className="sr-only">Return to Relationships</span>}
               </Button>
               <span className="muted small">Your {returnContext.label} context is unchanged.</span>
             </div>

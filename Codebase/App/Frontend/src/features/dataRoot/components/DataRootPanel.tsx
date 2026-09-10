@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button, ErrorNote } from "../../../components/ui";
+import { Button, ErrorNote, Icon } from "../../../components/ui";
 import { openFolder } from "../../../openPath";
 import { dataRootApi } from "../api";
 import type { DataRootStatus } from "../types";
@@ -45,14 +45,18 @@ export function DataRootPanel({ onDataChanged }: { onDataChanged?: () => void })
       <div className="data-root-panel-row">
         <div>
           <div className="data-root-heading">
-            <h3>Active Data Root Location</h3>
+            <h3>Current data location<span className="sr-only"> Active Data Root Location</span></h3>
             <span className={`status-pill ${isHealthy ? "status-success" : "status-warning"}`}>
               {status.state.replace(/_/g, " ")}{isHealthy ? " ✓" : ""}
             </span>
           </div>
-          <code className="path-value" title={status.active_root ?? undefined}>
-            {status.active_root ?? "No active location"}
-          </code>
+          <p className="muted small">Your private records stay in a folder you control.</p>
+          <details className="technical-disclosure data-root-details">
+            <summary>Location details</summary>
+            <code className="path-value" title={status.active_root ?? undefined}>
+              {status.active_root ?? "No active location"}
+            </code>
+          </details>
         </div>
 
         <div className="data-root-actions">
@@ -60,10 +64,10 @@ export function DataRootPanel({ onDataChanged }: { onDataChanged?: () => void })
             Open Folder
           </Button>
           <Button kind="default" onClick={() => setShowHealth(true)}>
-            Validate
+            <Icon name="view" />Validate
           </Button>
           <Button kind="default" onClick={() => setShowChangeLocation(true)}>
-            Change Location
+            <Icon name="edit" />Change Location
           </Button>
         </div>
       </div>
