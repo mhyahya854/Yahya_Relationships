@@ -1,9 +1,9 @@
 import { GRAPH_LEGEND } from "../graph/edgeStyles";
 
-export function GraphLegend() {
+export function GraphLegend({ includeGeneral = true }: { includeGeneral?: boolean }) {
   return (
     <div className="graph-legend">
-      {GRAPH_LEGEND.map((item) => (
+      {GRAPH_LEGEND.filter((item) => includeGeneral || item.label !== "General relationship").map((item) => (
         <span className="legend-item" key={item.label}>
           <span
             className={`legend-line legend-style-${item.style}`}

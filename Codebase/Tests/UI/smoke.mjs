@@ -107,6 +107,11 @@ async function waitForBody(pattern, timeout = 18000) {
   );
 }
 
+async function openInspectorSection(selector) {
+  const isOpen = await page.$eval(selector, (node) => node.open);
+  if (!isOpen) await page.click(`${selector} summary`);
+}
+
 // 1. Relationships opens directly on the diagram with the owner perspective.
 await page.goto("http://localhost:1420/", {
   waitUntil: "networkidle0",
@@ -151,7 +156,7 @@ await clickText(".btn-outline", "Cancel");
 await sleep(300);
 
 // 4. HUMAN EDITING TEST: Add Relationship on Relationships View
-await clickText(".nav-item", "Relationships");
+await clickText(".nav-item", "Connections");
 await page.waitForSelector(".relationships-graph-area .react-flow", { timeout: 15000 });
 
 // Select Mansoor Hussain
@@ -159,12 +164,13 @@ await typeInto(".person-search input", "Mansoor");
 await page.waitForSelector(".person-search-row", { visible: true });
 await page.click(".person-search-name");
 await page.waitForFunction(
-  () => document.querySelector(".side-profile-row")?.textContent.includes("Mansoor"),
+  () => document.querySelector(".relationships-panel")?.textContent.includes("Mansoor"),
   { timeout: 5000 },
 );
 
 // Click + Add Relationship button
-await clickText(".row-actions button", "+ Add Relationship");
+await openInspectorSection(".inspector-manage");
+await clickText(".relationships-panel button", "Add Relationship");
 await page.waitForSelector(".modal-card", { timeout: 5000 });
 await typeInto(".form-group input[placeholder*='Search']", "Adeel");
 await sleep(300);
@@ -199,7 +205,8 @@ await page.evaluate(() => {
 await page.waitForFunction(() => !document.querySelector(".modal-card"), { timeout: 5000 });
 
 // 5. Add General Friend Relationship and capture relationship-added
-await clickText("button", "+ Add Relationship");
+await openInspectorSection(".inspector-manage");
+await clickText(".relationships-panel button", "Add Relationship");
 await page.waitForSelector(".modal-card", { timeout: 5000 });
 await typeInto(".form-group input[placeholder*='Search']", "Adeel");
 await sleep(300);
@@ -230,7 +237,7 @@ await clickText(".btn-outline", "Cancel");
 await sleep(300);
 
 // 7. Edit General Relationship
-await clickText(".nav-item", "Relationships");
+await clickText(".nav-item", "Connections");
 await page.waitForSelector(".relationships-graph-area .react-flow", { timeout: 15000 });
 
 // Add a temporary general relationship via API for edit screenshot
@@ -255,7 +262,7 @@ await page.evaluate(async () => {
 });
 await clickText(".nav-item", "People");
 await sleep(300);
-await clickText(".nav-item", "Relationships");
+await clickText(".nav-item", "Connections");
 await sleep(800);
 await typeInto(".person-search input", "Irsa");
 await page.waitForSelector(".person-search-row", { visible: true });
@@ -263,6 +270,7 @@ await clickText(".person-search-row", "Irsa Naz");
 await sleep(500);
 
 // Click Edit on general entry
+await openInspectorSection(".inspector-evidence");
 const editButtons = await page.$$(".panel-rel-row .btn");
 if (editButtons.length > 0) {
   await editButtons[0].click();
@@ -355,7 +363,7 @@ await shot("restore-success");
 report("restore-success state rendered", true);
 
 // 9. Family Mermaid regression.
-await clickText(".nav-item", "Family");
+await clickText(".nav-item", "Family Tree");
 await page.waitForFunction(
   () => !!document.querySelector(".family-diagram svg"),
   { timeout: 30000 },

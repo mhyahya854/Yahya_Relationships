@@ -45,8 +45,8 @@ export function DataRootHealthDialog({
           style={{
             padding: "10px 14px",
             borderRadius: "8px",
-            background: !hasIssues ? "var(--ok-soft, #eef9f5)" : "var(--warn-soft, #fff8ec)",
-            border: `1px solid ${!hasIssues ? "var(--ok, #2e7d32)" : "var(--warn, #d97706)"}`,
+            background: !hasIssues ? "var(--ok-soft)" : "var(--warn-soft)",
+            border: `1px solid ${!hasIssues ? "var(--ok)" : "var(--warn)"}`,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
@@ -68,8 +68,8 @@ export function DataRootHealthDialog({
         <div className="audit-sections" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
           <div
             style={{
-              background: "#f8fafc",
-              border: "1px solid #e2e8f0",
+              background: "var(--surface-secondary)",
+              border: "1px solid var(--line)",
               borderRadius: "8px",
               padding: "12px",
             }}
@@ -83,8 +83,8 @@ export function DataRootHealthDialog({
 
           <div
             style={{
-              background: "#f8fafc",
-              border: "1px solid #e2e8f0",
+              background: "var(--surface-secondary)",
+              border: "1px solid var(--line)",
               borderRadius: "8px",
               padding: "12px",
             }}
@@ -109,8 +109,8 @@ export function DataRootHealthDialog({
                   style={{
                     padding: "8px 10px",
                     borderRadius: "6px",
-                    background: issue.severity === "error" ? "#fef2f2" : "#fffbe6",
-                    border: `1px solid ${issue.severity === "error" ? "#fecaca" : "#ffe58f"}`,
+                    background: issue.severity === "error" ? "var(--danger-soft)" : "var(--warn-soft)",
+                    border: `1px solid ${issue.severity === "error" ? "var(--danger)" : "var(--warn)"}`,
                     fontSize: "12.5px",
                   }}
                 >

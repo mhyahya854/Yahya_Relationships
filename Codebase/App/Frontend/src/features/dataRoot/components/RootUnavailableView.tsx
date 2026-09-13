@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, ErrorNote } from "../../../components/ui";
+import { Button, ErrorNote, Icon, type IconName } from "../../../components/ui";
 import { dataRootApi } from "../api";
 import type { BackupInspection, DataRootCandidate, DataRootState, ValidationIssue } from "../types";
 
@@ -29,22 +29,52 @@ function PathField({ id, label, value, onChange, disabled }: {
     if (chosen) onChange(chosen);
   }
   return (
-    <div style={{ textAlign: "left" }}>
-      <label htmlFor={id} className="small" style={{ display: "block", marginBottom: 5 }}>{label}</label>
-      <div style={{ display: "flex", gap: 8 }}>
+    <div className="recovery-path-field">
+      <label htmlFor={id}>{label}</label>
+      <div className="recovery-path-row">
         <input
           id={id}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           disabled={disabled}
           placeholder="Choose a folder or enter its path"
-          style={{ flex: 1, minWidth: 0, padding: "8px 10px" }}
+          className="text-input"
         />
         <Button kind="default" disabled={disabled} onClick={() => void browse()} title={`Browse for ${label}`}>
           Browse…
         </Button>
       </div>
     </div>
+  );
+}
+
+function RouteAction({
+  icon,
+  title,
+  description,
+  primary = false,
+  disabled,
+  onClick,
+}: {
+  icon: IconName;
+  title: string;
+  description: string;
+  primary?: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      kind={primary ? "primary" : "default"}
+      className="recovery-route-card"
+      disabled={disabled}
+      onClick={onClick}
+      ariaLabel={title}
+    >
+      <span className="recovery-route-icon"><Icon name={icon} size={28} /></span>
+      <span className="recovery-route-copy"><strong>{title}</strong><span>{description}</span></span>
+      <span className="recovery-route-arrow" aria-hidden="true">→</span>
+    </Button>
   );
 }
 
@@ -178,41 +208,51 @@ export function RootUnavailableView({
       : state === "MISSING"
         ? "The saved location is not currently available. Reconnect it or choose a recovery route."
         : "The saved location exists but is not safe to open normally.";
+  const flowTitle = flow ? ({ existing: "Use Existing Data Root", restore: "Restore From Backup", create: "Create New Data Root" }[flow]) : title;
+  const flowSubtitle = flow === "existing"
+    ? "This does not copy current data. You will review health and counts before switching."
+    : flow === "restore"
+      ? "The backup snapshot and the new active Data Root are two separate locations."
+      : flow === "create"
+        ? "Create a fresh schema-v2 Data Root. Existing non-empty folders are never reused or overwritten."
+        : subtitle;
+  const headerIcon: IconName = flow === "restore" ? "backup" : flow === "create" ? "add" : isFirstRun ? "profile" : state === "MISSING" ? "folder" : "family";
 
   return (
     <main className="root-unavailable-view" aria-busy={busy}>
-      <div className="root-unavailable-card">
-        <h1 ref={headingRef} tabIndex={-1} style={{ marginTop: 0, outline: "none" }}>{flow ? ({ existing: "Use Existing Data Root", restore: "Restore From Backup", create: "Create New Data Root" }[flow]) : title}</h1>
-        {!flow && <p className="muted">{subtitle}</p>}
-        {!flow && lastLocation && <details className="technical-disclosure info-note" style={{ overflowWrap: "anywhere" }}><summary>Last known location</summary><div>{lastLocation}</div></details>}
-        {!flow && <IssueList issues={issues} />}
-        <ErrorNote error={error} />
-        {busy && <div role="status" className="info-note">Checking and verifying…</div>}
-        {completed && (
-          <div role="status" className="info-note">
-            {completed}
-            <div style={{ marginTop: 10 }}><Button kind="primary" onClick={() => window.location.reload()}>Continue</Button></div>
+      <div className={`root-unavailable-card ${!isFirstRun && !flow ? "root-recovery-card" : "root-onboarding-card"}`}>
+        <header className="root-unavailable-heading">
+          <span className="root-unavailable-icon"><Icon name={headerIcon} size={isFirstRun && !flow ? 44 : 32} /></span>
+          <div className="root-unavailable-title">
+            <h1 ref={headingRef} tabIndex={-1}>{flowTitle}</h1>
+            <p>{flowSubtitle}</p>
           </div>
-        )}
-
-        {!flow && !completed && (
-          <div className="recovery-routes">
-            {!isFirstRun && <Button kind="primary" disabled={busy} onClick={() => void retry()}>Retry</Button>}
-            <Button kind={isFirstRun ? "primary" : "default"} disabled={busy} onClick={() => reset("existing")}>Use Existing Data Root</Button>
-            <span className="muted small">Validate another existing Data Root and make it active without copying current data.</span>
-            <Button kind="default" disabled={busy} onClick={() => reset("restore")}>Restore From Backup</Button>
-            <span className="muted small">Verify a backup snapshot, then restore it into a separate new location.</span>
-            <div className={!isFirstRun ? "recovery-route-separated" : undefined}>
-              <Button kind="default" disabled={busy} onClick={() => reset("create")}>Create New Data Root</Button>
-              <div className="muted small">Start fresh with your name and one initial person record. This does not recover missing data.</div>
+          {flow && <Button kind="ghost" className="icon-button root-flow-close" ariaLabel="Close recovery route" onClick={() => reset(null)}><Icon name="close" /></Button>}
+        </header>
+        <div className="root-unavailable-content">
+          {!flow && lastLocation && <details className="technical-disclosure info-note last-location-card" style={{ overflowWrap: "anywhere" }}><summary><Icon name="folder" /> Last known location</summary><div>{lastLocation}</div></details>}
+          {!flow && <IssueList issues={issues} />}
+          <ErrorNote error={error} />
+          {busy && <div role="status" className="info-note">Checking and verifying…</div>}
+          {completed && (
+            <div role="status" className="info-note">
+              {completed}
+              <div style={{ marginTop: 10 }}><Button kind="primary" onClick={() => window.location.reload()}>Continue</Button></div>
             </div>
-            {state === "REPAIRABLE" && <Button kind="default" disabled={busy} onClick={() => void repair()}>Run Safe Repair</Button>}
-          </div>
-        )}
+          )}
+
+          {!flow && !completed && (
+            <div className="recovery-routes">
+              {!isFirstRun && <RouteAction icon="reload" title="Retry" description="Check whether the saved location is available again." primary disabled={busy} onClick={() => void retry()} />}
+              <RouteAction icon="folder" title="Use Existing Data Root" description="Validate another existing Data Root and make it active without copying current data." primary={isFirstRun} disabled={busy} onClick={() => reset("existing")} />
+              <RouteAction icon="backup" title="Restore From Backup" description="Verify a backup snapshot, then restore it into a separate new location." disabled={busy} onClick={() => reset("restore")} />
+              <RouteAction icon="add" title="Create New Data Root" description="Start fresh with your name and one initial person record. This does not recover missing data." disabled={busy} onClick={() => reset("create")} />
+              {state === "REPAIRABLE" && <RouteAction icon="family" title="Run Safe Repair" description="Repair only validated structural issues in this Data Root." disabled={busy} onClick={() => void repair()} />}
+            </div>
+          )}
 
         {flow === "existing" && !completed && (
           <div className="recovery-flow">
-            <p className="muted">This does not copy current data. You will review health and counts before switching.</p>
             <PathField id="existing-root-path" label="Existing Data Root" value={candidatePath} onChange={(value) => { setCandidatePath(value); setCandidate(null); }} disabled={busy} />
             <Button kind="primary" disabled={busy || !candidatePath.trim()} onClick={() => void inspectExisting()}>Inspect Data Root</Button>
             {candidate && <CandidateSummary candidate={candidate} />}
@@ -222,7 +262,6 @@ export function RootUnavailableView({
 
         {flow === "create" && !completed && (
           <div className="recovery-flow">
-            <p className="muted">Create a fresh schema-v2 Data Root. Existing non-empty folders are never reused or overwritten.</p>
             <PathField id="new-root-path" label="New Data Root location" value={destinationPath} onChange={(value) => { setDestinationPath(value); setCandidate(null); }} disabled={busy} />
             <div className="recovery-field"><label htmlFor="owner-name" className="small">Your name</label><input className="text-input" id="owner-name" value={ownerName} onChange={(event) => setOwnerName(event.target.value)} disabled={busy} /></div>
             <div className="recovery-field"><label htmlFor="owner-gender" className="small">Gender (optional)</label><select className="select-input" id="owner-gender" value={ownerGender} onChange={(event) => setOwnerGender(event.target.value)} disabled={busy}><option value="">Unspecified</option><option value="unknown">Unknown</option><option value="female">Female</option><option value="male">Male</option></select></div>
@@ -234,7 +273,6 @@ export function RootUnavailableView({
 
         {flow === "restore" && !completed && (
           <div className="recovery-flow">
-            <p className="muted">The backup snapshot and the new active Data Root are two separate locations.</p>
             <PathField id="backup-source-path" label="Backup snapshot source" value={candidatePath} onChange={(value) => { setCandidatePath(value); setBackup(null); }} disabled={busy} />
             <Button kind="primary" disabled={busy || !candidatePath.trim()} onClick={() => void verifyBackup()}>Verify Backup</Button>
             {backup && <section aria-label="Backup verification summary" className="info-note" style={{ textAlign: "left" }}><strong>{backup.ok ? "Verified backup" : "Backup verification failed"}</strong><div>{backup.path}</div><div>People: {backup.manifest?.person_count ?? "unknown"} · Journals: {backup.manifest?.journal_count ?? "unknown"} · Schema: {backup.manifest?.sqlite_schema_version ?? "unknown"}</div></section>}
@@ -244,7 +282,8 @@ export function RootUnavailableView({
           </div>
         )}
 
-        {flow && !completed && <div style={{ marginTop: 18 }}><Button kind="ghost" disabled={busy} onClick={() => reset(null)}>Back</Button></div>}
+          {flow && !completed && <div className="recovery-back"><Button kind="ghost" disabled={busy} onClick={() => reset(null)}><Icon name="back" /> Back</Button></div>}
+        </div>
       </div>
     </main>
   );

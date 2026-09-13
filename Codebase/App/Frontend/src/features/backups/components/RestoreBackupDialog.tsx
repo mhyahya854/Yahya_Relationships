@@ -55,13 +55,13 @@ export function RestoreBackupDialog({
   return (
     <Modal title={`Restore Backup: ${backup.label || backup.name}`} onClose={() => !busy && onClose()}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ background: "#fffbe6", border: "1px solid #ffe58f", borderRadius: 8, padding: 12, fontSize: 13, color: "#8c6b00" }}>
+        <div style={{ background: "var(--warn-soft)", border: "1px solid var(--warn)", borderRadius: 8, padding: 12, fontSize: 13, color: "var(--warn)" }}>
           <strong>Current data will be replaced</strong>
           <p style={{ margin: "4px 0 0" }}>The current database, People folders, Journals, and portable Config will be replaced with this verified backup state.</p>
           <p style={{ margin: "4px 0 0" }}>A verified Safety / Pre-Restore snapshot of the current state must complete before any active data changes.</p>
         </div>
 
-        <div style={{ background: "#f8fafc", padding: "10px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12.5 }}>
+        <div style={{ background: "var(--surface-secondary)", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 12.5 }}>
           <div>Label: <strong>{backup.label || "Snapshot"}</strong></div>
           <div>Created: <strong>{backup.created || "Unknown"}</strong></div>
           <div>Category: <strong>{backup.category}{backup.safety_reason ? ` / ${backup.safety_reason.replace(/_/g, " ")}` : ""}</strong></div>

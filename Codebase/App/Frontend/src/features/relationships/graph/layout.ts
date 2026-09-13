@@ -15,7 +15,7 @@ export function layoutGraph(
 ): Node[] {
   const graph = new dagre.graphlib.Graph();
   graph.setDefaultEdgeLabel(() => ({}));
-  graph.setGraph({ rankdir: direction, nodesep: 14, ranksep: 72, marginx: 24, marginy: 24 });
+  graph.setGraph({ rankdir: direction, nodesep: 26, ranksep: 86, marginx: 24, marginy: 24 });
 
   const sortedNodes = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
   const sortedEdges = [...edges].sort((a, b) =>

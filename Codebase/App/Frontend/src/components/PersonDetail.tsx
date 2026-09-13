@@ -452,7 +452,7 @@ export function PersonProfile({
                 </h4>
 
                 {profileData.general.length === 0 ? (
-                  <div className="empty-state" style={{ padding: "16px", background: "#fafbfc", borderRadius: 8 }}>
+                  <div className="empty-state" style={{ padding: "16px", background: "var(--surface-secondary)", borderRadius: 8 }}>
                     No non-family general relationships recorded for {person.name}.
                   </div>
                 ) : (

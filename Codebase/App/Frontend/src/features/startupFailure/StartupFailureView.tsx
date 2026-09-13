@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button } from "../../components/ui";
+import { Button, Icon } from "../../components/ui";
 
 export interface StartupFailureViewProps {
   port?: number;
@@ -61,6 +61,7 @@ export function StartupFailureView({
               People Relationships could not start its local data service.
             </p>
           </div>
+          <Button kind="ghost" className="icon-button startup-failure-close" ariaLabel="Close startup failure" onClick={() => void handleExit()}><Icon name="close" /></Button>
         </div>
 
         <div className="modal-body startup-failure-body">

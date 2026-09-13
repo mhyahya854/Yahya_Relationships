@@ -308,7 +308,7 @@ export const PersonEditorModal: React.FC<Props> = ({
                           cursor: "pointer",
                           padding: "6px 12px",
                           fontWeight: isChecked ? 600 : 400,
-                          background: isChecked ? "var(--accent-soft)" : "#f0f2f5",
+                          background: isChecked ? "var(--accent-soft)" : "var(--surface-secondary)",
                           border: isChecked ? "1px solid var(--accent)" : "1px solid var(--line)",
                           color: isChecked ? "var(--accent-strong)" : "var(--muted)",
                         }}

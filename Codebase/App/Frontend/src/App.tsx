@@ -12,6 +12,7 @@ import { SearchView } from "./views/SearchView";
 import { RootUnavailableView } from "./features/dataRoot/components/RootUnavailableView";
 import type { DataRootState, DataRootStatus } from "./features/dataRoot/types";
 import { StartupFailureView } from "./features/startupFailure/StartupFailureView";
+import { ThemeProvider, ThemeToggle } from "./theme";
 
 type Screen = "people" | "relationships" | "family" | "search" | "hermes" | "backups";
 
@@ -211,8 +212,10 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
     openScreen("family");
   };
 
+  const isCanvasScreen = screen === "relationships" || screen === "family";
+
   return (
-    <div className="shell">
+    <div className={`shell ${isCanvasScreen ? "canvas-mode" : ""}`}>
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark" aria-hidden="true">
@@ -329,7 +332,7 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
   );
 }
 
-export function App() {
+function AppContent() {
   const [rootUnavailable, setRootUnavailable] = useState<DataRootState | null>(null);
   const [rootStatus, setRootStatus] = useState<DataRootStatus | null>(null);
   const [lastLocation, setLastLocation] = useState<string | null>(null);
@@ -417,5 +420,14 @@ export function App() {
     <PerspectiveProvider key={rootStatus.root_id ?? rootStatus.active_root ?? rootStatus.state}>
       <Shell rootStatus={rootStatus} />
     </PerspectiveProvider>
+  );
+}
+
+export function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+      <ThemeToggle />
+    </ThemeProvider>
   );
 }

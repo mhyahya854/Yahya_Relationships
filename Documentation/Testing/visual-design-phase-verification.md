@@ -4,140 +4,146 @@
 
 **PHASE 10 — TECHNICALLY COMPLETE; HUMAN VISUAL REVIEW REQUIRED.**
 
-This phase establishes a neutral visual foundation and refines every existing application surface. It does not freeze Phase 10, start Phase 11, add Hermes functionality, or implement a future custom theme.
+Phase 10 implements the user-supplied references, a shared palette-backed Light/Dark design system, a high-complexity synthetic visual fixture, and an exhaustive control/screenshot review. Phase 11 has not started and Phase 10 is not frozen until the user approves the final screenshots.
 
-## Immutable start gate
+## Immutable starting state
 
 - Branch: `main`
-- Required and observed starting commit: `02aa063dde994da1a738773478f9a1002dc00961`
-- Starting `HEAD`, `origin/main`, and required commit were identical.
-- Starting worktree was clean.
+- Starting `HEAD`: `1b8c219d56b1cd55751309581a7765065b6f780e`
+- Starting `origin/main`: `1b8c219d56b1cd55751309581a7765065b6f780e`
+- The live remote branch matched the local start SHA.
+- Pre-existing screenshot deletions/modifications were treated as user-owned work and excluded from Phase 10 staging.
 
-## Visual audit
+## Reference authority and correction
 
-The pre-change application was structurally sound but visually fragmented. Its strongest inconsistencies were text-glyph navigation icons, a heavy blue active shell, repeated hard-coded cool grays, inconsistent radii and control heights, card borders around nearly every region, over-prominent destructive actions, long paths dominating profile and Data Root views, cramped backup actions, an oversized empty Relationships inspector, and Family focus behavior that scrolled the outer page.
+The 30 supplied screenshots are visual authority; names, paths, dates, IDs, counts, journals, and relationships shown inside them are not application data. The final user-supplied graph composition supersedes earlier graph captures for both Connections and Family Tree:
 
-Preserved without redesign:
+- full-bleed dotted workspace after the sidebar;
+- floating `Perspective of` context at upper left;
+- collapsed search at upper right;
+- compact nodes with edges continuing behind floating chrome;
+- right-side inspector only while a person is selected;
+- floating bottom zoom/filter/legend dock.
 
-- all six primary destinations and their navigation/state semantics;
-- perspective and contextual-return behavior;
-- canonical People, family, relationship, journal, search, backup, and Data Root workflows;
-- stored-versus-derived semantics and existing mutation safeguards;
-- Urdu/RTL content, ARIA, keyboard behavior, labels, and focus visibility;
-- local-first data boundaries and in-app confirmation flows.
+Connections retains React Flow and Dagre. Family Tree retains Mermaid and the canonical Python kinship engine, including maternal/paternal, marriage, parent-child, sibling/cross-link, and multipath semantics.
 
-## Design system
+The scored mapping is in [phase10-reference-map.md](phase10-reference-map.md): **30/30 implemented, 30/30 at or above 97%, 0 below 97%**. Dynamic synthetic content and valid canonical topology are intentionally excluded from pixel-level text comparisons.
 
-| Dimension | Phase 10 system |
+## Shared design system
+
+| Dimension | Final system |
 | --- | --- |
-| Color | Warm neutral canvas `#f3f1ec`, paper panel `#fffefa`, ink `#202823`, muted `#68716c`, restrained teal accent `#35695e`, semantic danger/ok/warning colors, and distinct family/general/derived graph colors. |
-| Typography | Segoe UI/system stack with Noto Naskh Arabic fallback; compact 14px body, 24px view titles, stronger labels, and readable Urdu line height. |
-| Spacing | Compact 4/8/12/16/20/24/32 rhythm, 35–39px controls, and wider view gutters at large sizes. |
-| Radii | Shared 7px, 11px, and 16px tiers for controls, panels, and modal/recovery surfaces. |
-| Shadows | Quiet panel lift and one stronger floating/modal shadow; ordinary sections rely primarily on spacing and borders. |
-| Surfaces | Warm app canvas, paper panels, subtle inset regions, restrained dotted graph canvases, and a dedicated recovery backdrop. |
-| Icons | Inline SVG navigation and brand marks; no icon dependency and no semantic behavior change. |
+| Typography | System/SF-style stack with Arabic fallbacks, optical hierarchy, contained long names, and readable Urdu line height. |
+| Spacing | Shared compact 4/8/12/16/20/24/32 rhythm with floating-canvas offsets and responsive gutters. |
+| Radii | Reusable control, pill, card, inspector, and modal tiers rather than per-screen values. |
+| Surfaces | Layered app canvas, soft elevated cards, restrained translucent overlays, dotted graph workspace, and recovery backdrop. |
+| Glass/depth | Translucency, hairline edges, top highlights, and restrained elevation with solid fallbacks. |
+| Controls | Shared buttons, pills, segmented controls, fields, tabs, close controls, disclosures, and status treatments. |
+| Motion | Short, interruptible transform/opacity feedback with reduced-motion handling; no new animation dependency. |
+| Accessibility boundary | Visible focus, labels, keyboard reachability, baseline contrast, reduced motion/transparency, and minimum target sizing preserved without starting Phase 11. |
 
-The implementation intentionally reuses the existing CSS architecture and component markup. No theme package, icon package, new state layer, or speculative abstraction was added.
+The implementation reuses existing application primitives and dependencies. No new UI framework, icon package, state layer, or theme package was added.
 
-## Surface refinements
+## Light/Dark palette implementation
 
-- **App shell:** quieter warm sidebar, one clear active marker, compact topbar, SVG navigation, and preserved perspective/return behavior.
-- **People/Profile:** clearer table hierarchy, lower-prominence destructive actions, contained long content, calmer identity and perspective cards, and consistent tabs/actions.
-- **Relationships:** warm dotted canvas, harmonized semantic edges, restrained nodes/controls/minimap, and a compact empty inspector.
-- **Family:** harmonized Mermaid palette, accent focus treatment, consistent controls/panel, and focus scrolling constrained to the diagram viewport.
-- **Search:** stronger primary field, quieter result cards, category clarity, and contained bilingual/long result content.
-- **Journals:** calm writing surface, consistent toolbar/status hierarchy, and preserved conflict, external-edit, and hostile-markup safeguards.
-- **Backups:** compact category rhythm, scannable metadata, aligned actions, restrained restore hierarchy, and refined Data Root panel.
-- **Data Root/recovery/startup:** shared recovery surface, readable route hierarchy, consistent fields/statuses, and a refined StartupFailure state.
-- **Hermes:** visual tokens were inherited by the existing placeholder only; no functionality was added.
+- A real application-wide theme provider applies Light or Dark mode immediately and persists only the UI preference in local storage.
+- Open dialogs, graph canvases, nodes, edges, journals, recovery surfaces, status states, and controls update without restart.
+- Semantic CSS tokens map to exact entries from the supplied canonical palette; no automatic inversion is used.
+- Accent, danger, warning, information, maternal, paternal, marriage, family/general edges, borders, surfaces, text, disabled, and focus states are theme-specific.
+- The focused color audit and justified exceptions are recorded in [phase10-color-audit.md](phase10-color-audit.md).
 
-## Synthetic review gallery
+## Surface coverage
 
-Every committed review image was generated from an isolated temporary Data Root containing synthetic people, bilingual aliases, long names, relationships, journals, backups, and recovery states. No production person, journal, backup label, or private production path appears in this set.
+- **Shell:** locked navigation labels, distinct global perspective control, theme switch, contextual return behavior.
+- **People/Profile:** pill filters and rows, long bilingual identity handling, locked profile hierarchy, Details before About, restrained destructive actions.
+- **Connections:** full-canvas React Flow workspace, compact nodes, collapsed search, conditional inspector, path evidence, compare/edit/add/delete flows, fullscreen, filters, pan/zoom/fit.
+- **Family Tree:** full-canvas Mermaid workspace with matching floating composition, focus/search, conditional inspector, legend, zoom/fit/center/reload, and canonical kinship semantics.
+- **Search/Journals:** category states, bilingual content, safe Markdown preview, dirty/conflict guards, edit/view/preview and append/revert/reload controls.
+- **Backups/DataRoot:** library, create/verify/details/restore, health, move/switch, onboarding, missing/read-only/invalid/startup-failure states.
+- **Errors/confirmations/Hermes:** mutation validation, destructive confirmations, progressive diagnostics, and the existing Hermes placeholder aligned to the same system.
 
-| # | Review state | Image |
-| --- | --- | --- |
-| 01 | People directory | [01-people.png](../UI-Screenshots/Phase10-Review/01-people.png) |
-| 02 | Long bilingual person profile | [02-person-profile.png](../UI-Screenshots/Phase10-Review/02-person-profile.png) |
-| 03 | Relationship diagram | [03-relationships.png](../UI-Screenshots/Phase10-Review/03-relationships.png) |
-| 04 | Selected relationship details | [04-relationship-details.png](../UI-Screenshots/Phase10-Review/04-relationship-details.png) |
-| 05 | Family tree | [05-family.png](../UI-Screenshots/Phase10-Review/05-family.png) |
-| 06 | Family selected-person inspector | [06-family-selected-person.png](../UI-Screenshots/Phase10-Review/06-family-selected-person.png) |
-| 07 | Mixed search results | [07-search.png](../UI-Screenshots/Phase10-Review/07-search.png) |
-| 08 | Journal preview | [08-journal.png](../UI-Screenshots/Phase10-Review/08-journal.png) |
-| 09 | Backup categories | [09-backups.png](../UI-Screenshots/Phase10-Review/09-backups.png) |
-| 10 | Restore confirmation | [10-backup-restore.png](../UI-Screenshots/Phase10-Review/10-backup-restore.png) |
-| 11 | Change Data Root | [11-data-root.png](../UI-Screenshots/Phase10-Review/11-data-root.png) |
-| 12 | First-run onboarding | [12-first-run.png](../UI-Screenshots/Phase10-Review/12-first-run.png) |
-| 13 | Missing-root recovery | [13-missing-root.png](../UI-Screenshots/Phase10-Review/13-missing-root.png) |
-| 14 | Read-only state | [14-read-only.png](../UI-Screenshots/Phase10-Review/14-read-only.png) |
+## Synthetic visual fixture
 
-All 14 images were manually inspected after the final implementation pass.
+`Codebase/Tests/UI/phase10_synthetic_fixture.py` reproducibly creates an isolated fictional review root. Runtime fixture data is never committed or activated as the real Data Root.
 
-## Visual E2E
+- 52 canonical fictional people across at least 5 generations.
+- 12+ marriages, multiple sibling groups, remarriage/half-sibling and supported parent-kind cases.
+- Maternal, paternal, removed-cousin, and simultaneous multipath relationships derived by the canonical Python engine.
+- Dense non-family connections, long labels, English/Urdu/Roman Urdu content, mixed journals, empty optional fields, multiple groups, and unknown values.
+- Healthy, missing, read-only, startup-failure, backup, restore, and Data Root workflow evidence.
+- Family model validation passes before capture.
 
-Command: `npm run test:visual`
+## Final screenshot and control evidence
 
-Result: **51/51 checks passed.**
-
-The suite creates its own short-path bootstrap and Data Root, seeds 12 synthetic people and representative family/general facts, writes a bilingual hostile-markup journal fixture, creates/restores verified backups, captures the 14 review states, tests `980×640`, `1366×768`, `1440×900`, and `1920×1080`, verifies long-content containment, checks the read-only and missing-root routes, rejects browser dialogs, and proves the production DB, Journals, Backups, and bootstrap remain byte-identical.
-
-The isolated family fixture inserts only canonical `parent_child` and `marriages` rows directly into its temporary SQLite database because the mutation endpoint deliberately runs legacy production-specific semantic audits. The application still computes all displayed kinship and graph behavior through the production engine.
+- Review directory: [Phase10-Final-Review](../UI-Screenshots/Phase10-Final-Review/README.md)
+- Fresh final contents: **161 PNG screenshots + 1 README**, 19,334,095 uncompressed bytes.
+- Review archive: `Documentation/UI-Screenshots/Phase10-Final-Review.zip`
+- Archive: **162 entries**, 18,554,127 bytes, SHA-256 `38010A8F937FDC0054C86B68ECC4EC1D353F5D26032BFD7CDEAE1B5D9709A1DC`.
+- Required numbered areas `00` through `16` are all present.
+- Representative Light and Dark Connections/Family Tree captures were visually inspected after the final graph-composition correction; the prior Chromium compositor blank tile is absent.
+- Control manifest: **222 discovered, 222 covered, 0 skipped, 0 failures**.
+- Visual suite: **100/100 checks passed** with theme persistence, active-dialog theme switching, responsive views, hostile-content inertness, synthetic-only capture, and production-integrity assertions.
 
 ## Frozen regression results
 
 | Gate | Result |
 | --- | --- |
-| Backend pytest | **493 passed, 1 skipped** (494 collected); 2 dependency deprecation warnings |
-| People E2E | **18/18 passed** |
-| Relationships E2E | **37/37 passed** |
+| Backend pytest | **493 passed, 1 skipped**, 2 dependency deprecation warnings |
+| People E2E | passed |
+| Connections E2E | **37/37 passed** |
 | Family E2E | **65/65 passed** |
 | Journals E2E | **48/48 passed** |
 | Search E2E | **42/42 passed** |
 | Backups E2E | **42/42 passed** |
-| Data Root E2E | **50/50 passed** after rerun; the first attempt reached check 13 then hit a transient Windows `EBUSY` deleting its temporary bootstrap |
+| Data Root E2E | **50/50 passed** |
 | Navigation E2E | **18/18 passed** |
-| Smoke journey | **18 reported PASS states** through `Scripts/test_e2e_runner.mjs` against a copied temporary Data Root |
-| Legacy family audit | **passed**: 35 people, 44 parent-child facts, 12 marriages, 10 sibling-group records, 21 cousin paths, arbitrary-perspective checks PASS |
-| Frontend typecheck | **passed** |
-| Frontend production build | **passed** (2,167 modules transformed) |
-| Rust | **passed**: `cargo test --locked`; 0 unit/doc tests present, compile and test harness green |
-| Diff whitespace | **passed**: `git diff --check` |
+| Smoke | **18/18 reported PASS states** against a copied temporary Data Root |
+| Legacy family audit | passed: 35 people, 44 parent-child facts, 12 marriages, 10 sibling groups, 21 cousin paths, arbitrary perspectives |
+| Frontend typecheck | passed |
+| Frontend production build | passed; 2,169 modules transformed |
+| Rust | `cargo check --locked` and `cargo test --locked` passed |
+| Phase 10 visual/theme/control suite | **100/100 passed** |
 
-## Native desktop verification
+Frozen assertions were retained. Test changes update traversal for the reviewed UI hierarchy and add Phase 10 coverage; they do not remove behavioral checks.
 
-A freshly built Windows Python sidecar and the actual Tauri application were launched at the configured `1440×900` size against the retained synthetic bootstrap. This exposed and corrected a packet-boundary bug in the Rust readiness probe: the probe previously read only the first TCP packet and could miss the health-response body. It now reads the complete `Connection: close` response. The relaunched native app passed readiness and loaded synthetic People, groups, state, and relationship graph endpoints.
+## Native Windows package verification
 
-The repository's ordinary `dev:desktop` shortcut currently resolves its existing `beforeDevCommand` from the repository root and points one directory too high. For this verification only, Vite was started explicitly and Tauri was launched with a transient config override that skipped the duplicate before-dev command; packaged build configuration was not changed.
+`npm run package:windows` completed all five stages:
+
+- frontend production bundle built;
+- Python backend sidecar built, 16.15 MB, SHA-256 `30A051D398181C13A467AC44470C39F71268ABA9512D4E0D3D42B7BD9D690DEF`;
+- Tauri release application compiled;
+- current 0.5.0 MSI and NSIS installers built;
+- exhaustive staged-bundle privacy audit passed over 6 items with zero private data detected;
+- release manifest generated.
+
+Current package hashes:
+
+- MSI: `FF409B5ABD6AEC9D3057D4AAF62E246912C8D7A725ECB6E022B920E2BC599C23`
+- NSIS: `4698BEC67984EE272508F49480B6FE32728716D5FB1B416DA723D7D0E3651475`
+
+Generated sidecars, installers, build directories, targets, and release manifests remain ignored build output and are not staged.
 
 ## Production integrity
 
-The start-of-phase and post-regression inventories match exactly:
+The final read-only inventory matches the immutable baseline:
 
-| Asset | Before | After |
-| --- | --- | --- |
-| `Database/Main/family.db` | 192,512 bytes; `3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E` | exact size/SHA match |
-| Canonical Journals | 35 files; per-path size/SHA inventory recorded | all 35 path/size/SHA records exact |
-| Backups | 176 files; per-path size/SHA inventory recorded | all 176 path/size/SHA records exact |
-| Real bootstrap | 115 bytes; `108506C8E37F9EB38A1ECC8726A2D355C246F3675A3F6774E5BE75AFF8137FDD` | exact size/SHA match |
-| Runtime temporary artifacts | 0 | 0 |
+| Asset | Baseline and final result |
+| --- | --- |
+| `Database/Main/family.db` | 192,512 bytes; SHA-256 `3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E` |
+| Canonical Journals | 35 files; 492 bytes total; all path/size/SHA records exact |
+| Backups | 176 files; 6,147,302 bytes total; all path/size/SHA records exact |
+| Real bootstrap | 115 bytes; SHA-256 `108506C8E37F9EB38A1ECC8726A2D355C246F3675A3F6774E5BE75AFF8137FDD` |
+| SQLite WAL/SHM sidecars | 0 |
+| Test listeners on 1420/8765 | 0 |
+| Smoke temporary Data Roots | 0 after verified cleanup |
 
-The synthetic Data Roots, synthetic bootstrap, baseline-only screenshots, Graphify output, and generated frozen-suite screenshots were removed. The 14 Phase 10 review screenshots are the only screenshot additions intended for staging.
+The smoke flow used a copied 282-file temporary Data Root and then removed it after both test services stopped. The exhaustive visual suite independently used and cleaned its reproducible synthetic root.
 
-## CI and release contract
+## Git, CI, and review boundary
 
-The post-push source of truth is the `Build & Package Matrix` workflow for the exact commit containing this file. That workflow must finish 4/4 green, including each platform's mandatory package privacy audit, and publish exactly these artifacts:
+Only intentional source, test, documentation, and final-review screenshot evidence may be staged. Generated Graphify output, build products, `target`, `tsconfig.tsbuildinfo`, runtime Data Roots, browser profiles, and unrelated user-owned screenshot changes are excluded.
 
-- `People-Relationships-Windows-x64`
-- `People-Relationships-macOS-arm64`
-- `People-Relationships-macOS-x64`
-- `People-Relationships-Linux-x64`
+The exact final commit SHA, `HEAD == origin/main` proof, Build & Package Matrix run, four platform conclusions, per-platform privacy results, and artifact presence are recorded in the final human-review handoff after the immutable exact-SHA run completes.
 
-The exact workflow run URL, commit SHA, per-platform conclusions, privacy-audit results, and artifact availability are recorded in the final human-review handoff after GitHub finishes the immutable exact-SHA run.
-
-## Human review boundary
-
-Phase 11 has not started. Comprehensive WCAG, screen-reader, global focus-management, reduced-motion, high-contrast, and QoL work remain outside this phase. Existing accessibility semantics were preserved and new visible controls retain keyboard focus and text labels.
-
-Phase 10 must not be marked frozen until the human reviewer accepts the screenshot gallery.
+Automated success is not human approval. Phase 11, Gallery/media architecture, profile-picture storage, and later phases remain unstarted.

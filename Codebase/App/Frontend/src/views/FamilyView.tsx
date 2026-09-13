@@ -8,29 +8,8 @@ import { AddRelationshipDialog } from "../features/relationships/components/AddR
 import { EditRelationshipDialog } from "../features/relationships/components/EditRelationshipDialog";
 import { PersonEditorModal } from "../features/people/components/PersonEditorModal";
 import { UndoBar } from "../features/mutations/components/UndoBar";
+import { useTheme } from "../theme";
 import mermaid from "mermaid";
-
-mermaid.initialize({
-  startOnLoad: false,
-  theme: "base",
-  securityLevel: "strict",
-  themeVariables: {
-    background: "#f7f9f8",
-    primaryColor: "#ffffff",
-    primaryTextColor: "#12302a",
-    primaryBorderColor: "#83a79e",
-    lineColor: "#7e918c",
-    secondaryColor: "#e3f3ee",
-    tertiaryColor: "#f2f6f4",
-    fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
-  },
-  flowchart: {
-    useMaxWidth: false,
-    htmlLabels: true,
-    curve: "basis",
-    padding: 10,
-  },
-});
 
 interface Props {
   onNavigateToProfile?: (personId: string) => void;
@@ -52,6 +31,7 @@ export function FamilyView({
   initialFocusId,
 }: Props) {
   const { defaultId } = usePerspective();
+  const { theme } = useTheme();
   const [internalFocusId, setInternalFocusId] = useState<string>(
     propFocusPersonId || initialFocusId || defaultId || "",
   );
@@ -82,17 +62,19 @@ export function FamilyView({
   const [people, setPeople] = useState<Person[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [diagram, setDiagram] = useState<string | null>(null);
-  const [legend, setLegend] = useState<
-    Array<{ key: string; label: string; symbol: string; description: string }>
-  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [selected, setSelected] = useState<Person | null>(null);
   const [zoom, setZoom] = useState(1);
   const [rendering, setRendering] = useState(false);
   const [showLegend, setShowLegend] = useState(true);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [immersive, setImmersive] = useState(false);
+  const [nativeFullscreen, setNativeFullscreen] = useState(false);
 
   const diagramRef = useRef<HTMLDivElement>(null);
+  const familyAreaRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const renderCounter = useRef(0);
   const [journalFor, setJournalFor] = useState<Person | null>(null);
 
@@ -150,12 +132,9 @@ export function FamilyView({
       if (result.focus) {
         setFocusPerson(result.focus);
       }
-      if (result.people && result.people.length > 0) {
-        setPeople(result.people as unknown as Person[]);
-      }
-      if (result.legend) {
-        setLegend(result.legend);
-      }
+      // api.people.list() remains authoritative for aliases, notes, groups,
+      // and other inspector details. family.view intentionally returns only
+      // the compact diagram projection.
     } catch (err) {
       setError(err);
     } finally {
@@ -226,11 +205,80 @@ export function FamilyView({
     const container = diagramRef.current;
     const id = `pr-family-diagram-${renderCounter.current}`;
 
+    const root = getComputedStyle(document.documentElement);
+    const token = (name: string) => root.getPropertyValue(name).trim();
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      securityLevel: "strict",
+      themeVariables: {
+        background: token("--graph-canvas"),
+        primaryColor: token("--surface-primary"),
+        primaryTextColor: token("--text-primary"),
+        primaryBorderColor: token("--border-strong"),
+        lineColor: token("--family-line"),
+        secondaryColor: token("--accent-selected"),
+        tertiaryColor: token("--surface-secondary"),
+        fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+      },
+      flowchart: {
+        useMaxWidth: false,
+        htmlLabels: true,
+        curve: "basis",
+        padding: 10,
+      },
+    });
+
     mermaid
       .render(id, diagram)
       .then(({ svg }) => {
         if (cancelled) return;
         container.innerHTML = svg;
+
+        // Mermaid's generated class/style rules contain the legacy static
+        // family-tree palette. Repaint the rendered SVG from the live design
+        // tokens so a theme change updates every node and cluster without
+        // changing the canonical Python-derived diagram or family facts.
+        const setPaint = (element: SVGElement, property: "fill" | "stroke", value: string) => {
+          element.style.setProperty(property, value, "important");
+        };
+        const paintShapes = (selector: string, fill: string, stroke: string) => {
+          container.querySelectorAll<SVGElement>(selector).forEach((shape) => {
+            setPaint(shape, "fill", fill);
+            setPaint(shape, "stroke", stroke);
+          });
+        };
+        const colorChannels = (value: string) => {
+          const hex = value.match(/#([0-9a-f]{6})/i)?.[1];
+          if (hex) return [0, 2, 4].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16));
+          const rgb = value.match(/rgba?\((\d+)[, ]+(\d+)[, ]+(\d+)/i);
+          return rgb ? rgb.slice(1, 4).map(Number) : null;
+        };
+
+        paintShapes("g.node.person rect, g.node.person polygon, g.node.person path", token("--surface-primary"), token("--border-strong"));
+        paintShapes("g.node.matperson rect, g.node.matperson polygon, g.node.matperson path", token("--maternal-bg"), token("--maternal"));
+        paintShapes("g.node.patperson rect, g.node.patperson polygon, g.node.patperson path", token("--paternal-bg"), token("--paternal"));
+        container.querySelectorAll<SVGElement>("g.node.focus rect, g.node.focus polygon, g.node.focus path").forEach((shape) => {
+          setPaint(shape, "stroke", token("--accent-primary"));
+        });
+        container.querySelectorAll<SVGElement>("g.cluster rect").forEach((shape) => {
+          const channels = colorChannels(shape.style.fill || shape.getAttribute("fill") || "");
+          const [red, green, blue] = channels ?? [0, 0, 0];
+          const maternal = red > blue + 4 && red >= green;
+          const paternal = blue > red + 4 && blue >= green;
+          setPaint(shape, "fill", token(maternal ? "--maternal-bg" : paternal ? "--paternal-bg" : "--surface-glass"));
+          setPaint(shape, "stroke", token(maternal ? "--maternal" : paternal ? "--paternal" : "--border-subtle"));
+        });
+        container.querySelectorAll<HTMLElement>(".nodeLabel, .nodeLabel *, .cluster-label, .cluster-label *, .edgeLabel, .edgeLabel *").forEach((label) => {
+          label.style.setProperty("color", token("--text-primary"), "important");
+        });
+        container.querySelectorAll<SVGElement>(".edgeLabel rect, .labelBkg").forEach((shape) => {
+          setPaint(shape, "fill", token("--surface-elevated"));
+        });
+        container.querySelectorAll<SVGElement>(".edgePath path, .flowchart-link").forEach((shape) => {
+          setPaint(shape, "stroke", token("--family-line"));
+        });
+
         container.querySelectorAll<SVGElement>('g.node[id*="-flowchart-p_"], g.node[id*="p_"]').forEach((node) => {
           const match = node.id.match(/-flowchart-p_([a-zA-Z0-9_]+)-\d+$/) || node.id.match(/p_([a-zA-Z0-9_]+)(?:-\d+)?$/);
           if (!match) return;
@@ -279,7 +327,7 @@ export function FamilyView({
     return () => {
       cancelled = true;
     };
-  }, [diagram, people, currentFocusId]);
+  }, [diagram, people, currentFocusId, theme]);
 
   useEffect(() => {
     if (selected && diagramRef.current) {
@@ -310,6 +358,53 @@ export function FamilyView({
     }
   };
 
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      const active = document.fullscreenElement === familyAreaRef.current;
+      setNativeFullscreen(active);
+      if (!document.fullscreenElement) setImmersive(false);
+    };
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreenState);
+  }, []);
+
+  const exitImmersive = useCallback(async () => {
+    if (document.fullscreenElement === familyAreaRef.current) {
+      await document.exitFullscreen();
+    }
+    setNativeFullscreen(false);
+    setImmersive(false);
+  }, []);
+
+  const toggleImmersive = useCallback(async () => {
+    if (immersive || document.fullscreenElement === familyAreaRef.current) {
+      await exitImmersive();
+      return;
+    }
+    const familyArea = familyAreaRef.current;
+    if (!familyArea) return;
+    try {
+      if (familyArea.requestFullscreen) {
+        await familyArea.requestFullscreen();
+        setNativeFullscreen(true);
+      }
+    } catch {
+      // Desktop webviews may deny the Fullscreen API. The fixed-position
+      // immersive fallback keeps the tree, inspector, and controls together.
+    }
+    setImmersive(true);
+  }, [exitImmersive, immersive]);
+
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && (immersive || nativeFullscreen)) {
+        void exitImmersive();
+      }
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [exitImmersive, immersive, nativeFullscreen]);
+
   const selectedRelationship = useRelationship(
     selected ? currentFocusId : null,
     selected ? selected.id : null,
@@ -339,144 +434,23 @@ export function FamilyView({
 
   return (
     <div className="view family-view">
-      <div className="view-head">
+      <div className="view-head sr-only">
         <div>
           <h1>Family Tree / خاندانی شجرہ</h1>
           <p className="muted">
             Genealogical structure and lineage derived by Python kinship engine — labels follow focus.
           </p>
         </div>
-        <div className="family-controls glass-panel" aria-label="Family tree controls">
-          <Button
-            className="icon-button"
-            onClick={() => setShowLegend((v) => !v)}
-            title={showLegend ? "Hide Legend" : "Show Legend"}
-            ariaLabel={showLegend ? "Hide Legend" : "Show Legend"}
-            ariaExpanded={showLegend}
-          >
-            <Icon name="legend" />
-            <span className="control-label">{showLegend ? "Hide Legend" : "Show Legend"}</span>
-          </Button>
-          <Button className="icon-button" ariaLabel="Zoom in" onClick={() => setZoom((v) => Math.min(2.5, +(v * 1.2).toFixed(2)))} title="Zoom in">
-            <Icon name="zoom-in" /><span className="sr-only">+ Zoom</span>
-          </Button>
-          <Button className="icon-button" ariaLabel="Zoom out" onClick={() => setZoom((v) => Math.max(0.3, +(v / 1.2).toFixed(2)))} title="Zoom out">
-            <Icon name="zoom-out" /><span className="sr-only">− Zoom</span>
-          </Button>
-          <Button className="icon-button" ariaLabel="Fit diagram to viewport" onClick={handleFit} title="Fit diagram to viewport">
-            <Icon name="fit" /><span className="sr-only">Fit</span>
-          </Button>
-          <Button className="icon-button" ariaLabel="Center focus person" onClick={handleCenterFocus} title="Reset view and center on focus person">
-            <Icon name="target" /><span className="sr-only">Center Focus</span>
-          </Button>
-          <Button
-            className="icon-button"
-            disabled={loading || rendering}
-            title="Reload family tree"
-            ariaLabel="Reload family tree"
-            onClick={() => {
-              void loadPeopleAndGroups();
-              void loadFamilyData(currentFocusId);
-            }}
-          >
-            <Icon name="reload" /><span className="sr-only">Reload</span>
-          </Button>
-        </div>
       </div>
 
-      {/* Focus Person Control Bar */}
-      <div className="family-focus-bar glass-panel">
-        <span className="family-focus-label">Family focus</span>
-        <div className="family-focus-current">
-          {focusPerson && (
-            <Avatar
-              person={{
-                id: focusPerson.id,
-                name: focusPerson.name,
-                gender: (focusPerson.gender as "male" | "female" | "unknown" | null) ?? null,
-                birth_year: focusPerson.birth_year ?? null,
-                marital_status: null,
-                branch: focusPerson.branch ?? null,
-                note_en: null,
-                note_ur: null,
-                photo_path: null,
-                groups: [],
-                aliases: [],
-                folder: null,
-              }}
-              size={24}
-            />
-          )}
-          <span>{focusPerson?.name ?? currentFocusId}</span>
-        </div>
-
-        <div className="family-focus-search-wrap">
-          <PersonSearch
-            people={people}
-            onSelect={(person) => handleFocusChange(person.id)}
-            placeholder="Search by name or alias…"
-            ariaLabel="Search family focus by name or alias"
-          />
-        </div>
-
-        {!isDefaultFocus && defaultFamilyFocusId && (
-          <Button
-            kind="ghost"
-            onClick={() => handleFocusChange(defaultFamilyFocusId)}
-            title="Return to default viewer focus"
-          >
-            Return to My Family View
-          </Button>
-        )}
-      </div>
-
-      {/* Diagram Legend */}
-      {showLegend && (
-        <div className="family-legend glass-panel">
-          <div className="legend-item">
-            <span className="legend-swatch focus" />
-            <span>
-              <strong>Central Focus:</strong> {focusPerson?.name ?? "Selected Focus"} (Accent border)
-            </span>
-          </div>
-          <div className="legend-item">
-            <span className="legend-swatch maternal" />
-            <span>
-              <strong>Maternal Branch:</strong> Pale pink clusters
-            </span>
-          </div>
-          <div className="legend-item">
-            <span className="legend-swatch paternal" />
-            <span>
-              <strong>Paternal Branch:</strong> Pale blue clusters
-            </span>
-          </div>
-          <div className="legend-item">
-            <span className="legend-swatch marriage" />
-            <span>
-              <strong>Marriage:</strong> Spouses joined horizontally
-            </span>
-          </div>
-          <div className="legend-item">
-            <span className="legend-swatch parent-child" />
-            <span>
-              <strong>Parent-Child:</strong> Junction downward to child
-            </span>
-          </div>
-          <div className="legend-item">
-            <span className="legend-swatch sibling" />
-            <span>
-              <strong>Sibling / Cross Link:</strong> Dotted link
-            </span>
-          </div>
-        </div>
-      )}
-
-      <ErrorNote error={error} />
-      {(loading || rendering) && <div className="state-box">Rendering family diagram…</div>}
-
-      <div className="family-layout">
+      <div
+        ref={familyAreaRef}
+        className={`family-layout ${immersive ? "is-immersive" : ""}`}
+        data-immersive={immersive ? "true" : "false"}
+      >
         <div className="family-canvas-wrap">
+          <ErrorNote error={error} />
+          {(loading || rendering) && <div className="state-box family-rendering-state">Rendering family diagram…</div>}
           <div
             className="family-canvas"
             style={{
@@ -489,183 +463,129 @@ export function FamilyView({
           </div>
         </div>
 
+        <div className="family-focus-bar glass-panel">
+          <span className="family-focus-label">Family focus</span>
+          <div className="family-focus-current">
+            {focusPersonObj && <Avatar person={focusPersonObj} size={28} />}
+            <span>{focusPerson?.name ?? currentFocusId}</span>
+          </div>
+          {!isDefaultFocus && defaultFamilyFocusId && (
+            <Button kind="ghost" className="family-return-focus" onClick={() => handleFocusChange(defaultFamilyFocusId)} title="Return to default viewer focus">
+              <Icon name="target" /><span className="sr-only">Return to My Family View</span>
+            </Button>
+          )}
+        </div>
+
+        <div className="connections-search-dock family-search-dock">
+          <div
+            className={`relationships-search-wrap glass-panel ${searchOpen ? "open" : "collapsed"}`}
+            onFocusCapture={() => setSearchOpen(true)}
+          >
+            <span className="connections-search-icon" aria-hidden="true"><Icon name="search" size={20} /></span>
+            <PersonSearch
+              people={people}
+              onSelect={(person) => {
+                handleFocusChange(person.id);
+                setSearchOpen(false);
+              }}
+              placeholder="Search family focus…"
+              ariaLabel="Search family focus by name or alias"
+              inputRef={(node) => { searchInputRef.current = node; }}
+              onOpenChange={setSearchOpen}
+            />
+            {searchOpen && (
+              <Button kind="ghost" className="icon-button connections-search-close" onClick={() => {
+                setSearchOpen(false);
+                searchInputRef.current?.blur();
+              }} ariaLabel="Close Family Tree search" title="Close search"><Icon name="close" /></Button>
+            )}
+          </div>
+        </div>
+
+        <div className="relationships-footer family-footer glass-panel" aria-label="Family tree controls and legend">
+          <div className="graph-zoom-controls" aria-label="Family tree zoom controls">
+            <Button className="graph-dock-button" ariaLabel="Zoom out" onClick={() => setZoom((v) => Math.max(0.3, +(v / 1.2).toFixed(2)))} title="Zoom out"><span className="graph-zoom-glyph" aria-hidden="true">−</span></Button>
+            <output className="graph-zoom-value" aria-live="polite">{Math.round(zoom * 100)}%</output>
+            <Button className="graph-dock-button" ariaLabel="Zoom in" onClick={() => setZoom((v) => Math.min(2.5, +(v * 1.2).toFixed(2)))} title="Zoom in"><span className="graph-zoom-glyph" aria-hidden="true">+</span></Button>
+          </div>
+          <Button className="graph-dock-button" ariaLabel="Fit diagram to viewport" onClick={handleFit} title="Fit diagram to viewport"><Icon name="fit" /></Button>
+          <Button className="graph-dock-button" ariaLabel="Center focus person" onClick={handleCenterFocus} title="Center focus person"><Icon name="target" /></Button>
+          <Button className="graph-dock-button" ariaLabel={immersive ? "Exit Family Tree fullscreen" : "Enter Family Tree fullscreen"} ariaPressed={immersive} onClick={() => void toggleImmersive()} title={immersive ? "Exit fullscreen" : "Enter fullscreen"}><Icon name="fullscreen" /></Button>
+          <Button className="graph-dock-button" ariaLabel={showLegend ? "Hide Family Tree legend" : "Show Family Tree legend"} ariaExpanded={showLegend} onClick={() => setShowLegend((value) => !value)} title={showLegend ? "Hide legend" : "Show legend"}><Icon name="legend" /></Button>
+          <Button className="graph-dock-button" disabled={loading || rendering} ariaLabel="Reload family tree" onClick={() => {
+            void loadPeopleAndGroups();
+            void loadFamilyData(currentFocusId);
+          }} title="Reload family tree"><Icon name="reload" /></Button>
+          {showLegend && (
+            <>
+              <span className="graph-dock-divider" aria-hidden="true" />
+              <div className="family-dock-legend family-legend">
+                <span className="legend-item"><span className="legend-swatch focus" /><span><strong>Focus</strong></span></span>
+                <span className="legend-item"><span className="legend-swatch maternal" /><span>Maternal Branch</span></span>
+                <span className="legend-item"><span className="legend-swatch paternal" /><span>Paternal Branch</span></span>
+                <span className="legend-item"><span className="legend-swatch marriage" /><span>Marriage</span></span>
+                <span className="legend-item"><span className="legend-swatch parent-child" /><span>Parent / child</span></span>
+                <span className="legend-item"><span className="legend-swatch sibling" /><span>Sibling / cross link</span></span>
+              </div>
+            </>
+          )}
+        </div>
+
         {selected && (
           <aside className="family-side glass-panel">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div className="side-profile-row">
-                <Avatar person={selected} size={42} />
-                <div>
-                  <strong>{selected.name}</strong>
-                  {selected.aliases && selected.aliases.length > 0 && (
-                    <div className="muted tiny">{selected.aliases.join(" / ")}</div>
-                  )}
-                  {selected.groups?.[0] && (
-                    <div className="muted tiny">{selected.groups[0].name}</div>
-                  )}
+            <div className="inspector-profile-row">
+              <Avatar person={selected} size={60} />
+              <div className="inspector-profile-copy">
+                <strong>{selected.name}</strong>
+                <div className="inspector-relationship-line">
+                  {primaryEntry?.label_en ?? "Family connection"}
+                  {primaryEntry?.label_ur && <span dir="rtl" lang="ur"> · {primaryEntry.label_ur}</span>}
                 </div>
               </div>
-              <Button kind="ghost" className="icon-button" onClick={() => handleSelectPerson(null)} title="Close context panel" ariaLabel="Close family inspector">
+              <Button kind="ghost" className="icon-button inspector-close" onClick={() => handleSelectPerson(null)} title="Close context panel" ariaLabel="Close family inspector">
                 <Icon name="close" />
               </Button>
             </div>
 
-            <div className="family-side-note">
-              Click any card to inspect. Double-click to make that person the Family focus.
+            <div className="inspector-primary-actions">
+              {onNavigateToProfile && <Button onClick={() => onNavigateToProfile(selected.id)}><Icon name="profile" /><span>View Profile</span><span className="inspector-chevron">›</span></Button>}
+              <Button onClick={() => setJournalFor(selected)}><Icon name="journal" /><span>Journal</span><span className="inspector-chevron">›</span></Button>
+              <Button onClick={() => handleFocusChange(selected.id)}><Icon name="path" /><span>View family from this person</span><span className="inspector-chevron">›</span></Button>
             </div>
 
-            {/* Person Facts */}
-            <div className="family-facts-list">
-              {selected.birth_year && (
-                <div className="family-fact-row">
-                  <span className="family-fact-label">Born:</span>
-                  <span>{selected.birth_year}</span>
-                </div>
-              )}
-              {selected.gender && (
-                <div className="family-fact-row">
-                  <span className="family-fact-label">Gender:</span>
-                  <span>
-                    {selected.gender === "male"
-                      ? "Male / مرد"
-                      : selected.gender === "female"
-                        ? "Female / عورت"
-                        : selected.gender}
-                  </span>
-                </div>
-              )}
-              {selected.note_en && (
-                <div className="family-fact-row">
-                  <span className="family-fact-label">Note:</span>
-                  <span>{selected.note_en}</span>
-                </div>
-              )}
+            <div className="inspector-metadata">
+              <div className="inspector-meta-row"><Icon name="profile" /><div><span>Full name</span><strong>{selected.name}</strong></div></div>
+              <div className="inspector-meta-row"><Icon name="family" /><div><span>Relationship to {focusPerson?.name ?? "focus"}</span><strong>{primaryEntry?.label_en ?? "Not recorded"}</strong></div></div>
+              <div className="inspector-meta-row"><Icon name="journal" /><div><span>Person details</span><strong>{selected.birth_year ? `Born ${selected.birth_year}` : "Birth year unknown"}{selected.gender ? ` · ${selected.gender}` : ""}</strong></div></div>
             </div>
 
-            {/* Relationship Context Section */}
-            <h3>Relationship to {focusPerson?.name ?? "Focus"}</h3>
-            {selectedRelationship.loading ? (
-              <div className="muted">Calculating relationship…</div>
-            ) : selectedRelationship.error ? (
-              <ErrorNote error={selectedRelationship.error} />
-            ) : selectedRelationship.result ? (
-              <>
-                <div className="rel-section-title">Primary Relationship</div>
-                <RelationshipListDetailed
-                  entries={selectedRelationship.result.primary}
-                  onEditEntry={(entry) => {
-                    setInitialDeleteMode(false);
-                    setEditingEntry(entry);
-                  }}
-                  onDeleteEntry={(entry) => {
-                    setInitialDeleteMode(true);
-                    setEditingEntry(entry);
-                  }}
-                  onInspectProof={(entry) => {
-                    setInitialDeleteMode(false);
-                    setEditingEntry(entry);
-                  }}
-                />
+            <details className="inspector-disclosure inspector-evidence">
+              <summary><Icon name="path" /> Relationship evidence</summary>
+              <div className="inspector-disclosure-body">
+                {selectedRelationship.loading ? <div className="muted">Calculating relationship…</div> : selectedRelationship.error ? <ErrorNote error={selectedRelationship.error} /> : selectedRelationship.result ? (
+                  <>
+                    <RelationshipListDetailed entries={selectedRelationship.result.primary} onEditEntry={(entry) => { setInitialDeleteMode(false); setEditingEntry(entry); }} onDeleteEntry={(entry) => { setInitialDeleteMode(true); setEditingEntry(entry); }} onInspectProof={(entry) => { setInitialDeleteMode(false); setEditingEntry(entry); }} />
+                    {selectedRelationship.result.additional.length > 0 && (
+                      <div className="rel-multipath-callout">
+                        <span className="family-badge badge-multipath">{selectedRelationship.result.additional.length + 1} family paths</span>
+                        <RelationshipListDetailed entries={selectedRelationship.result.additional} onEditEntry={(entry) => { setInitialDeleteMode(false); setEditingEntry(entry); }} onDeleteEntry={(entry) => { setInitialDeleteMode(true); setEditingEntry(entry); }} onInspectProof={(entry) => { setInitialDeleteMode(false); setEditingEntry(entry); }} />
+                      </div>
+                    )}
+                  </>
+                ) : null}
+              </div>
+            </details>
 
-                {/* Multi-path relationships */}
-                {selectedRelationship.result.additional.length > 0 && (
-                  <div className="rel-multipath-callout">
-                    <div className="rel-multipath-title">
-                      <span className="family-badge badge-multipath">
-                        {selectedRelationship.result.additional.length + 1} family paths
-                      </span>
-                    </div>
-                    <div className="muted tiny" style={{ marginBottom: 6 }}>
-                      This relative is related through multiple genealogical branches:
-                    </div>
-                    <RelationshipListDetailed
-                      entries={selectedRelationship.result.additional}
-                      onEditEntry={(entry) => {
-                        setInitialDeleteMode(false);
-                        setEditingEntry(entry);
-                      }}
-                      onDeleteEntry={(entry) => {
-                        setInitialDeleteMode(true);
-                        setEditingEntry(entry);
-                      }}
-                      onInspectProof={(entry) => {
-                        setInitialDeleteMode(false);
-                        setEditingEntry(entry);
-                      }}
-                    />
-                  </div>
-                )}
-              </>
-            ) : null}
-
-            {/* Actions */}
-            <div className="row-actions family-side-actions">
-              <Button
-                kind="primary"
-                onClick={() => handleFocusChange(selected.id)}
-                title="Re-orient entire family tree around this person"
-              >
-                <Icon name="target" />
-                Make Family Focus
-              </Button>
-              {onNavigateToProfile && (
-                <Button
-                  onClick={() => onNavigateToProfile(selected.id)}
-                  title="Open canonical Person Profile"
-                >
-                  <Icon name="profile" />
-                  View Profile
-                </Button>
-              )}
-              {onNavigateToRelationships && (
-                <Button
-                  onClick={() => onNavigateToRelationships(selected.id, currentFocusId)}
-                  title="Explore detailed proof paths in Connections view"
-                >
-                  <Icon name="path" />
-                  View in Connections<span className="sr-only"> View in Relationships</span>
-                </Button>
-              )}
-              <Button onClick={() => setJournalFor(selected)}><Icon name="journal" />Journal</Button>
-            </div>
-
-            {/* Fact Editor Actions */}
-            <div className="row-actions" style={{ marginTop: 8, borderTop: "1px solid var(--line)", paddingTop: 8 }}>
-              <Button onClick={() => setShowAddFact(true)}>+ Add Family Fact</Button>
-              <Button
-                disabled={!isPrimaryStored}
-                onClick={() => {
-                  if (primaryEntry) {
-                    setInitialDeleteMode(false);
-                    setEditingEntry(primaryEntry);
-                  }
-                }}
-                title={
-                  isPrimaryStored
-                    ? "Edit stored family fact"
-                    : "Derived relationships cannot be edited directly; edit the underlying stored facts"
-                }
-              >
-                Edit Stored Fact
-              </Button>
-              <Button
-                kind="danger"
-                disabled={!isPrimaryStored}
-                onClick={() => {
-                  if (primaryEntry) {
-                    setInitialDeleteMode(true);
-                    setEditingEntry(primaryEntry);
-                  }
-                }}
-                title={
-                  isPrimaryStored
-                    ? "Remove stored family fact"
-                    : "Derived relationships cannot be removed directly; remove the underlying stored facts"
-                }
-              >
-                Remove Stored Fact
-              </Button>
-              <Button onClick={() => setEditingPerson(selected)}>Edit Person</Button>
-            </div>
+            <details className="inspector-disclosure inspector-manage">
+              <summary><Icon name="more" /> More actions</summary>
+              <div className="inspector-disclosure-body inspector-manage-grid">
+                {onNavigateToRelationships && <Button onClick={() => onNavigateToRelationships(selected.id, currentFocusId)}><Icon name="path" /> View in Connections<span className="sr-only"> View in Relationships</span></Button>}
+                <Button kind="primary" onClick={() => setShowAddFact(true)}><Icon name="add" /> Add Family Fact</Button>
+                <Button disabled={!isPrimaryStored} onClick={() => { if (primaryEntry) { setInitialDeleteMode(false); setEditingEntry(primaryEntry); } }} title={isPrimaryStored ? "Edit stored family fact" : "Derived relationships cannot be edited directly; edit the underlying stored facts"}><Icon name="edit" /> Edit Stored Fact</Button>
+                <Button kind="danger" disabled={!isPrimaryStored} onClick={() => { if (primaryEntry) { setInitialDeleteMode(true); setEditingEntry(primaryEntry); } }} title={isPrimaryStored ? "Remove stored family fact" : "Derived relationships cannot be removed directly; remove the underlying stored facts"}>Remove Stored Fact</Button>
+                <Button onClick={() => setEditingPerson(selected)}><Icon name="edit" /> Edit Person</Button>
+              </div>
+            </details>
           </aside>
         )}
       </div>
@@ -754,8 +674,8 @@ function RelationshipListDetailed({
             style={{
               marginBottom: 8,
               padding: "8px 10px",
-              background: "var(--card-bg, #fff)",
-              border: "1px solid var(--line, #e5e7eb)",
+              background: "var(--card-bg)",
+              border: "1px solid var(--line)",
               borderRadius: 8,
             }}
           >

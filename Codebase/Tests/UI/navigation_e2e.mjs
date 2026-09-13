@@ -266,9 +266,9 @@ try {
   step("Relationships to Profile/Family and return preserves the exact target without stale People state");
 
   await nav("Family");
-  await search(".family-focus-search-wrap input", "Amina Root A");
-  await page.waitForSelector(".family-focus-search-wrap .person-search-row", { visible: true });
-  await page.click(".family-focus-search-wrap .person-search-row");
+  await search(".family-search-dock input", "Amina Root A");
+  await page.waitForSelector(".family-search-dock .person-search-row", { visible: true });
+  await page.click(".family-search-dock .person-search-row");
   await page.waitForFunction(() => document.querySelector(".family-focus-current")?.textContent?.includes("Amina Root A"), { timeout: 20_000 });
   const globalBeforeFamilyHandoff = await page.$eval(".perspective-current", (node) => node.textContent);
   if (!globalBeforeFamilyHandoff.includes("Alice Root A")) throw new Error("Family focus changed global My Perspective");

@@ -66,11 +66,14 @@ export function Avatar({ person, size = 34 }: { person: Person; size?: number })
 export type IconName =
   | "add"
   | "back"
+  | "backup"
   | "close"
   | "compare"
   | "edit"
   | "family"
   | "fit"
+  | "folder"
+  | "fullscreen"
   | "journal"
   | "legend"
   | "more"
@@ -87,11 +90,14 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, ReactNode> = {
     add: <path d="M12 5v14M5 12h14" />,
     back: <path d="m15 18-6-6 6-6" />,
+    backup: <><ellipse cx="12" cy="5" rx="7" ry="3" /><path d="M5 5v7c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 12v7c0 1.7 3.1 3 7 3s7-1.3 7-3v-7" /></>,
     close: <path d="m6 6 12 12M18 6 6 18" />,
     compare: <><circle cx="9" cy="12" r="5" /><circle cx="15" cy="12" r="5" /></>,
     edit: <><path d="m4 20 4.2-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z" /><path d="m13.8 7.2 3 3" /></>,
     family: <><circle cx="12" cy="5" r="2.5" /><circle cx="5" cy="18" r="2.5" /><circle cx="19" cy="18" r="2.5" /><path d="M12 7.5v4M5 15.5v-4h14v4" /></>,
     fit: <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />,
+    folder: <path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v8A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-10Z" />,
+    fullscreen: <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5M9 9 3 3m12 6 6-6M9 15l-6 6m12-6 6 6" />,
     journal: <><path d="M6 3h11a2 2 0 0 1 2 2v16H8a3 3 0 0 1-3-3V4a1 1 0 0 1 1-1Z" /><path d="M8 7h7M8 11h7M8 15h4" /></>,
     legend: <><path d="M4 7h4M11 7h9M4 12h4M11 12h9M4 17h4M11 17h9" /></>,
     more: <><circle cx="5" cy="12" r="1" fill="currentColor" /><circle cx="12" cy="12" r="1" fill="currentColor" /><circle cx="19" cy="12" r="1" fill="currentColor" /></>,

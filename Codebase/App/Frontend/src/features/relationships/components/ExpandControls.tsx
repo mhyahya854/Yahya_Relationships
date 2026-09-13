@@ -12,18 +12,20 @@ export function ExpandControls({
   personName,
   active,
   onToggle,
+  filters,
 }: {
   personName: string;
   active: Set<ExpansionFilter>;
   onToggle: (filter: ExpansionFilter) => void;
+  filters?: ExpansionFilter[];
 }) {
-  const filters = Object.keys(FILTER_LABELS) as ExpansionFilter[];
+  const visibleFilters = filters ?? (Object.keys(FILTER_LABELS) as ExpansionFilter[]);
   return (
-    <div className="expand-bar">
+    <div className="expand-bar" aria-label={`Relationship filters for ${personName}`}>
       <span className="expand-label">
-        Expand <strong>{personName}</strong>:
+        Show relationships:
       </span>
-      {filters.map((filter) => {
+      {visibleFilters.map((filter) => {
         const isActive = active.has(filter);
         return (
           <button

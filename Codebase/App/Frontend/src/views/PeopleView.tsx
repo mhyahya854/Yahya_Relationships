@@ -340,7 +340,7 @@ export function PeopleView({
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
                   <strong>{person.name}</strong>
                   {person.journal_exists === false && (
-                    <span title="Canonical journal missing from disk" style={{ color: "#d97706", marginLeft: 6, fontSize: 13 }}>⚠</span>
+                    <span title="Canonical journal missing from disk" style={{ color: "var(--warn)", marginLeft: 6, fontSize: 13 }}>⚠</span>
                   )}
                   <span className="muted tiny" style={{ display: "block" }}>
                     {person.birth_year ? `b. ${person.birth_year}` : ""}{" "}

@@ -141,18 +141,20 @@ try {
   page.on("pageerror", (error) => consoleErrors.push(`pageerror: ${error.message}`));
 
   async function clickText(scope, text) {
+    const aliases = { Relationships: "Connections" };
+    const expectedText = aliases[text] ?? text;
     await page.waitForFunction((selector, expected) => {
       return [...document.querySelectorAll(`${selector} button`)].some((button) => {
         const rect = button.getBoundingClientRect();
         return button.textContent?.trim().includes(expected) && !button.disabled && rect.width > 0 && rect.height > 0;
       });
-    }, { timeout: 12_000 }, scope, text);
+    }, { timeout: 12_000 }, scope, expectedText);
     await page.evaluate((selector, expected) => {
       const button = [...document.querySelectorAll(`${selector} button`)].find(
         (candidate) => candidate.textContent?.trim().includes(expected) && !candidate.disabled,
       );
       button.click();
-    }, scope, text);
+    }, scope, expectedText);
     await sleep(250);
   }
 
@@ -289,7 +291,7 @@ try {
   await page.waitForSelector(`.family-diagram g.node[aria-label='Family member card: ${personId}']`, { timeout: 20_000 });
   await page.click(`.family-diagram g.node[aria-label='Family member card: ${personId}']`);
   await page.waitForSelector(".family-side");
-  await clickText(".family-side-actions", "Journal");
+  await clickText(".family-side .inspector-primary-actions", "Journal");
   await page.waitForFunction((expected) => document.querySelector(".journal-view")?.textContent?.includes(expected), {}, "Roman Urdu");
   step("Family opened the same canonical Journal content");
   await closeModal();
@@ -300,7 +302,7 @@ try {
   await page.waitForSelector(".person-search-row", { timeout: 10_000 });
   await page.click(".person-search-row");
   await page.waitForSelector(".selected-person-panel");
-  await clickText(".panel-actions", "Journal");
+  await clickText(".relationships-panel .inspector-primary-actions", "Journal");
   await page.waitForFunction((expected) => document.querySelector(".journal-view")?.textContent?.includes(expected), {}, "Roman Urdu");
   step("Relationships opened the same canonical Journal content");
 
@@ -336,7 +338,7 @@ try {
   if (readFileSync(journalPath, "utf8") !== appendedContent) throw new Error("Discard changed disk content");
   step("Discard closed without changing disk content");
 
-  await clickText(".panel-actions", "Journal");
+  await clickText(".relationships-panel .inspector-primary-actions", "Journal");
   const cleanExternal = `${appendedContent}\nExternal clean edit\n`;
   writeFileSync(journalPath, cleanExternal, "utf8");
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));

@@ -148,10 +148,17 @@ export const EditRelationshipDialog: React.FC<Props> = ({
   const [pendingDeleteAction, setPendingDeleteAction] = useState<any | null>(null);
 
   useEffect(() => {
-    loadFactsAndPaths();
-  }, [perspectivePerson.id, targetPerson.id]);
+    void loadFactsAndPaths();
+  }, [
+    perspectivePerson.id,
+    targetPerson.id,
+    entry.id,
+    entry.domain,
+    entry.derived,
+    entry.stored_fact_kind,
+  ]);
 
-  const loadFactsAndPaths = async () => {
+  async function loadFactsAndPaths() {
     setLoading(true);
     try {
       if (entry.domain === "general" && !entry.derived) {
@@ -212,6 +219,10 @@ export const EditRelationshipDialog: React.FC<Props> = ({
               setMarriageStatus(mMatch.status || "married");
               setMarriageYear(mMatch.year ? String(mMatch.year) : "");
               setMarriageChildrenStatus(mMatch.children_status || "");
+            } else if (kind === "marriage") {
+              setErrorMsg(
+                `Stored marriage fact was not found for ${perspectivePerson.id} and ${targetPerson.id}.`,
+              );
             }
           }
 
@@ -245,7 +256,7 @@ export const EditRelationshipDialog: React.FC<Props> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
     if (initialDeleteMode && !entry.derived && !previewResult && !pendingDeleteAction) {
@@ -413,7 +424,14 @@ export const EditRelationshipDialog: React.FC<Props> = ({
 
   return (
     <>
-      <div className="modal-backdrop">
+      <div
+        className="modal-backdrop edit-relationship-dialog"
+        data-entry-domain={entry.domain}
+        data-entry-derived={String(entry.derived)}
+        data-entry-kind={entry.stored_fact_kind ?? entry.kind ?? ""}
+        data-perspective-id={perspectivePerson.id}
+        data-target-id={targetPerson.id}
+      >
         <div className="modal-card">
           <div className="modal-header">
             <h3>
@@ -440,7 +458,7 @@ export const EditRelationshipDialog: React.FC<Props> = ({
             {/* DERIVED RELATIONSHIP VIEW */}
             {entry.derived && (
               <div className="path-explanation">
-                <p style={{ fontWeight: 600, color: "#0e7490", marginBottom: 6 }}>
+                <p style={{ fontWeight: 600, color: "var(--status-info)", marginBottom: 6 }}>
                   Why this term is derived:
                 </p>
                 <p>
@@ -448,7 +466,7 @@ export const EditRelationshipDialog: React.FC<Props> = ({
                   <strong>{perspectivePerson.name}</strong> based on the underlying parent-child, marriage, and sibling facts in the family graph.
                 </p>
 
-                <div style={{ marginTop: 12, padding: "8px 12px", background: "#ffffff", borderRadius: 6, border: "1px solid #d0deec" }}>
+                <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--surface-primary)", borderRadius: 6, border: "1px solid var(--line)" }}>
                   <strong>Underlying lineage & stored fact path{sourcePaths.length > 1 ? "s" : ""}:</strong>
                   <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 12.5 }}>
                     {sourcePaths.map((p, idx) => (

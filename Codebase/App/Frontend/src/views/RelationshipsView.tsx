@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
-  Controls,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
@@ -23,8 +22,7 @@ import {
 import { usePerspective } from "../state";
 import type { Person } from "../types";
 import { relationshipsApi } from "../features/relationships/api";
-import { ExpandControls } from "../features/relationships/components/ExpandControls";
-import { GraphLegend } from "../features/relationships/components/GraphLegend";
+import { GraphDock } from "../features/relationships/components/GraphDock";
 import { PathFocusPanel } from "../features/relationships/components/PathFocusPanel";
 import { PersonNode } from "../features/relationships/components/PersonNode";
 import { edgeVisual } from "../features/relationships/graph/edgeStyles";
@@ -72,15 +70,15 @@ function buildFlowEdges(
       target: dto.target,
       type: "default",
       style: {
-        stroke: focusPath && !isPath ? "#c8ccc6" : visual.stroke,
+        stroke: focusPath && !isPath ? "var(--disabled-fg)" : visual.stroke,
         strokeWidth: isPath ? 3 : visual.strokeWidth,
         strokeDasharray: visual.strokeDasharray,
         opacity: focusPath && !isPath ? 0.28 : 1,
       },
       className: focusPath && isPath ? "rf-edge-path" : undefined,
       label: focusPath && isPath ? pathRoleMap.get(pair) : undefined,
-      labelStyle: { fontSize: 11, fill: "#405149", fontWeight: 600 },
-      labelBgStyle: { fill: "#fffefa", fillOpacity: 0.94 },
+      labelStyle: { fontSize: 11, fill: "var(--text-secondary)", fontWeight: 600 },
+      labelBgStyle: { fill: "var(--surface-elevated)", fillOpacity: 0.94 },
       labelBgPadding: [6, 3] as [number, number],
     };
   });
@@ -104,7 +102,7 @@ function RelationshipsContent({
   const { perspectiveId, perspectivePerson, setPerspective, returnToDefault } =
     usePerspective();
   const graph = useRelationshipGraph();
-  const { fitView } = useReactFlow();
+  const { fitView, zoomIn, zoomOut } = useReactFlow();
   const [people, setPeople] = useState<Person[]>([]);
   const [peopleLoaded, setPeopleLoaded] = useState(false);
   const [groups, setGroups] = useState<any[]>([]);
@@ -114,6 +112,7 @@ function RelationshipsContent({
     additional: RelationshipEntry[];
   } | null>(null);
   const [relationshipError, setRelationshipError] = useState<unknown>(null);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [focus, setFocus] = useState<{
     entry: RelationshipEntry;
     paths: RelationshipPath[];
@@ -124,7 +123,12 @@ function RelationshipsContent({
   const [journalFor, setJournalFor] = useState<Person | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const graphAreaRef = useRef<HTMLDivElement | null>(null);
   const expandedCountRef = useRef(0);
+  const appliedInitialTargetRef = useRef<string | null>(null);
+  const [immersive, setImmersive] = useState(false);
+  const [nativeFullscreen, setNativeFullscreen] = useState(false);
+  const [zoomPercent, setZoomPercent] = useState(100);
 
   // Editor Modals State
   const [showAddRel, setShowAddRel] = useState(false);
@@ -176,6 +180,10 @@ function RelationshipsContent({
   useEffect(() => {
     void loadRelationships();
   }, [loadRelationships]);
+
+  useEffect(() => {
+    setEvidenceOpen(Boolean(relationshipResult?.additional.length));
+  }, [relationshipResult, selected?.id]);
 
   const handleSavedMutation = async (desc: string) => {
     setUndoNotice(desc);
@@ -238,7 +246,14 @@ function RelationshipsContent({
   );
 
   useEffect(() => {
-    if (initialTargetId && peopleLoaded) {
+    if (!peopleLoaded) return;
+    if (!initialTargetId) {
+      appliedInitialTargetRef.current = null;
+      return;
+    }
+    if (appliedInitialTargetRef.current === initialTargetId) return;
+    appliedInitialTargetRef.current = initialTargetId;
+    if (initialTargetId) {
       const match = people.find((p) => p.id === initialTargetId);
       if (match && selected?.id !== match.id) {
         selectPerson(match);
@@ -305,7 +320,7 @@ function RelationshipsContent({
     if (!focus) return;
     setFocus(null);
     graph.exitPath();
-    window.setTimeout(() => fitView({ padding: 0.2, duration: 350 }), 40);
+    window.setTimeout(() => fitView({ padding: 0.1, duration: 350, maxZoom: 1 }), 40);
   }, [focus, graph, fitView]);
 
   const activePath = focus ? focus.paths[focus.pathIndex] : null;
@@ -366,7 +381,7 @@ function RelationshipsContent({
     if (count && count !== expandedCountRef.current) {
       expandedCountRef.current = count;
       const frame = window.setTimeout(
-        () => fitView({ padding: 0.18, duration: 350, maxZoom: 1 }),
+        () => fitView({ padding: 0.1, duration: 350, maxZoom: 1 }),
         60,
       );
       return () => window.clearTimeout(frame);
@@ -388,16 +403,16 @@ function RelationshipsContent({
 
   const toggleExpansionForCenter = useCallback(
     (filter: ExpansionFilter) => {
-      const centerId = selected?.id ?? perspectiveId;
+      const centerId = perspectiveId;
       if (centerId && perspectiveId) {
         void graph.toggleExpansion(centerId, perspectiveId, filter);
       }
     },
-    [graph, perspectiveId, selected],
+    [graph, perspectiveId],
   );
 
   const activeFilters = useMemo(() => {
-    const centerId = selected?.id ?? perspectiveId ?? "";
+    const centerId = perspectiveId ?? "";
     const filters = new Set<ExpansionFilter>();
     const valid = ["parents", "children", "siblings", "spouses", "general"];
     for (const key of Object.keys(graph.expansions)) {
@@ -410,7 +425,7 @@ function RelationshipsContent({
       }
     }
     return filters;
-  }, [graph.expansions, perspectiveId, selected]);
+  }, [graph.expansions, perspectiveId]);
 
   const focusSearch = useCallback(() => {
     setSearchOpen(true);
@@ -422,14 +437,57 @@ function RelationshipsContent({
     if (primary) void showWhy(primary);
   }, [relationshipResult, showWhy]);
 
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      const active = document.fullscreenElement === graphAreaRef.current;
+      setNativeFullscreen(active);
+      if (!document.fullscreenElement) setImmersive(false);
+    };
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreenState);
+  }, []);
+
+  const exitImmersive = useCallback(async () => {
+    if (document.fullscreenElement === graphAreaRef.current) {
+      await document.exitFullscreen();
+    }
+    setNativeFullscreen(false);
+    setImmersive(false);
+    window.setTimeout(() => fitView({ padding: 0.1, duration: 350, maxZoom: 1 }), 60);
+  }, [fitView]);
+
+  const toggleImmersive = useCallback(async () => {
+    if (immersive || document.fullscreenElement === graphAreaRef.current) {
+      await exitImmersive();
+      return;
+    }
+    const graphArea = graphAreaRef.current;
+    if (!graphArea) return;
+    try {
+      if (graphArea.requestFullscreen) {
+        await graphArea.requestFullscreen();
+        setNativeFullscreen(true);
+      }
+    } catch {
+      // Desktop webviews may deny the Fullscreen API. The fixed-position
+      // immersive fallback preserves the same graph behavior and Escape exit.
+    }
+    setImmersive(true);
+    window.setTimeout(() => fitView({ padding: 0.1, duration: 350, maxZoom: 1 }), 80);
+  }, [exitImmersive, fitView, immersive]);
+
   const onEscape = useCallback(() => {
+    if (immersive || nativeFullscreen) {
+      void exitImmersive();
+      return;
+    }
     if (focus) {
       exitPathMode();
       return;
     }
     if (comparePicker) setComparePicker(false);
     if (compareTarget) setCompareTarget(null);
-  }, [comparePicker, compareTarget, exitPathMode, focus]);
+  }, [comparePicker, compareTarget, exitImmersive, exitPathMode, focus, immersive, nativeFullscreen]);
 
   useKeyboardNavigation({
     onSearch: focusSearch,
@@ -447,6 +505,7 @@ function RelationshipsContent({
 
   const centerPerson = selected ?? perspectivePerson ?? null;
   const perspectiveName = perspectivePerson?.name ?? perspectiveId ?? "";
+  const primaryRelationship = relationshipResult?.primary[0] ?? null;
 
   return (
     <div className="view relationships-view">
@@ -457,38 +516,50 @@ function RelationshipsContent({
       <ErrorNote error={graph.error || relationshipError} />
 
       <div className="relationships-diagram-layout">
-        <div className="relationships-graph-area">
-          <ReactFlow
-            nodes={flowNodes}
-            edges={flowEdges}
-            nodeTypes={nodeTypes}
-            minZoom={0.3}
-            maxZoom={2.5}
-            nodesDraggable={false}
-            nodesConnectable={false}
-            elementsSelectable={false}
-            deleteKeyCode={null}
-            zoomOnDoubleClick={false}
-            onNodeClick={(_, node) => {
-              const person = personOfNode(node.id);
-              if (person) selectPerson(person);
-            }}
-            onNodeDoubleClick={(_, node) => {
-              const person = personOfNode(node.id);
-              if (person) void setPerspective(person.id);
-            }}
-            onPaneClick={() => {
-              setSelected(null);
-              onTargetChange?.(null);
-            }}
-            proOptions={{ hideAttribution: true }}
-          >
-            <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} />
-            <Controls showInteractive={false} />
-          </ReactFlow>
+        <div
+          ref={graphAreaRef}
+          className={`relationships-graph-area ${immersive ? "is-immersive" : ""}`}
+          data-immersive={immersive ? "true" : "false"}
+        >
+          <div className={`relationship-graph-stage ${selected ? "has-inspector" : ""}`}>
+            <ReactFlow
+              nodes={flowNodes}
+              edges={flowEdges}
+              nodeTypes={nodeTypes}
+              minZoom={0.3}
+              maxZoom={2.5}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              elementsSelectable={false}
+              deleteKeyCode={null}
+              zoomOnDoubleClick={false}
+              onMove={(_, viewport) => setZoomPercent(Math.round(viewport.zoom * 100))}
+              onNodeClick={(_, node) => {
+                const person = personOfNode(node.id);
+                if (person) selectPerson(person);
+              }}
+              onNodeDoubleClick={(_, node) => {
+                const person = personOfNode(node.id);
+                if (person) void setPerspective(person.id);
+              }}
+              onPaneClick={() => {
+                setSelected(null);
+                onTargetChange?.(null);
+              }}
+              proOptions={{ hideAttribution: true }}
+            >
+              <Background
+                variant={BackgroundVariant.Dots}
+                gap={22}
+                size={1.4}
+                color="var(--graph-dot)"
+                bgColor="var(--graph-canvas)"
+              />
+            </ReactFlow>
+          </div>
           <div className="connections-search-dock">
             <div
-              className={`relationships-search-wrap ${searchOpen ? "open" : "collapsed"}`}
+              className={`relationships-search-wrap glass-panel ${searchOpen ? "open" : "collapsed"}`}
               onFocusCapture={() => setSearchOpen(true)}
             >
               <span className="connections-search-icon" aria-hidden="true"><Icon name="search" size={20} /></span>
@@ -540,15 +611,16 @@ function RelationshipsContent({
             />
           ) : selected ? (
             <div className="selected-person-panel">
-              <div className="side-profile-row">
-                <Avatar person={selected} size={42} />
-                <div>
+              <div className="inspector-profile-row">
+                <Avatar person={selected} size={60} />
+                <div className="inspector-profile-copy">
                   <strong>{selected.name}</strong>
-                  {selected.aliases.length > 0 && (
-                    <div className="muted tiny">
-                      Alias: {selected.aliases.join(", ")}
-                    </div>
-                  )}
+                  <div className="inspector-relationship-line">
+                    {primaryRelationship?.label_en ?? "Connection"}
+                    {primaryRelationship?.label_ur && (
+                      <span dir="rtl" lang="ur"> · {primaryRelationship.label_ur}</span>
+                    )}
+                  </div>
                 </div>
                 <Button kind="ghost" className="icon-button inspector-close" onClick={() => {
                   setSelected(null);
@@ -556,83 +628,90 @@ function RelationshipsContent({
                 }} ariaLabel="Close selected person" title="Close selected person"><Icon name="close" /></Button>
               </div>
 
-              {/* Node Context Actions Toolbar */}
-              <div className="row-actions" style={{ marginBottom: 12 }}>
-                <Button kind="primary" onClick={() => setShowAddRel(true)}>
-                  + Add Relationship
-                </Button>
+              <div className="inspector-primary-actions">
                 {onNavigateToProfile && (
-                  <Button onClick={() => onNavigateToProfile(selected.id)}><Icon name="profile" /> View Profile</Button>
+                  <Button onClick={() => onNavigateToProfile(selected.id)}><Icon name="profile" /> <span>View Profile</span><span className="inspector-chevron">›</span></Button>
                 )}
-                {onNavigateToFamily && (
-                  <Button onClick={() => onNavigateToFamily(selected.id)}><Icon name="family" /> View Family Tree<span className="sr-only"> View Family</span></Button>
-                )}
-                <details className="inspector-more">
-                  <summary className="btn" aria-label="More person actions"><Icon name="more" /></summary>
-                  <div className="inspector-more-menu">
-                    <Button kind="ghost" onClick={() => { setPersonModalTarget(selected); setPersonModalMode("edit"); }}><Icon name="edit" /> Edit Person</Button>
-                    <Button kind="danger" onClick={() => { setPersonModalTarget(selected); setPersonModalMode("delete"); }}>Delete</Button>
-                  </div>
-                </details>
+                <Button onClick={() => setJournalFor(selected)}><Icon name="journal" /> <span>Journal</span><span className="inspector-chevron">›</span></Button>
+                <Button onClick={() => void setPerspective(selected.id)}><Icon name="path" /> <span>View from this person</span><span className="inspector-chevron">›</span></Button>
               </div>
 
-              <div className="rel-section-title">
-                Relationship to {perspectiveName}
+              <div className="inspector-metadata">
+                <div className="inspector-meta-row">
+                  <Icon name="profile" />
+                  <div><span>Full name</span><strong>{selected.name}</strong></div>
+                </div>
+                <div className="inspector-meta-row">
+                  <Icon name="family" />
+                  <div><span>Relationship to {perspectiveName}</span><strong>{primaryRelationship?.label_en ?? "Not recorded"}</strong></div>
+                </div>
+                <div className="inspector-meta-row">
+                  <Icon name="journal" />
+                  <div><span>Perspectives available</span><strong>View their family and connections</strong></div>
+                </div>
               </div>
 
-              {relationshipResult ? (
-                <>
-                  <EntryGroup
-                    title="Primary"
-                    entries={relationshipResult.primary}
-                    onShowWhy={(entry) => void showWhy(entry)}
-                    onEditEntry={(entry) => setEditingEntry(entry)}
-                  />
-                  {relationshipResult.additional.length > 0 && (
-                    <EntryGroup
-                      title="Additional paths"
-                      entries={relationshipResult.additional}
-                      onShowWhy={(entry) => void showWhy(entry)}
-                      onEditEntry={(entry) => setEditingEntry(entry)}
-                    />
+              <details
+                className="inspector-disclosure inspector-evidence"
+                open={evidenceOpen}
+                onToggle={(event) => setEvidenceOpen(event.currentTarget.open)}
+              >
+                <summary><Icon name="path" /> Relationship evidence</summary>
+                <div className="inspector-disclosure-body">
+                  {relationshipResult ? (
+                    <>
+                      <EntryGroup
+                        title="Primary"
+                        entries={relationshipResult.primary}
+                        onShowWhy={(entry) => void showWhy(entry)}
+                        onEditEntry={(entry) => setEditingEntry(entry)}
+                      />
+                      {relationshipResult.additional.length > 0 && (
+                        <EntryGroup
+                          title="Additional paths"
+                          entries={relationshipResult.additional}
+                          onShowWhy={(entry) => void showWhy(entry)}
+                          onEditEntry={(entry) => setEditingEntry(entry)}
+                        />
+                      )}
+                      {relationshipResult.primary.length === 0 && relationshipResult.additional.length === 0 && (
+                        <div className="empty-inline">No recorded relationship from this perspective.</div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="muted small">Calculating…</div>
                   )}
-                  {relationshipResult.primary.length === 0 &&
-                    relationshipResult.additional.length === 0 && (
-                      <div className="empty-inline">
-                        No recorded relationship from this perspective.
-                      </div>
-                    )}
-                </>
-              ) : (
-                <div className="muted small">Calculating…</div>
-              )}
+                </div>
+              </details>
 
-              <div className="row-actions panel-actions">
-                <Button
-                  kind="primary"
-                  onClick={() => void setPerspective(selected.id)}
-                >
-                  View from this person
-                </Button>
-                <Button onClick={() => setComparePicker(true)}><Icon name="compare" /> Compare</Button>
-                <Button onClick={() => setJournalFor(selected)}><Icon name="journal" /> Journal</Button>
-              </div>
+              <details className="inspector-disclosure inspector-manage">
+                <summary><Icon name="more" /> More actions</summary>
+                <div className="inspector-disclosure-body inspector-manage-grid">
+                  <Button kind="primary" onClick={() => setShowAddRel(true)}><Icon name="add" /> Add Relationship</Button>
+                  {onNavigateToFamily && (
+                    <Button onClick={() => onNavigateToFamily(selected.id)}><Icon name="family" /> View Family Tree<span className="sr-only"> View Family</span></Button>
+                  )}
+                  <Button onClick={() => setComparePicker(true)}><Icon name="compare" /> Compare</Button>
+                  <Button onClick={() => { setPersonModalTarget(selected); setPersonModalMode("edit"); }}><Icon name="edit" /> Edit Person</Button>
+                  <Button kind="danger" onClick={() => { setPersonModalTarget(selected); setPersonModalMode("delete"); }}>Delete Person</Button>
+                </div>
+              </details>
             </div>
           ) : null}
         </aside>
           ) : null}
 
-          <div className="relationships-footer glass-panel">
-            <ExpandControls
-              personName={centerPerson?.name ?? "…"}
-              active={activeFilters}
-              onToggle={toggleExpansionForCenter}
-            />
-            <GraphLegend />
-            <div className="keyboard-hints muted tiny">
-              Ctrl+K search · V view from selected · C compare · P show primary · H owner perspective · Esc exit path
-            </div>
-          </div>
+          <GraphDock
+            personName={centerPerson?.name ?? "…"}
+            active={activeFilters}
+            zoomPercent={zoomPercent}
+            immersive={immersive}
+            onToggle={toggleExpansionForCenter}
+            onZoomOut={() => void zoomOut({ duration: 220 })}
+            onZoomIn={() => void zoomIn({ duration: 220 })}
+            onFit={() => void fitView({ padding: 0.1, duration: 350, maxZoom: 1 })}
+            onToggleFullscreen={() => void toggleImmersive()}
+          />
         </div>
       </div>
 
@@ -740,7 +819,7 @@ function EntryGroup({
             flexDirection: "column",
             gap: 4,
             padding: "8px 0",
-            borderBottom: "1px solid #f1f5f9",
+            borderBottom: "1px solid var(--border-subtle)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
@@ -753,12 +832,12 @@ function EntryGroup({
                 {entry.derived ? "derived" : "stored fact"}
               </span>
               {entry.side && entry.side !== "unspecified" && (
-                <span className="badge-fact" style={{ background: "#e0e7ff", color: "#3730a3" }}>
+                <span className="badge-fact badge-side">
                   {entry.side}
                 </span>
               )}
               {entry.kind && entry.kind !== "direct" && (
-                <span className="badge-fact" style={{ background: "#fef3c7", color: "#92400e" }}>
+                <span className="badge-fact badge-kind">
                   {entry.kind}
                 </span>
               )}
@@ -773,7 +852,7 @@ function EntryGroup({
             </div>
           </div>
           {entry.label_ur && (
-            <div className="relation-ur" dir="rtl" lang="ur" style={{ fontSize: 13, color: "#64748b" }}>
+            <div className="relation-ur" dir="rtl" lang="ur" style={{ fontSize: 13, color: "var(--text-secondary)" }}>
               {entry.label_ur}
             </div>
           )}

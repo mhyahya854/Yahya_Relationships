@@ -153,6 +153,14 @@ async function main() {
       await sleep(400);
     }
 
+    async function openInspectorDisclosure(selector) {
+      const isOpen = await page.$eval(selector, (element) => element.open);
+      if (!isOpen) {
+        await page.click(`${selector} summary`);
+        await sleep(250);
+      }
+    }
+
     async function clickNodeByText(name) {
       const handle = await page.evaluateHandle((expected) => {
         const nodes = [...document.querySelectorAll(".person-node-card")];
@@ -198,6 +206,11 @@ async function main() {
       if (!row) throw new Error(`Person search row for '${name}' not found.`);
       await row.click();
       await sleep(600);
+      const evidence = await page.$(".inspector-evidence");
+      if (evidence && !(await page.$eval(".inspector-evidence", (element) => element.open))) {
+        await page.click(".inspector-evidence summary");
+        await sleep(250);
+      }
     }
 
     async function ensureDefaultPerspective() {
@@ -363,6 +376,7 @@ async function main() {
     await row2.click();
     await sleep(600);
 
+    await openInspectorDisclosure(".inspector-manage");
     await clickButtonText("Compare");
     await sleep(500);
     // Pick someone in comparison picker modal
@@ -386,7 +400,8 @@ async function main() {
     await sleep(400);
 
     // 23. Add a GENERAL relationship in isolated test root
-    await clickButtonText("+ Add Relationship");
+    await openInspectorDisclosure(".inspector-manage");
+    await clickButtonText("Add Relationship");
     await sleep(500);
     await page.waitForSelector(".modal-card", { timeout: 5000 });
 
@@ -505,7 +520,8 @@ async function main() {
     }
 
     // 29. Family mutation preview opens
-    await clickButtonText("+ Add Relationship");
+    await openInspectorDisclosure(".inspector-manage");
+    await clickButtonText("Add Relationship");
     await sleep(600);
     await page.waitForSelector(".modal-card", { timeout: 5000 });
 

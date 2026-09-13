@@ -15,8 +15,8 @@ export function BackupDetailsDialog({
           style={{
             padding: "10px 14px",
             borderRadius: "8px",
-            background: backup.verified ? "var(--ok-soft, #eef9f5)" : "var(--warn-soft, #fff8ec)",
-            border: `1px solid ${backup.verified ? "#b7eb8f" : "#ffe58f"}`,
+            background: backup.verified ? "var(--ok-soft)" : "var(--warn-soft)",
+            border: `1px solid ${backup.verified ? "var(--ok)" : "var(--warn)"}`,
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
@@ -30,7 +30,7 @@ export function BackupDetailsDialog({
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+          <div style={{ background: "var(--surface-secondary)", padding: "12px", borderRadius: "8px", border: "1px solid var(--line)" }}>
             <h4 style={{ margin: "0 0 8px 0" }}>Metadata</h4>
             <div className="small muted">Backup ID: <code>{backup.name}</code></div>
             <div className="small muted">Category: <strong>{backup.category}{backup.safety_reason ? ` / ${backup.safety_reason.replace(/_/g, " ")}` : ""}</strong></div>
@@ -41,7 +41,7 @@ export function BackupDetailsDialog({
             <div className="small muted">Compatibility: <strong>{backup.compatibility.status}</strong></div>
           </div>
 
-          <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+          <div style={{ background: "var(--surface-secondary)", padding: "12px", borderRadius: "8px", border: "1px solid var(--line)" }}>
             <h4 style={{ margin: "0 0 8px 0" }}>Content Summary</h4>
             <div className="small muted">People Count: <strong>{backup.person_count ?? "N/A"}</strong></div>
             <div className="small muted">Journal Count: <strong>{backup.journal_count ?? "N/A"}</strong></div>

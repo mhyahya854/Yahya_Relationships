@@ -15,14 +15,14 @@ export const MutationPreviewDialog: React.FC<Props> = ({
   loading = false,
 }) => {
   return (
-    <div className="modal-backdrop">
+    <div className="modal-backdrop mutation-preview-dialog">
       <div className="modal-card">
         <div className="modal-header">
           <h3>
             {preview.valid ? (
-              <span style={{ color: "#166534" }}>⚡ Consequence Preview</span>
+              <span style={{ color: "var(--ok)" }}>Consequence Preview</span>
             ) : (
-              <span style={{ color: "#991b1b" }}>⚠️ Invalid Mutation</span>
+              <span style={{ color: "var(--danger)" }}>Invalid Mutation</span>
             )}
           </h3>
           <button className="btn-close" onClick={onCancel}>

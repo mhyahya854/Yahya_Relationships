@@ -144,31 +144,57 @@ async function main() {
     });
 
     async function clickButtonText(text) {
+      const aliases = {
+        "Make Family Focus": "View family from this person",
+        "View in Relationships": "View in Connections",
+        "+ Add Family Fact": "Add Family Fact",
+        "+ Zoom": "Zoom in",
+        "− Zoom": "Zoom out",
+      };
+      const targetText = aliases[text] ?? text;
+      const initiallyVisible = await page.evaluate((expected) => {
+        const buttons = [...document.querySelectorAll("button, .btn, .nav-item")];
+        return buttons.some((b) => {
+          const rect = b.getBoundingClientRect();
+          const label = [b.textContent, b.getAttribute("aria-label"), b.getAttribute("title")].filter(Boolean).join(" ").trim().toLowerCase();
+          return label.includes(expected.toLowerCase()) &&
+            !b.disabled && rect.width > 0 && rect.height > 0;
+        });
+      }, targetText);
+      if (!initiallyVisible) {
+        await page.evaluate(() => {
+          document.querySelectorAll("details.inspector-disclosure:not([open]) > summary")
+            .forEach((summary) => summary.click());
+        });
+        await sleep(250);
+      }
       await page.waitForFunction((expected) => {
         const buttons = [...document.querySelectorAll("button, .btn, .nav-item")];
         return buttons.some((b) => {
           const rect = b.getBoundingClientRect();
-          return b.textContent?.trim().toLowerCase().includes(expected.toLowerCase()) &&
+          const label = [b.textContent, b.getAttribute("aria-label"), b.getAttribute("title")].filter(Boolean).join(" ").trim().toLowerCase();
+          return label.includes(expected.toLowerCase()) &&
             !b.disabled && rect.width > 0 && rect.height > 0;
         });
-      }, { timeout: 10000 }, text);
+      }, { timeout: 10000 }, targetText);
       const clicked = await page.evaluate((expected) => {
         const buttons = [...document.querySelectorAll("button, .btn, .nav-item")];
         const button = buttons.find((b) => {
           const rect = b.getBoundingClientRect();
-          return b.textContent?.trim().toLowerCase().includes(expected.toLowerCase()) &&
+          const label = [b.textContent, b.getAttribute("aria-label"), b.getAttribute("title")].filter(Boolean).join(" ").trim().toLowerCase();
+          return label.includes(expected.toLowerCase()) &&
             !b.disabled && rect.width > 0 && rect.height > 0;
         });
         button?.click();
         return Boolean(button);
-      }, text);
-      if (!clicked) throw new Error(`Visible enabled button with text '${text}' not found.`);
+      }, targetText);
+      if (!clicked) throw new Error(`Visible enabled button with text '${targetText}' not found.`);
       await sleep(500);
     }
 
     async function typeSearch(text) {
-      await page.waitForSelector(".family-focus-search-wrap input", { timeout: 10000 });
-      const input = await page.$(".family-focus-search-wrap input");
+      await page.waitForSelector(".family-search-dock input", { timeout: 10000 });
+      const input = await page.$(".family-search-dock input");
       await input.click();
       await page.keyboard.down("Control");
       await page.keyboard.press("KeyA");
@@ -745,12 +771,22 @@ async function main() {
       return target && target.textContent.includes("Mohammad Yahya Hussain");
     }, { timeout: 8000 });
 
+    await page.evaluate(() => {
+      const evidence = document.querySelector("details.inspector-evidence");
+      if (evidence && !evidence.open) {
+        evidence.querySelector("summary")?.click();
+      }
+    });
+
     await page.waitForFunction(() => {
-      const relTitle = document.querySelector(".relationships-panel .rel-section-title");
+      const perspective = document.querySelector(".perspective-current strong");
+      const target = document.querySelector(".selected-person-panel strong");
       const relLabel = document.querySelector(".relationships-panel .panel-rel-label");
       return (
-        relTitle &&
-        relTitle.textContent.includes("Aresha Zubair") &&
+        perspective &&
+        perspective.textContent.includes("Aresha Zubair") &&
+        target &&
+        target.textContent.includes("Mohammad Yahya Hussain") &&
         relLabel &&
         relLabel.textContent.toLowerCase().includes("cousin")
       );
@@ -930,12 +966,9 @@ async function main() {
     // Open Consequence Preview
     await clickButtonText("Preview Consequences");
     await sleep(800);
-    await page.waitForSelector(".modal-backdrop .preview-section", { timeout: 8000 });
+    await page.waitForSelector(".mutation-preview-dialog .preview-section", { timeout: 8000 });
 
-    const previewBodyText = await page.evaluate(() => {
-      const cards = document.querySelectorAll(".modal-card");
-      return cards[cards.length - 1].textContent;
-    });
+    const previewBodyText = await page.$eval(".mutation-preview-dialog .modal-card", (card) => card.textContent);
     if (!previewBodyText.includes("Add marriage between Muaaz and Musabiha")) {
       throw new Error(`Expected direct change in preview, got: ${previewBodyText}`);
     }
@@ -991,14 +1024,38 @@ async function main() {
       return badge && badge.textContent.includes("Marriage");
     }, { timeout: 8000 });
 
-    // Open Edit Stored Fact dialog
-    await clickButtonText("Edit Stored Fact");
+    // Open the marriage fact editor specifically (the inspector may contain
+    // more than one stored fact/path for the selected pair).
+    const openedMarriageEditor = await page.evaluate(() => {
+      const cards = Array.from(document.querySelectorAll(".relation-card-item"));
+      const marriageCard = cards.find((card) =>
+        card.querySelector(".badge-stored")?.textContent.includes("Marriage"),
+      );
+      const button = Array.from(marriageCard?.querySelectorAll("button") ?? [])
+        .find((candidate) => candidate.textContent.includes("Edit Stored Fact"));
+      button?.click();
+      return Boolean(button);
+    });
+    if (!openedMarriageEditor) throw new Error("Marriage fact editor control was not found");
     await sleep(800);
-    await page.waitForSelector(".modal-backdrop .modal-card", { timeout: 8000 });
+    await page.waitForSelector(".edit-relationship-dialog", { timeout: 8000 });
+    try {
+      await page.waitForFunction(() => {
+        const dialog = document.querySelector(".edit-relationship-dialog");
+        return Array.from(dialog?.querySelectorAll("select.form-select option") ?? [])
+          .some((option) => option.value === "divorced");
+      }, { timeout: 10000 });
+    } catch {
+      const editorState = await page.$eval(".edit-relationship-dialog", (dialog) => ({
+        text: dialog.textContent,
+        ...dialog.dataset,
+      }));
+      throw new Error(`Marriage editor did not load the status controls: ${JSON.stringify(editorState)}`);
+    }
 
     // Change status to divorced
     await page.evaluate(() => {
-      const selects = Array.from(document.querySelectorAll("select.form-select"));
+      const selects = Array.from(document.querySelectorAll(".edit-relationship-dialog select.form-select"));
       const statusSelect = selects.find((s) => Array.from(s.options).some((o) => o.value === "divorced"));
       if (statusSelect) {
         statusSelect.value = "divorced";
@@ -1533,15 +1590,22 @@ async function main() {
     await page.waitForFunction(() =>
       Boolean(
         document.querySelector(".perspective-current strong")?.textContent &&
-        document.querySelector(".selected-person-panel .side-profile-row strong")?.textContent &&
-        document.querySelector(".panel-rel-group .panel-rel-row")?.textContent
+        document.querySelector(".selected-person-panel .inspector-profile-row strong")?.textContent
       ),
+      { timeout: 10000 },
+    );
+    await page.evaluate(() => {
+      const evidence = document.querySelector("details.inspector-evidence");
+      if (evidence && !evidence.open) evidence.querySelector("summary")?.click();
+    });
+    await page.waitForFunction(
+      () => Boolean(document.querySelector(".panel-rel-group .panel-rel-row")?.textContent),
       { timeout: 10000 },
     );
 
     const parentHandoff = await page.evaluate(() => ({
       perspective: document.querySelector(".perspective-current strong")?.textContent || "",
-      target: document.querySelector(".selected-person-panel .side-profile-row strong")?.textContent || "",
+      target: document.querySelector(".selected-person-panel .inspector-profile-row strong")?.textContent || "",
       relationship: document.querySelector(".panel-rel-group .panel-rel-row")?.textContent || "",
     }));
     if (!parentHandoff.perspective.includes("Irsa Naz") ||

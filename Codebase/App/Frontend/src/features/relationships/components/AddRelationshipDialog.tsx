@@ -487,8 +487,8 @@ export const AddRelationshipDialog: React.FC<Props> = ({
                           flexWrap: "wrap",
                           gap: 8,
                           padding: "8px 10px",
-                          background: "var(--card-bg, #f9fafb)",
-                          border: "1px solid var(--line, #e5e7eb)",
+                          background: "var(--card-bg)",
+                          border: "1px solid var(--line)",
                           borderRadius: 6,
                           minHeight: 42,
                           alignItems: "center",
@@ -516,7 +516,7 @@ export const AddRelationshipDialog: React.FC<Props> = ({
                                   border: "none",
                                   background: "transparent",
                                   cursor: "pointer",
-                                  color: "#991b1b",
+                                  color: "var(--danger)",
                                   fontWeight: "bold",
                                   padding: "0 2px",
                                   fontSize: 14,
@@ -537,7 +537,7 @@ export const AddRelationshipDialog: React.FC<Props> = ({
 
                       {/* Add Sibling Control */}
                       <div style={{ marginTop: 10 }}>
-                        <label style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-muted, #4b5563)" }}>
+                        <label style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-muted)" }}>
                           Add Person to Sibling Group
                         </label>
                         <div id="sibling-member-search" style={{ marginTop: 4 }}>
@@ -634,7 +634,7 @@ export const AddRelationshipDialog: React.FC<Props> = ({
                 className="btn btn-outline"
                 onClick={handlePreview}
                 disabled={loading || (isSiblingMode ? isSiblingUnderLimit || isFullSiblingOverLimit : !targetId)}
-                style={{ borderColor: "#0e7490", color: "#0e7490" }}
+                style={{ borderColor: "var(--status-info)", color: "var(--status-info)" }}
               >
                 {loading ? "Calculating..." : "⚡ Preview Consequences"}
               </button>
