@@ -2,6 +2,26 @@
 
 > A private, single-user, local-first relationship brain.
 
+## Master architecture authority
+
+This README is the repository's authoritative Master Plan. The consolidated
+people, media, memories, conversations, and location architecture below is an
+approved **documentation authority update only**: it does not authorize an
+implementation, data migration, UI redesign, automatic organization, or any
+change to application behavior.
+
+The application remains single-user, local-first, human-readable wherever
+practical, deterministic for derivable facts, and easy for both people and
+coding agents to navigate. Its governing design principle is:
+
+> **Minimal physical architecture, rich logical structure.**
+
+The current checkout contains implementation-era paths and compatibility
+details. Those are historical/current-state notes only where identified as
+such; they do not override the locked forward architecture in this Master
+Plan. In particular, no database, file, or source material is moved by this
+documentation update.
+
 **People Relationships** answers one question from **any selected person's
 perspective**: *who is connected to whom, how are they related, and what does
 that relationship look like from this person's side?*
@@ -15,10 +35,11 @@ journal prose; Hermes calls tiny deterministic tools.
 
 ---
 
-## What changed (migration summary)
+## Historical implementation notes (non-authoritative for new work)
 
-- `family.db` remains the single structured store, now at
-  `Database/Main/family.db`. A pre-migration snapshot exists under
+- The current implementation has a historical single-store snapshot. It
+  remains untouched by this task and is not a second target database or a
+  prescription for future expansion. A pre-migration snapshot exists under
   `Backups/Safety/Pre-Upgrade/2026-09-04T130821/` with a SHA-256 manifest,
   and the pre-change baseline is archived at
   `Documentation/Archive/pre-people-relationships-2026-09-04/baseline-before-people-relationships.md`.
@@ -61,8 +82,8 @@ React + TypeScript + Vite (Codebase/App/Frontend)
 FastAPI local backend (Codebase/App/app/backend)
         |
         +---- Python relationship engine (canonical domain/family/engine.py, reused)
-        +---- SQLite Database/Main/family.db (structured facts + app tables)
-        +---- Database/People/<group>/<person-id>/journal.md (Markdown prose)
+        +---- Database/relationships.db (locked future canonical structured truth)
+        +---- People/<group>/<person-id>/... (locked Markdown/context hierarchy)
 ```
 
 Repository layout (the repo root is also the personal-data root):
@@ -81,14 +102,306 @@ Family Relationships/
     Tests/UI/            headless Edge smoke test
     Resources/Vendor/    bundled third-party assets (mermaid.min.js)
   Database/
-    Main/family.db       canonical SQLite store (unchanged schema core)
-    People/<Group>/<id>/journal.md
-    Config/state.json    UI perspective state
+    relationships.db     locked future canonical SQLite store
+    raw_processing_history.md
     Sources/             provenance source batches
     Exports/Family/      family.html / family.md (still generated)
+  People/                locked person records and person-specific context
+  Media/                 locked ordinary event-based media hierarchy
+  Raw/                   locked open intake; source material remains untouched
   Backups/<Category>/<backup-id>/  full snapshots + manifest.json
   Documentation/         architecture, API, database, testing docs + archive
 ```
+
+## Consolidated people, media, memories, conversations, and location architecture
+
+### Scope, truth, and implementation boundary — LOCKED
+
+This is one private, single-user personal relationship application. It brings
+together relationship/family knowledge, person identities, personal memories,
+events, ordinary photos/videos, social-media conversations and their media,
+location history/travel, documents, face-reference material, and future Hermes
+access. It uses structured metadata and cross-links instead of duplicated
+physical copies.
+
+This plan extends rather than replaces the established application: React +
+TypeScript + Vite, Tauri 2, a Python/FastAPI loopback backend, SQLite structured
+truth, Markdown context, the canonical Python family engine, Mermaid Family
+Tree, React Flow + Dagre Connections, perspective-aware relationships, all
+valid family paths, and current navigation/design authority all remain intact.
+
+No feature described in this section is being implemented by this document.
+Unknown is a valid recorded state; AI suggestions never become confirmed facts
+without the user's approval.
+
+### One database and canonical identifiers — LOCKED
+
+There is exactly one forward-architecture SQLite database:
+
+```text
+Database/
+└── relationships.db
+```
+
+It has logically separated tables for people, relationships and their
+aliases/statuses, groups and memberships, places, events, memories/indexes,
+media assets and links, conversations/messages/message-media links, platform
+identities, unresolved people, face references/indexes, raw processing,
+provenance, and identifier alias/history. Names are display information;
+cross-references use canonical IDs. No separate `me`, `family`, `friends`,
+`other`, `core`, `context`, or `index` database is approved.
+
+Known people have permanent readable IDs of the form
+`normalized_full_name--INITIALS##`, for example `sara_khan--SK01` or
+`mohammad_yahya_hussain--MYH01`. The normalized portion is lowercase with
+underscores; initials are uppercase for every full-name part; the two-digit
+counter separates identical normalized names. Aliases, nicknames, and later
+display-name changes never change the canonical ID. The owner uses an ordinary
+person ID; the setting merely points to it.
+
+Unidentified people receive stable temporary IDs such as
+`unknown_person--UP0001`, live directly under `People/`, and retain all known
+context (source, place seen, event, approximate date, media, and face
+reference). Resolving an identity creates the normal known-person ID while
+permanently retaining the old temporary identifier in alias/history/provenance;
+no existing link may be silently lost.
+
+Future Hermes receives one unified backend/query interface, so it never needs
+to know a table or physical file location. A future request such as “everything
+about Sara” resolves a structured package of identity, relationships, groups,
+media, conversations, events, memories, places, and documents. Hermes itself,
+including security/masking behavior, remains **DEFERRED**.
+
+### People, status, groups, and person files — LOCKED
+
+```text
+People/
+├── Me/
+├── Family/
+├── Friends/
+├── unknown_person--UP0001/
+└── unknown_person--UP0002/
+```
+
+`Me`, `Family`, and `Friends` use the same template. A person who is both
+family and friend has one folder under `Family`; friendship is an additional
+relationship, never a duplicate person. Friends remain direct children of
+`People/Friends/`: social/friend groups are logical records with readable IDs,
+membership history, alternative names, and context, not nested person folders.
+Shared group membership never implies friendship.
+
+Known historical people remain known even after contact ends. Relationship and
+contact fields can record Friend, Close/Best/Childhood Friend, Former Friend,
+Acquaintance, Colleague/Former Colleague, Mentor/Mentee, Neighbour, Enemy, No
+Contact, or a custom relationship, together with ending terms and flashback
+preference. Bad endings do not erase identity, chats, events, media, groups,
+face references, memories, or other historical truth.
+
+```text
+sara_khan--SK01/
+├── sara_khan--SK01(facts and about).md
+├── journal(personal thoughts).md
+├── Memories(personal history)/
+├── Conversations (Social Media chats)/
+├── Documents (Documents about the person)/
+├── Face (for the apps face detection)/
+└── Profile (Profile Picture)/
+```
+
+The facts-and-about file is the predictable first-read identity record. It
+preserves canonical ID, names/aliases, known birth date, contact details,
+current and historical phone/email/platform identities, how/when/where the
+person was met, category/relationships, groups, contact and relationship
+history, identity-link evidence/notes, and created/updated/verification dates.
+Historical usernames and numbers must be retained to prevent old and new
+exports from creating duplicate people. `journal(personal thoughts).md` is
+only the freeform human-written area for reflections, stories, and informal
+history; it is not a substitute structured identity record.
+
+`Profile (Profile Picture)/` holds current and historical profile images. Each
+has a same-basename Markdown sidecar with setting/replacement date/time,
+source, location context, and provenance when known. `Face (for the apps face
+detection)/` holds confirmed references for that person; recognition can only
+suggest an identity, never automatically confirm it. Unknown faces keep stable
+unresolved references. Face engine/model selection is **DEFERRED**.
+
+### Raw intake, provenance, and retention — LOCKED
+
+`Raw/` is an open intake area for files, folders, ZIPs, platform exports, phone
+backups, photos, videos, documents, location exports, social-media exports, and
+unknown material. It is never pre-organized by the user and remains untouched
+while unresolved: no silent unpacking, modification, deletion, or move is
+allowed.
+
+```text
+Raw → scan → classify → hash/dedupe → extract metadata/OCR/transcription/
+face/location processing → AI suggestions → proposed destination → user review
+→ approval → canonical move → logged result
+```
+
+Before an item leaves `Raw/`, record its understood type, hash/duplicate check,
+canonical destination, completed required sidecar, provenance, date and people
+states, AI-generated fields, and explicit unresolved fields. Exact,
+Approximate, and Unknown are valid date/identity states. An unresolved person
+with a stable unresolved reference does not alone block processing. AI may
+analyze and propose, but only a user-approved action may move a canonical file.
+
+One human-readable processing history is maintained at
+`Database/raw_processing_history.md` unless a later established authoritative
+location supersedes that path. It keeps original filename/path/hash, type,
+duplicate finding, extraction, proposed and final destinations, user decision,
+move/deletion date, corrections, and provenance. Identical duplicates may be
+detected automatically but are deleted only after explicit authorization and a
+preserved history record.
+
+### Ordinary media, events, sidecars, and documents — LOCKED
+
+Ordinary camera/standalone photos and videos are stored once, chronologically,
+in the event that actually occurred:
+
+```text
+Media/
+└── Friends and Family/
+    └── 2026/
+        └── 2026-09-14 - Sara Birthday Dinner/
+            ├── event.md
+            ├── location.md
+            ├── timeline.md
+            ├── Memories/
+            ├── IMG_8127.jpg
+            ├── IMG_8127.md
+            ├── VID_2204.mov
+            └── VID_2204.md
+```
+
+The event folder is the canonical physical home. Person, gallery, travel,
+memory, and flashback views reference assets without copying them into every
+person folder. `event.md` records a readable permanent event ID, name,
+exact/approximate date and timing, canonical participant/group IDs, type,
+context, provenance, related media/memories/conversations, place reference,
+and confirmation status. `location.md` records place/address/coordinates and
+accuracy, arrival/departure, evidence (GPS, EXIF, imported history, manual, or
+AI suggestion), corrections, and confirmation. `timeline.md` can connect
+visits, routes, assets, conversations, people, and sub-events/moments by time.
+
+Every photo, video, audio file, and document has a same-basename Markdown
+sidecar. The rigid structure separates: (1) structured metadata, (2) AI
+analysis, (3) human-confirmed information, and (4) freeform note/context.
+Asset metadata includes permanent ID, original/current path, hash, type,
+date/accuracy/acquisition, relevant original metadata, location, device,
+photographer, people/face evidence, groups, event, provenance, and related
+media. AI suggestions retain confidence; confirmed values and corrections are
+separate. Useful high-confidence EXIF is preserved without blindly dumping all
+fields. Photographer values support canonical person, unresolved person, self,
+timer, screenshot, downloaded, or unknown.
+
+Video sidecars also support duration, resolution, language, transcript and
+confidence, speaker turns, timestamped visible people, and scene/event/location
+context. All technically possible audio—including voice notes and applicable
+video audio—is transcribed with timestamps/speakers/language/confidence and
+uncertain passages. Fact-sensitive transcription remains unconfirmed until
+user approval. Person documents live in their Documents folder, have matching
+sidecars, and can record owner, document type/number, dates, issuer/country,
+language, OCR text, mentioned people, provenance, filename/hash, corrections,
+and notes. OCR should run when technically possible. Hermes document-security
+behavior is **DEFERRED**.
+
+### Locations, travel, and places — LOCKED
+
+Location exports first enter `Raw/`. Source names, including Google Timeline,
+Google Location History, and Import, belong in provenance—not canonical
+folders. The normalized model uses generic places, visits, routes, trips, and
+timeline information. Place records are global, never person-specific copies,
+and support names/alternatives, coordinates and accuracy, address, type,
+first/last known visits, notes, and provenance. A recurring concept such as
+Home may map to different physical addresses across date ranges. Places use a
+stable internal database identifier when needed; no readable place-ID convention
+is approved.
+
+Photo/video time plus GPS and location history may suggest place, event, visit,
+or route associations, but they remain `Suggested` until user approval. The
+future Travel view will present normalized chronology—years, trips, events,
+places, routes, media, people, and memories—by referencing canonical files
+without duplication. Exact map/offline stack is **DEFERRED**. Immich and
+Dawarich are future reference sources for concepts only; no code, assets,
+architecture, or model may be copied without review, including license review.
+
+### Memories and flashbacks — LOCKED
+
+A memory is structured personal meaning or narrative, not simply a media file.
+It can refer to people, events, places, conversations, photos, videos, or
+documents. It has one primary home: person-specific memories live in that
+person's `Memories(personal history)/`; event-specific memories live in that
+event's `Memories/`. One event can have many memories; a memory normally has
+one primary event and is not copied to every participant. An event is the
+objective occurrence; a memory is the user's recollection or meaning connected
+to it.
+
+Future Flashbacks may cover On This Day, family/friends/person/group, place,
+event anniversary, and trips. `Include in Flashbacks: No` suppresses surfacing
+only; it never deletes historical data.
+
+### Social-media conversations and media — LOCKED
+
+Each person's social conversations are organized by platform, then account or
+conversation identity as needed:
+
+```text
+Conversations (Social Media chats)/
+└── WhatsApp/
+    └── main_account/
+        ├── Chats/
+        │   └── 2026-09-14.md
+        └── Media/
+            ├── IMG-20260914-WA0012.jpg
+            └── IMG-20260914-WA0012.md
+```
+
+There is one Markdown chat file per source/platform-local calendar day named
+`YYYY-MM-DD.md`. Individual messages retain timestamps/time zones when known
+and a stable internal message ID; source-supported records also retain exact
+sender display, canonical sender ID, text, reply, reactions, edited/deleted/
+forwarded state, linked media, source/platform identity, and source message ID.
+Missing source fields are never invented. Group chats use the same scheme,
+mapping known senders to people and unknown senders to unresolved people;
+membership never establishes friendship.
+
+Current and historical platform identities are recorded in the person facts so
+later exports resolve to an existing person. Re-imports append/update safely
+using source/canonical IDs, timestamps, hashes, and deterministic matching; they
+record Last Chat Import, Last Source Message, and Last App Update rather than
+recreating a lifetime conversation. Proven missing/expired content remains an
+explicit unavailable placeholder with its reason.
+
+Chat media is a deliberate storage exception: it stays in that platform
+conversation's `Media/` folder with its original filename and same-basename
+sidecar. Its sidecar records platform/conversation/account, sender and
+canonical ID, sent time, message IDs and surrounding context, original name,
+hash, provenance, analysis, visible people, transcript when relevant, and human
+notes/corrections. Gallery/travel/person views may reference it but must not
+move it into ordinary event media. A camera-roll and social-media version of the
+same picture remain separate physical source artifacts because their provenance
+and technical metadata can differ; they may be linked as related versions.
+
+Canonical conversation truth is Markdown plus its media. The UI may render an
+appropriate WhatsApp/Instagram/Snapchat-like view, but generated HTML is never
+canonical. Original export HTML/JSON/media stays untouched in `Raw/` until
+canonical extraction has been verified at very high confidence and deletion is
+explicitly approved.
+
+### Backups, deletion, and deferrals — LOCKED
+
+Backups restore one consistent generation of the structured state: database,
+canonical metadata, and integrity-required files must never be mixed across
+dates. Detailed large-media backup policy is **DEFERRED**. Historical truth is
+retained by default; archives/tombstones may be necessary, but casual deletion
+is not. True duplicate physical files require explicit authorization and a
+preserved processing history before deletion.
+
+The intentionally deferred decisions are the map/offline stack,
+face-recognition engine/model, Hermes implementation and security/masking, and
+detailed large-media backup policy. These are genuine deferrals, not gaps to be
+filled by inference.
 
 ## Relationships is diagram-first (React Flow)
 
@@ -166,8 +479,8 @@ logic. The UI never computes family relationships itself.
 
 The whole UI is interpreted from a `perspective_person_id`:
 
-1. Default = the configured owner/focus person from `Database/Main/family.db`
-   (`mohammad_yahya_hussain`).
+1. Default = the configured owner/focus person referenced by the single
+   canonical database (`mohammad_yahya_hussain`).
 2. The top bar always shows **Viewing relationships from: [Person]** and a
    **Return to My Perspective** action when a different person is selected.
 3. Every person card/modal offers **View from this person**.
@@ -194,8 +507,11 @@ folder.
 
 ## Per-person Markdown journals
 
-- Every person has exactly one folder: `Database/People/<primary-group>/<id>/journal.md`
-- `journal.md` is the authoritative prose source (UTF-8, any language).
+- Every person has exactly one folder under
+  `People/<primary-group>/<id>/journal(personal thoughts).md`.
+- `journal(personal thoughts).md` is the authoritative freeform prose source
+  (UTF-8, any language); the adjacent facts-and-about file retains structured
+  identity information.
 - The app reads the file on open and offers **Reload from disk**, so edits in
   VS Code / Obsidian / Notepad appear without a restart.
 - Writes are atomic (temp file + `fsync` + rename). If the file changed on
@@ -203,10 +519,11 @@ folder.
   and reloads the external version for manual merge.
 - Search reads the journals directly; no competing authoritative copy.
 
-## Hermes tool layer
+## Existing Hermes tooling (current implementation; expansion deferred)
 
 `GET /api/hermes/tools` exposes a small stable catalog; `POST
-/api/hermes/run` executes one tool. Hermes decides intent; the backend
+/api/hermes/run` executes one tool in the current implementation. Hermes
+decides intent; the backend
 performs the operation — including genealogy. Tools include:
 
 ```text
@@ -223,7 +540,10 @@ Every tool returns `{"ok": true, ...}` or a machine-readable error
 `{"ok": false, "error": {"code": ..., "message": ...}}`. Ambiguous names
 return `PERSON_AMBIGUOUS` with candidate matches rather than silent guesses.
 Hermes-created writes carry provenance `source_type=user_via_hermes`.
-No tool exposes SQL, internal paths, or the repository structure.
+No tool exposes SQL, internal paths, or the repository structure. This existing
+surface does not authorize the expanded Hermes architecture, new security or
+masking policy, or any Hermes implementation work; those remain deferred by the
+Master Plan.
 
 ## Backups
 
@@ -233,9 +553,8 @@ snapshots the restore-critical state into `Backups/` (categorized under `Manual/
 Legacy). Automatic is a supported category, but scheduling is not configured in
 V1. Each new folder has a collision-safe timestamp/UUID/label ID:
 
-- `data/family.db` (WAL-safe SQLite online snapshot)
-- `people/` (every journal folder, UTF-8)
-- `config/`
+- one same-generation canonical database snapshot
+- canonical person/context and other integrity-required metadata/files
 - `manifest.json` — app/schema version, file list with sizes and SHA-256
 
 Snapshots are fully verified before publication and before restore. Restore first
@@ -273,7 +592,7 @@ npm run build
 
 # Tests
 npm test              # Python/pytest suite (93 tests)
-npm run legacy:check  # legacy builder audits against Database/Main/family.db
+npm run legacy:check  # legacy builder audit for the current compatibility dataset
 ```
 
 The backend binds to `127.0.0.1:8765` by default
@@ -305,7 +624,8 @@ generic relationships and no-transitive-inference, journals (append, UTF-8,
 external-edit detection), backups, Hermes JSON tools, relationship paths
 (endpoints, bounds, dedupe, reversal, coverage), data root safety resolution,
 and the FastAPI endpoints.
-Tests always run against a fresh copy of `family.db` in a temporary root;
+Tests always run against a fresh temporary copy of the current compatibility
+dataset;
 the real database is never mutated by tests. A headless Edge UI smoke test
 (`Codebase/Tests/UI/smoke.mjs`) drives the diagram-first acceptance flow
 end-to-end against the running dev stack (see `Codebase/Tests/UI/README.md`).
@@ -354,13 +674,12 @@ Your family relationship brain is completely decoupled from application binaries
 ```text
 Family Relationships/
 ├── Database/
-│   ├── Main/
-│   │   └── family.db         # Standard SQLite 3 database (PRAGMA integrity_check clean)
-│   ├── People/
-│   │   └── <Group>/<PersonID>/journal.md  # Universal UTF-8 Markdown journals
-│   ├── Config/
-│   │   └── state.json        # UI perspective state
-│   └── Exports/
+│   └── relationships.db      # one standard SQLite 3 source of structured truth
+├── People/
+│   └── <Group>/<PersonID>/   # facts/about, journal, memories, chats, documents, face, profile
+├── Media/
+│   └── Friends and Family/   # canonical ordinary event media
+├── Raw/                      # untouched intake until reviewed and approved
 └── Backups/
 ```
 
@@ -435,7 +754,7 @@ npm run build
 
 # Tests
 npm test              # Python/pytest suite (99 tests)
-npm run legacy:check  # legacy builder audits against Database/Main/family.db
+npm run legacy:check  # legacy builder audit for the current compatibility dataset
 ```
 
 ---
