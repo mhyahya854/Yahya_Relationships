@@ -11,6 +11,9 @@ export const PersonNode = memo(function PersonNode({
   const classes = [
     "person-node-card",
     personData.isPerspective ? "is-perspective" : "",
+    personData.isFrom ? "is-from" : "",
+    personData.isTo ? "is-to" : "",
+    personData.isPathIntermediate ? "is-path-intermediate" : "",
     personData.isVirtual ? "is-virtual" : "",
     selected ? "is-selected" : "",
   ]
@@ -19,6 +22,16 @@ export const PersonNode = memo(function PersonNode({
   return (
     <div className={classes}>
       <Handle type="target" position={Position.Top} />
+      <button
+        type="button"
+        className="person-node-drag nodrag"
+        draggable
+        onDragStart={(event) => personData.onDragStart?.(event, personData.id)}
+        aria-label={`Drag ${personData.name} to FROM or TO`}
+        title="Drag to FROM or TO"
+      >
+        ⠿
+      </button>
       <span className="person-node-avatar" aria-hidden="true">{initialsOf(personData.name)}</span>
       <div className="person-node-copy">
         <div className="person-node-name">
@@ -32,6 +45,18 @@ export const PersonNode = memo(function PersonNode({
           </div>
         )}
       </div>
+      <button
+        type="button"
+        className="person-node-info nodrag"
+        onClick={(event) => {
+          event.stopPropagation();
+          personData.onInfo?.(personData.id);
+        }}
+        aria-label={`Information for ${personData.name}`}
+        title={`Information for ${personData.name}`}
+      >
+        ⓘ
+      </button>
       <Handle type="source" position={Position.Bottom} />
     </div>
   );

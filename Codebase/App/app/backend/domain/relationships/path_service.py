@@ -12,6 +12,7 @@ truth.
 
 from __future__ import annotations
 
+from collections import defaultdict, deque
 import sqlite3
 
 from ..family import engine as legacy
@@ -613,6 +614,250 @@ def _general_rows_for(connection: sqlite3.Connection, first: str, second: str):
     ).fetchall()
 
 
+def _connection_route_payload(
+    *,
+    node_ids: list[str],
+    edges: list[dict],
+    people_index: dict,
+) -> dict:
+    """A display-only route through explicit direct facts.
+
+    This is intentionally separate from kinship labels and general-relation
+    labels.  It answers “how are these people connected?” without asserting
+    that the endpoints have acquired a transitive friendship or another stored
+    relationship.
+    """
+    edge_signature = "|".join(
+        f"{edge['from']}:{edge['to']}:{edge['type']}:{edge['subtype']}"
+        for edge in edges
+    )
+    return {
+        "id": family_paths.canonical_path_id(
+            "connection", "explicit_connection_route", node_ids, edge_signature
+        ),
+        "domain": "connection",
+        "relationship_type": "explicit_connection_route",
+        "semantic_id": "explicit_connection_route",
+        "label_en": "Recorded connection route",
+        "label_ur": None,
+        "side": "",
+        "degree": None,
+        "removal": None,
+        "distance": len(edges),
+        "common_ancestors": [],
+        "nodes": [
+            {
+                "id": person_id,
+                "name": people_index.get(person_id, {}).get("name", person_id),
+                "is_virtual": False,
+            }
+            for person_id in node_ids
+        ],
+        "edges": edges,
+        "derived": True,
+        "explanation": "",
+    }
+
+
+def _explicit_connection_routes(
+    *,
+    model: dict,
+    people_index: dict,
+    perspective_id: str,
+    target_id: str,
+    general_rows: list,
+    max_depth: int,
+    max_routes: int,
+) -> tuple[list[dict], bool]:
+    """Enumerate bounded mixed routes through recorded direct facts only.
+
+    The canonical family engine remains responsible for kinship labels.  This
+    helper never derives one: it simply traces direct parent/child, marriage,
+    explicit sibling-group, and explicit general edges.  A route is returned
+    only when it includes a general edge and has at least two steps, because
+    direct family/general facts already have their own canonical path payload.
+    """
+    adjacency: dict[str, list[tuple[str, dict]]] = defaultdict(list)
+
+    def add_pair(first: str, second: str, forward: dict, reverse: dict) -> None:
+        adjacency[first].append((second, forward))
+        adjacency[second].append((first, reverse))
+
+    for relation in model["parent_child"]:
+        parent_id = relation["parent"]
+        child_id = relation["child"]
+        kind = relation.get("kind") or "biological"
+        add_pair(
+            parent_id,
+            child_id,
+            {
+                "from": parent_id,
+                "to": child_id,
+                "type": "parent_child",
+                "subtype": kind,
+                "role": "is parent of",
+            },
+            {
+                "from": child_id,
+                "to": parent_id,
+                "type": "parent_child",
+                "subtype": kind,
+                "role": "is child of",
+            },
+        )
+
+    for marriage in model["marriages"]:
+        first = marriage["person1"]
+        second = marriage["person2"]
+        status = marriage.get("status") or "married"
+        add_pair(
+            first,
+            second,
+            {
+                "from": first,
+                "to": second,
+                "type": "marriage",
+                "subtype": status,
+                "role": "is spouse of",
+            },
+            {
+                "from": second,
+                "to": first,
+                "type": "marriage",
+                "subtype": status,
+                "role": "is spouse of",
+            },
+        )
+
+    for group in model.get("sibling_groups", []):
+        members = sorted(group["members"])
+        subtype = group.get("type") or "sibling"
+        for index, first in enumerate(members):
+            for second in members[index + 1 :]:
+                add_pair(
+                    first,
+                    second,
+                    {
+                        "from": first,
+                        "to": second,
+                        "type": "sibling_group",
+                        "subtype": subtype,
+                        "role": "is a sibling of",
+                    },
+                    {
+                        "from": second,
+                        "to": first,
+                        "type": "sibling_group",
+                        "subtype": subtype,
+                        "role": "is a sibling of",
+                    },
+                )
+
+    for row in general_rows:
+        first = row["person_a"]
+        second = row["person_b"]
+        forward_entry = labels.normalize_general_entry(
+            row,
+            from_person=first,
+            label_a_to_b=row["label_a_to_b"],
+            label_b_to_a=row["label_b_to_a"],
+        )
+        reverse_entry = labels.normalize_general_entry(
+            row,
+            from_person=second,
+            label_a_to_b=row["label_a_to_b"],
+            label_b_to_a=row["label_b_to_a"],
+        )
+        add_pair(
+            first,
+            second,
+            {
+                "from": first,
+                "to": second,
+                "type": "general",
+                "subtype": row["type"],
+                "role": forward_entry["label_en"],
+            },
+            {
+                "from": second,
+                "to": first,
+                "type": "general",
+                "subtype": row["type"],
+                "role": reverse_entry["label_en"],
+            },
+        )
+
+    for person_id in adjacency:
+        adjacency[person_id].sort(
+            key=lambda item: (
+                item[0],
+                item[1]["type"],
+                item[1]["subtype"],
+                item[1]["role"],
+            )
+        )
+
+    routes: list[dict] = []
+    shortest_distance: int | None = None
+    queue: deque[tuple[list[str], list[dict]]] = deque(
+        [([perspective_id], [])]
+    )
+    explored = 0
+    # All valid routes are still bounded by the public depth/path limits. This
+    # extra work cap guards a dense user graph from combinatorial blow-up while
+    # leaving ample space to discover the requested safe maximum of 50 routes.
+    exploration_cap = max(2_000, max_routes * 500)
+    truncated = False
+    while queue:
+        node_ids, edges = queue.popleft()
+        if shortest_distance is not None and len(edges) >= shortest_distance:
+            continue
+        if len(edges) >= max_depth:
+            continue
+        current_id = node_ids[-1]
+        for next_id, edge in adjacency.get(current_id, []):
+            explored += 1
+            if explored > exploration_cap:
+                truncated = True
+                queue.clear()
+                break
+            if next_id in node_ids:
+                continue
+            next_nodes = [*node_ids, next_id]
+            next_edges = [*edges, edge]
+            if next_id == target_id:
+                if (
+                    len(next_edges) > 1
+                    and any(item["type"] == "general" for item in next_edges)
+                ):
+                    if shortest_distance is None:
+                        shortest_distance = len(next_edges)
+                    if len(next_edges) != shortest_distance:
+                        continue
+                    routes.append(
+                        _connection_route_payload(
+                            node_ids=next_nodes,
+                            edges=next_edges,
+                            people_index=people_index,
+                        )
+                    )
+                    if len(routes) >= max_routes:
+                        truncated = bool(queue) or True
+                        queue.clear()
+                        break
+                continue
+            queue.append((next_nodes, next_edges))
+
+    routes.sort(
+        key=lambda route: (
+            route["distance"],
+            [node["id"] for node in route["nodes"]],
+            route["id"],
+        )
+    )
+    return routes, truncated
+
+
 def get_relationship_paths(
     perspective_person_id: str,
     target_person_id: str,
@@ -654,6 +899,9 @@ def get_relationship_paths(
         general_rows = _general_rows_for(
             connection, perspective_person_id, target_person_id
         )
+        all_general_rows = connection.execute(
+            "SELECT * FROM general_relationships ORDER BY id"
+        ).fetchall()
     finally:
         connection.close()
 
@@ -672,7 +920,25 @@ def get_relationship_paths(
         explicit_sibling=sibling_present,
         max_depth=max_depth,
     )
-    all_paths = explicit + derived
+    # A direct canonical relation or family derivation already answers this
+    # pair.  Do not drown it in arbitrary social/family traversals: mixed
+    # display-only routes are the fallback for otherwise-unrelated endpoints.
+    connection_routes: list[dict] = []
+    connection_truncated = False
+    if not explicit and not derived:
+        connection_routes, connection_truncated = _explicit_connection_routes(
+            model=model,
+            people_index=people_index,
+            perspective_id=perspective_person_id,
+            target_id=target_person_id,
+            general_rows=all_general_rows,
+            max_depth=max_depth,
+            max_routes=max_paths + 1,
+        )
+    paths_by_id = {
+        path["id"]: path for path in [*explicit, *derived, *connection_routes]
+    }
+    all_paths = list(paths_by_id.values())
     if not all_paths:
         raise AppError(
             f"No supported relationship path was found within max_depth "
@@ -681,7 +947,17 @@ def get_relationship_paths(
         )
     for path in all_paths:
         path["explanation"] = path_explanation(path, perspective, target)
-    truncated = len(all_paths) > max_paths
+    all_paths.sort(
+        key=lambda path: (
+            path["distance"],
+            0 if path["domain"] == "family" else 1 if path["domain"] == "general" else 2,
+            path["degree"] if path["degree"] is not None else 99,
+            path["removal"] if path["removal"] is not None else 99,
+            path["relationship_type"],
+            [node["id"] for node in path["nodes"]],
+        )
+    )
+    truncated = len(all_paths) > max_paths or connection_truncated
     return {
         "perspective": perspective,
         "target": target,
@@ -706,6 +982,12 @@ def path_explanation(path: dict, perspective: dict, target: dict) -> str:
         return (
             f"{target['name']} is directly connected to {perspective['name']} "
             f"by the recorded relationship “{label}”. No family derivation is involved."
+        )
+    if path.get("domain") == "connection":
+        return (
+            f"This display route follows recorded direct family and/or general "
+            f"connections between {perspective['name']} and {target['name']}. "
+            "It does not create a new transitive relationship label."
         )
     if path.get("derived"):
         distance = path.get("distance", 0)

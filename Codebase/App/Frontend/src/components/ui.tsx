@@ -314,6 +314,11 @@ export function PersonSearch({
                 aria-selected={isMatchActive}
                 key={person.id}
                 className={`person-search-row ${isMatchActive ? "active" : ""}`}
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.setData("text/plain", person.id);
+                  event.dataTransfer.effectAllowed = "copyMove";
+                }}
                 onClick={() => handleSelectPerson(person)}
                 onMouseEnter={() => setActiveIndex(index)}
               >

@@ -403,54 +403,67 @@ face-recognition engine/model, Hermes implementation and security/masking, and
 detailed large-media backup policy. These are genuine deferrals, not gaps to be
 filled by inference.
 
-## Relationships is diagram-first (React Flow)
+## Connections is a relationship explorer (React Flow + Dagre)
 
-Opening **Relationships** shows a relationship diagram immediately, with a
-side panel beside it. The diagram is rendered with **@xyflow/react** and a
-deterministic **dagre** hierarchical layout — no physics-based jitter — and
-starts with the perspective person plus their parents, siblings, spouses and
-general neighbours.
+**Connections** is an exploratory, connection-oriented React Flow view, not a
+second family tree. It uses deterministic Dagre-assisted placement with
+generous whitespace: the one **FROM** person is prominent and central, maternal
+context has a pale-pink region, paternal context has a clearly separated
+pale-blue region, and external relationships have neutral space. The separate
+**Family Tree** screen remains the Mermaid genealogy renderer.
 
-- Click a node to select; double-click (or *View from this person*) to change
-  the global perspective. **Return to My Perspective** stays prominent.
-- The bottom bar expands/collapses **Parents · Children · Siblings · Spouses
-  · General** for the selected person. Nodes shared with other visible
-  branches are never removed when collapsing.
-- Edges are semantic: strong line = parent/child (biological), dashed amber =
-  non-biological parent/child kind, medium violet = marriage, dotted = sibling,
-  dashed teal = general relationship. A small legend is always visible.
-- The **Family** screen remains the existing Mermaid genealogy renderer;
-  Relationships (exploratory, arbitrary perspective) and Family (traditional
-  tree) solve different problems on purpose.
+The persistent **Relationship Builder** has two session-only zones:
 
-### Show why and relationship paths
+- **FROM** contains exactly one person. It starts as the current perspective
+  (normally the configured owner); dropping or setting another person replaces
+  it. **Return to My Perspective** restores the configured owner.
+- **TO** contains zero or many people. Canvas cards, search results, and the
+  immediate-connection list support drag/drop as well as accessible **Set as
+  FROM** and **Add to TO** actions. Removing a target changes no stored fact.
 
-Every Primary/Additional relationship in the side panel has a **Show why**
-button. It asks the backend for the exact objective graph path(s), enters
-path-focus mode, highlights the path nodes and edges, dims everything else,
-adds missing intermediate (including virtual shared-ancestor) nodes, fits the
-path into view, and shows side/degree/removal/common-ancestor facts plus a
-template-generated explanation. **Esc** or *Exit path* restores the previous
-graph. Multiple valid paths for one label (for example a nephew via the
-maternal grandmother vs. the maternal grandfather) can be switched inside
-the path panel.
+With TO empty, the canvas shows only FROM's direct stored or canonical
+relationships: parents, children, siblings, spouses/partners, explicit
+non-biological parent/child kinds, and direct general relationships. It does
+not automatically add distant relatives, friends-of-friends, or arbitrary
+branches. Edges retain their semantic styling: biological parent/child is
+strong, non-biological parent/child is dashed amber, marriage is violet,
+sibling is dotted, and explicit general relationships are dashed teal.
 
-Paths are bounded and validated: `max_depth` default 10 (range 1–30) and
-`max_paths` default 10 (range 1–50). Errors are structured
-(`NO_RELATIONSHIP_PATH`, `INVALID_MAX_DEPTH`, `INVALID_MAX_PATHS`). Paths are
-derived data — never stored, never authoritative. See
+With one or more TO people, the backend returns canonical paths for each
+FROM → TO pair (family reasoning comes from the Python family engine; general
+links are explicit stored facts). Every returned path remains individually
+selectable under its target, subject to the safe limits of `max_depth` 1–30 and
+`max_paths` 1–50. Missing intermediates are added to the canvas. FROM and TO
+are accented, active intermediates stay readable, and the union of active path
+edges is emphasized; surrounding context remains mounted but subtly muted.
+Changing TO does not discard that context or perform a disruptive reset.
+
+A multi-hop general/family traversal may be displayed as a **Recorded
+connection route**, but it never creates a stored or derived friendship label.
+Group membership never implies friendship. Paths are query/display data, not
+stored relationship truth; structured path errors remain
+`NO_RELATIONSHIP_PATH`, `INVALID_MAX_DEPTH`, and `INVALID_MAX_PATHS`. See
 [Documentation/Architecture/relationship-paths.md](Documentation/Architecture/relationship-paths.md).
+
+Person information is available only from the compact **ⓘ** action. Ordinary
+node clicks select or reveal a person but do not open information. The drawer
+has modular Overview, Relationships, Relationship Paths, Memories, Events,
+Photos & Videos, Conversations, Documents, Places / Travel, Groups, and
+Journal / Notes tabs. Implemented domains are wired to their real sources;
+unimplemented future domains are typed empty boundaries rather than invented
+production data. Closing the drawer preserves FROM, TO, selected paths, and
+the graph state where technically practical.
 
 ### Keyboard navigation
 
 | Key | Action |
 | --- | --- |
 | Ctrl/Cmd+K | Focus person search |
-| V | View from selected person |
+| V | Set selected person as FROM |
 | C | Compare selected person |
-| P | Show primary relationship path |
+| P | Add selected person to TO |
 | H | Return to owner perspective |
-| Esc | Exit path focus / close overlay |
+| Esc | Clear route selection, close the drawer, or exit an overlay |
 
 Shortcuts never fire while typing in inputs, textareas or editors.
 

@@ -86,11 +86,10 @@ Object.assign(env, {
 });
 
 const backend = spawn(python, ["-m", "app.backend.main"], { cwd: ROOT, env, stdio: "pipe" });
-const vite = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["--prefix", "App/Frontend", "run", "dev"], {
-  cwd: ROOT,
+const vite = spawn(process.execPath, [resolve(ROOT, "App/Frontend/node_modules/vite/bin/vite.js")], {
+  cwd: resolve(ROOT, "App/Frontend"),
   env,
   stdio: "pipe",
-  shell: process.platform === "win32",
 });
 backend.stdout.on("data", () => undefined);
 backend.stderr.on("data", (data) => { if (/Traceback|ERROR/.test(data.toString())) console.error(data.toString()); });
@@ -797,17 +796,19 @@ async function captureDarkMajorStates(fixture) {
 
   await nav("Connections");
   await page.waitForSelector(".relationships-graph-area .react-flow", { timeout: 30_000 });
-  await shot("15-dark-mode/connections-canvas.png", "Full Connections canvas in Dark mode with mixed family and general edges.", "Search; filters; zoom; fit; fullscreen");
-  await page.focus(".relationships-search-wrap input");
-  await shot("15-dark-mode/connections-search.png", "Expanded Connections search in Dark mode.", "Search input; close search");
-  await setValue(".relationships-search-wrap input", fixture.people.darya.name);
-  await page.waitForSelector(".relationships-search-wrap .person-search-row", { visible: true });
-  await page.click(".relationships-search-wrap .person-search-row");
-  await page.waitForFunction(() => document.querySelector(".relationships-panel")?.textContent?.includes("Darya Sol"));
-  await shot("15-dark-mode/connections-selected.png", "Selected-person inspector floating over the Dark graph.", "Inspector; Why; Profile; Family Tree; Compare; Journal");
+  await shot("15-dark-mode/connections-canvas.png", "Full Connections canvas in Dark mode with the persistent Relationship Builder.", "FROM; TO; search; zoom; fit; fullscreen");
+  await page.focus(".connections-search-dock .person-search input");
+  await shot("15-dark-mode/connections-search.png", "Connections search in Dark mode.", "Search input; Set as FROM; Add to TO");
+  await setValue(".connections-search-dock .person-search input", fixture.people.darya.name);
+  await page.waitForSelector(".connections-search-dock .person-search-row", { visible: true });
+  await page.$eval(".connections-search-dock .person-search-row", (row) => row.click());
+  await page.waitForSelector(".connections-search-actions", { visible: true });
+  await clickText(".connections-search-actions", "Add to TO");
+  await page.waitForFunction(() => [...document.querySelectorAll(".relationship-target-card")].some((node) => node.textContent?.includes("Darya Sol")));
+  await shot("15-dark-mode/connections-selected.png", "Darya selected as a TO target in the Dark Relationship Builder.", "FROM; TO; canonical paths; Clear TO");
   await page.click("[aria-label='Enter graph fullscreen']");
   await page.waitForFunction(() => document.querySelector(".relationships-graph-area")?.getAttribute("data-immersive") === "true");
-  await shot("15-dark-mode/connections-fullscreen.png", "Dark immersive Connections canvas with selection and controls intact.", "Exit fullscreen; inspector; graph controls");
+  await shot("15-dark-mode/connections-fullscreen.png", "Dark immersive Connections canvas with builder state and controls intact.", "Exit fullscreen; Relationship Builder; graph controls");
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.querySelector(".relationships-graph-area")?.getAttribute("data-immersive") === "false");
 
@@ -1076,9 +1077,10 @@ try {
   check(graphBox.width > 500 && graphBox.height > 360, "Relationships canvas has nonzero usable area");
   check(Boolean(await page.$(".graph-zoom-controls")), "Relationships graph controls are visible");
   check(Boolean(await page.$(".graph-legend")), "family, general, and derived graph legend is visible");
-  check(!(await page.$(".relationships-panel")), "empty selected-person panel stays hidden");
+  check(Boolean(await page.$(".connection-builder")), "Relationship Builder stays mounted on the default Connections view");
+  check(!(await page.$(".person-info-drawer")), "person information stays closed until explicitly requested");
   check(await page.$$eval(".person-node-card", (nodes) => nodes.every((node) => node.scrollWidth <= node.clientWidth + 1)), "long relationship node text is contained");
-  await shot("03-connections/full-graph-default.png", "Connections full-canvas default with all family and general links visible.", "Graph nodes; zoom controls; expansion controls; search icon");
+  await shot("03-connections/full-graph-default.png", "Connections default with direct context and the persistent Relationship Builder.", "FROM; TO; immediate connections; graph controls; search");
   await page.click("[aria-label='Collapse sidebar']");
   await page.waitForFunction(() => document.querySelector(".shell")?.classList.contains("sidebar-collapsed"));
   await page.click("[aria-label='Enter graph fullscreen']");
@@ -1096,189 +1098,59 @@ try {
   await shot("03-connections/zoom-out-result.png", "Connections graph after activating Zoom Out.", "Zoom Out");
   await page.click("[aria-label='Fit graph to viewport']");
   await shot("03-connections/fit-view-result.png", "Connections graph restored with Fit View.", "Fit View");
-  await clickText(".relationships-footer", "General");
-  await shot("03-connections/relationship-filter-result.png", "Connections graph after toggling the General relationship type.", "Parents; Children; Siblings; Spouses; General");
-  await clickText(".relationships-footer", "General");
 
-  await page.focus(".relationships-search-wrap input");
-  await page.waitForFunction(() => document.querySelector(".relationships-search-wrap")?.classList.contains("open"));
-  await shot("03-connections/search-open.png", "Collapsed Connections search expanded from its icon control.", "Search icon; search field; close search");
+  await page.focus(".connections-search-dock .person-search input");
+  await shot("03-connections/search-open.png", "Connections search remains available beside the direct-context canvas.", "Search field; FROM/TO actions");
+  await setValue(".connections-search-dock .person-search input", fixture.people.darya.name);
+  await page.waitForSelector(".connections-search-dock .person-search-row", { visible: true });
+  await shot("03-connections/search-results.png", "Connections search result for a long bilingual synthetic person.", "Search result; Set as FROM; Add to TO");
+  await page.$eval(".connections-search-dock .person-search-row", (row) => row.click());
+  await page.waitForSelector(".connections-search-actions", { visible: true });
+  const searchActions = await page.$eval(".connections-search-actions", (node) => node.textContent ?? "");
+  check(searchActions.includes("Set as FROM") && searchActions.includes("Add to TO"), "search selection exposes the FROM and additive TO actions");
+  await clickText(".connections-search-actions", "Add to TO");
+  await page.waitForFunction(() => [...document.querySelectorAll(".relationship-target-card")].some((node) => node.textContent?.includes("Darya Sol")));
+  await page.waitForSelector(".target-path-option", { visible: true, timeout: 20_000 });
+  check((await page.$$(".target-path-option")).length > 0, "selected TO exposes canonical relationship paths");
+  await shot("03-connections/person-selected.png", "Darya selected as an additive TO target with canonical route cards.", "TO target; canonical paths; surrounding context");
 
-  await setValue(".relationships-search-wrap input", fixture.people.darya.name);
-  await page.waitForSelector(".person-search-row", { visible: true });
-  await shot("03-connections/search-results.png", "Connections search results for a long bilingual synthetic person.", "Search result selection");
-  await page.click(".person-search-row");
-  await page.waitForFunction(() => document.querySelector(".relationships-panel")?.textContent?.includes("Darya Sol"));
-  check(Boolean(await page.$(".relationship-target-card")), "relationship details state is visible");
-  check((await page.$eval(".relationships-panel", (node) => node.scrollHeight >= node.clientHeight)), "relationship details panel supports long content");
-  await shot("03-connections/person-selected.png", "Selected-person inspector with multipath mode off and a long bilingual name.", "Person node; Show all relationship paths; Profile; Family Tree; Compare; Journal");
-
-  const centralBeforeTargets = await page.$eval(".relationships-head", (node) => node.textContent);
-  await page.focus(".relationships-search-wrap input");
-  await setValue(".relationships-search-wrap input", fixture.people.maeve.name);
-  await page.waitForSelector(".relationships-search-wrap .person-search-row", { visible: true });
-  await page.click(".relationships-search-wrap .person-search-row");
+  const centralBeforeTargets = await page.$eval(".builder-from-zone", (node) => node.textContent);
+  await setValue(".connections-search-dock .person-search input", fixture.people.maeve.name);
+  await page.waitForSelector(".connections-search-dock .person-search-row", { visible: true });
+  await page.$eval(".connections-search-dock .person-search-row", (row) => row.click());
+  await page.waitForSelector(".connections-search-actions", { visible: true });
+  await clickText(".connections-search-actions", "Add to TO");
   await page.waitForFunction(() => document.querySelectorAll(".relationship-target-card").length === 2);
-  check((await page.$eval(".relationships-head", (node) => node.textContent)) === centralBeforeTargets, "adding a target does not replace the central person");
-
-  await page.evaluate(() => {
-    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Maeve Rowan"));
-    card?.querySelector(".relationship-path-toggle input")?.click();
-  });
-  await page.waitForFunction(() => {
-    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Maeve Rowan"));
-    return Boolean(card?.querySelector(".target-path-option.tone-maternal") && card?.querySelector(".target-path-option.tone-paternal"));
-  });
-  await page.evaluate(() => {
-    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Maeve Rowan"));
-    for (const option of card?.querySelectorAll(".target-path-option.tone-maternal, .target-path-option.tone-paternal") ?? []) {
-      const input = option.querySelector("input");
-      if (input && !input.checked) input.click();
-    }
-  });
-  try {
-    await page.waitForSelector(".react-flow__edge.rf-edge-maternal", { visible: true });
-    await page.waitForSelector(".react-flow__edge.rf-edge-paternal", { visible: true });
-  } catch (error) {
-    const pathDebug = await page.evaluate(() => ({
-      badge: document.querySelector(".graph-focus-badge")?.textContent ?? null,
-      options: [...document.querySelectorAll(".relationship-target-card")]
-        .find((node) => node.textContent?.includes("Maeve Rowan"))
-        ?.querySelectorAll(".target-path-option")
-        ? [...([...document.querySelectorAll(".relationship-target-card")]
-          .find((node) => node.textContent?.includes("Maeve Rowan"))
-          ?.querySelectorAll(".target-path-option") ?? [])].map((option) => ({
-            className: option.className,
-            checked: option.querySelector("input")?.checked ?? false,
-            text: option.textContent?.trim() ?? "",
-          }))
-        : [],
-      edgeClasses: [...document.querySelectorAll(".react-flow__edge")].map((edge) => edge.getAttribute("class")),
-      nodeClasses: [...document.querySelectorAll(".react-flow__node")].map((node) => node.getAttribute("class")),
-    }));
-    console.error("Maternal/paternal path diagnostic:", JSON.stringify(pathDebug, null, 2));
-    throw error;
-  }
-  await waitForVisibleGraphNodes(".react-flow__node.rf-path-node", 4, "maternal and paternal path nodes remain visible after automatic viewport focus");
-  await shot("03-connections/maternal-paternal-paths.png", "One target exposes simultaneous canonical maternal and paternal proof paths without a fabricated mixed color.", "Maternal path; paternal path; independent checkboxes");
-
-  await page.evaluate(() => {
-    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Darya Sol"));
-    if (!card?.querySelector(".relationship-path-toggle")) card?.querySelector(".target-card-collapse")?.click();
-  });
-  await page.waitForFunction(() => {
-    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Darya Sol"));
-    return Boolean(card?.querySelector(".relationship-path-toggle input"));
-  });
-  await page.evaluate(() => {
-    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Darya Sol"));
-    card?.querySelector(".relationship-path-toggle input")?.click();
-  });
-  await page.waitForFunction(() => document.querySelector(".graph-focus-badge")?.textContent?.includes("2 targets"));
+  check((await page.$eval(".builder-from-zone", (node) => node.textContent)) === centralBeforeTargets, "adding a TO never replaces the FROM person");
   check(await page.$$eval(".relationship-target-card", (cards) => cards.length === 2), "multiple Relationship Explorer target cards coexist");
-  await waitForVisibleGraphNodes(".react-flow__node", 2, "multiple-target path focus keeps meaningful graph nodes on-canvas");
-  await shot("03-connections/multiple-targets.png", "Two independent target cards and their selected paths coexist relative to one unchanged central person.", "Two targets; independent path state; Clear all");
-  await shot("03-connections/relationship-path.png", "Canonical relationship paths for multiple targets remain highlighted while unrelated graph context recedes.", "Show all relationship paths; independent path selectors");
+  check((await page.$$(".react-flow__node.rf-dim")).length > 0, "unrelated graph context is greyed rather than removed");
+  await shot("03-connections/multiple-targets.png", "Two independent TO targets preserve one stable FROM and dim surrounding context.", "FROM; two targets; route cards; Clear TO");
 
-  await page.evaluate(() => {
-    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Maeve Rowan"));
-    card?.querySelector(".target-card-remove")?.click();
-  });
-  await page.waitForFunction(() => document.querySelectorAll(".relationship-target-card").length === 1);
-  check((await page.$eval(".relationship-target-card", (node) => node.textContent)).includes("Darya Sol"), "removing one target preserves the remaining target");
-  check(Boolean(await page.$(".react-flow__node.rf-path-node")), "removing one target preserves the remaining target path overlay");
-  await waitForVisibleGraphNodes(".react-flow__node", 2, "remaining target path stays visible after isolated target removal");
-  await shot("03-connections/target-removal-isolated.png", "Removing one target preserves the other target and its independent graph overlay.", "Remove target; remaining path state");
-  await page.keyboard.press("Escape");
-  await page.waitForSelector(".relationship-target-card", { visible: true });
-
-  await page.click(".inspector-evidence summary");
-  await clickText(".inspector-evidence", "Edit");
-  await page.waitForSelector(".edit-relationship-dialog .modal-card", { visible: true });
-  await shot("03-connections/edit-relationship-dialog.png", "Stored relationship evidence opens in the shared accessible edit dialog without changing the fact.", "Edit relationship; Close");
-  await clickText(".edit-relationship-dialog", "Close");
-  await page.waitForFunction(() => !document.querySelector(".edit-relationship-dialog"));
-
-  await page.click(".inspector-manage summary");
-  await clickText(".relationships-panel", "Add Relationship");
-  await page.waitForSelector(".modal-card");
-  const overlayContract = await page.$eval(".modal-backdrop", (backdrop) => {
-    const style = getComputedStyle(backdrop);
-    const modal = backdrop.querySelector(".modal-card, .modal");
-    const pageBehind = document.querySelector(".relationships-view");
-    return {
-      blur: style.backdropFilter || style.webkitBackdropFilter,
-      background: style.backgroundColor,
-      pageVisible: Boolean(pageBehind && getComputedStyle(pageBehind).visibility !== "hidden" && pageBehind.getBoundingClientRect().width > 0),
-      focusInside: Boolean(modal?.contains(document.activeElement)),
-    };
-  });
-  check(overlayContract.blur.includes("blur") && overlayContract.blur !== "none", "modal backdrop applies real soft blur");
-  check(overlayContract.pageVisible, "modal backdrop preserves the actual underlying application screen");
-  check(overlayContract.focusInside, "modal captures keyboard focus while the underlying page remains visible");
-  await shot("03-connections/add-relationship-dialog.png", "Add Relationship dialog opened from the selected inspector.", "Add Relationship; type controls; Cancel");
-  const lightDialog = await themeSnapshot(".modal-card");
-  await switchTheme("dark");
-  const darkDialog = await themeSnapshot(".modal-card");
-  check(lightDialog.background !== darkDialog.background && lightDialog.color !== darkDialog.color, "Light to Dark updates an already-open dialog without restart");
-  await readable(".modal-card", "Dark dialog text");
-  await shot("15-dark-mode/add-relationship-dialog.png", "Open relationship dialog updated live after switching to Dark mode.", "Theme switch; active dialog; Cancel");
-  await switchTheme("light");
-  const restoredDialog = await themeSnapshot(".modal-card");
-  check(restoredDialog.background === lightDialog.background && restoredDialog.color === lightDialog.color, "Dark to Light restores an already-open dialog without restart");
-  await clickText(".modal-card", "Cancel");
-
-  await clickText(".relationships-panel", "Compare");
-  await page.waitForSelector(".people-pick-list");
-  await shot("03-connections/compare-picker.png", "Compare picker opened from the selected inspector.", "Compare; person choices; close");
-  await page.$eval(".people-pick-list button", (button) => button.click());
-  await page.waitForSelector(".compare-grid", { timeout: 20_000 });
-  await shot("03-connections/compare-result.png", "Two-person relationship comparison result.", "Compare person; View from controls; close");
-  await page.click(".modal-head button");
-
-  await clickText(".relationships-panel", "Journal");
-  await page.waitForSelector(".journal-experience");
-  await shot("03-connections/journal-open.png", "Selected person's Journal opened without leaving Connections.", "Journal; Journal toolbar; close");
-  await page.click(".modal-head button");
-
-  if (!(await page.$eval(".inspector-manage", (node) => node.open))) await page.click(".inspector-manage summary");
-  await shot("03-connections/overflow-open.png", "Selected-person overflow menu with edit and destructive actions separated.", "More actions; Edit Person; Delete");
-  await clickText(".inspector-manage", "Edit Person");
-  await page.waitForSelector(".modal-card");
-  await shot("03-connections/edit-person-dialog.png", "Edit Person dialog opened from the Connections overflow.", "Edit Person; Save; Cancel; close");
-  await clickText(".modal-card", "Cancel");
-
-  if (!(await page.$eval(".inspector-manage", (node) => node.open))) await page.click(".inspector-manage summary");
-  await clickText(".inspector-manage", "Delete");
-  await page.waitForSelector(".modal-card");
-  await shot("03-connections/remove-person-confirmation.png", "Remove Person confirmation reached safely on synthetic data.", "Delete; Cancel; confirmation");
-  await clickText(".modal-card", "Cancel");
-  await page.waitForFunction(() => !document.querySelector(".modal-card"));
-
-  await page.$eval(".target-card-remove", (button) => button.click());
-  await page.waitForFunction(() => !document.querySelector(".relationships-panel"));
-  await shot("03-connections/person-closed.png", "Full graph restored after closing the selected-person inspector.", "Close selected person");
-
-  await setValue(".relationships-search-wrap input", fixture.people.hana.name);
-  await page.waitForSelector(".relationships-search-wrap .person-search-row", { visible: true });
-  await page.click(".relationships-search-wrap .person-search-row");
-  await page.waitForFunction(() => document.querySelector(".relationships-panel")?.textContent?.includes("Hana Calder-Rahim"));
-  await page.click(".inspector-manage summary");
-  await clickText(".relationships-panel", "Add Relationship");
-  await setValue("#target-person-search-input", fixture.people.qadir.name);
-  await page.waitForFunction((id) => [...document.querySelectorAll(".modal-card select[size='4'] option")].some((option) => option.value === id), {}, fixture.people.qadir.id);
-  await page.select(".modal-card select[size='4']", fixture.people.qadir.id);
-  await clickText(".modal-card", "Preview Consequences");
-  await page.waitForFunction(() => [...document.querySelectorAll(".modal-card")].some((modal) => modal.textContent?.includes("Invalid Mutation")));
-  await shot("11-errors/invalid-mutation.png", "Canonical engine blocks a synthetic ancestry cycle and reports the validation reason.", "Preview Consequences; Cancel; validation message");
-  await page.evaluate(() => {
-    const dialogs = [...document.querySelectorAll(".modal-card")];
-    [...(dialogs.at(-1)?.querySelectorAll("button") ?? [])].find((button) => button.textContent?.includes("Cancel"))?.click();
-  });
-  await page.waitForFunction(() => document.querySelectorAll(".modal-card").length === 1);
-  await clickText(".modal-card", "Cancel");
-  await page.$eval(".target-card-remove", (button) => button.click());
-  await page.waitForFunction(() => !document.querySelector(".relationships-panel"));
+  const daryaNode = await page.evaluateHandle((name) => [...document.querySelectorAll(".person-node-card")]
+    .find((node) => node.textContent?.includes(name)) ?? null, fixture.people.darya.name);
+  const daryaNodeElement = daryaNode.asElement();
+  check(Boolean(daryaNodeElement), "selected Darya remains a visible graph node");
+  await daryaNodeElement.click();
+  await sleep(250);
+  check(!(await page.$(".person-info-drawer")), "ordinary node selection does not open the person drawer");
+  const daryaInfo = await page.evaluateHandle((name) => [...document.querySelectorAll(".person-node-card")]
+    .find((node) => node.textContent?.includes(name))?.querySelector(".person-node-info") ?? null, fixture.people.darya.name);
+  const daryaInfoElement = daryaInfo.asElement();
+  check(Boolean(daryaInfoElement), "each node exposes the explicit information button");
+  await page.evaluate((name) => {
+    [...document.querySelectorAll(".person-node-card")]
+      .find((node) => node.textContent?.includes(name))
+      ?.querySelector(".person-node-info")?.click();
+  }, fixture.people.darya.name);
+  await page.waitForSelector(".person-info-drawer", { visible: true });
+  check(await page.$$eval(".person-info-tabs button", (tabs) => tabs.some((tab) => tab.textContent?.includes("Relationship Paths"))), "information drawer includes Relationship Paths");
+  check(await page.$$eval(".person-info-tabs button", (tabs) => tabs.some((tab) => tab.textContent?.includes("Conversations"))), "information drawer includes the future Conversations boundary");
+  await shot("03-connections/info-drawer.png", "Person information opens only from the compact explicit info control.", "Overview; Relationships; Relationship Paths; future-domain tabs; close");
+  await page.click("[aria-label='Close person information']");
+  await page.waitForFunction(() => !document.querySelector(".person-info-drawer"));
+  await clickText(".connection-builder-head", "Clear TO");
+  await page.waitForFunction(() => !document.querySelector(".relationship-target-card"));
+  await shot("03-connections/person-closed.png", "Clearing exploration targets restores the direct-context builder without changing data.", "FROM; immediate connections; TO drop zone");
 
   await nav("People");
   await page.waitForSelector(".people-table-row", { timeout: 20_000 });

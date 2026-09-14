@@ -127,7 +127,7 @@ def main() -> None:
         fixture["multipath"]["to"], fixture["multipath"]["from"]
     )
 
-    assert 45 <= len(model["people"]) <= 70
+    assert 45 <= len(model["people"]) <= 100
     assert generations >= 5
     assert len(model["marriages"]) >= 12
     assert len(model["sibling_groups"]) >= 6

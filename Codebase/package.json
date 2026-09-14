@@ -14,6 +14,7 @@
     "test:ui": "node Tests/UI/people_e2e.mjs",
     "test:ui:smoke": "node Tests/UI/smoke.mjs",
     "test:relationships": "node Tests/UI/relationships_e2e.mjs",
+    "test:connections-redesign": "node Tests/UI/connections_redesign_e2e.mjs",
     "test:family": "node Tests/UI/family_e2e.mjs",
     "test:journals": "node Tests/UI/journals_e2e.mjs",
     "test:search": "node Tests/UI/search_e2e.mjs",

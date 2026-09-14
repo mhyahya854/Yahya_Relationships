@@ -179,7 +179,7 @@ def test_label_coverage_across_family_pairs():
             assert actual == expected, f"{first} -> {second}"
 
 
-def test_general_relationship_paths_and_no_transitive_inference(isolated):
+def test_general_connection_routes_do_not_create_transitive_inference(isolated):
     a = people.create_person(name="Alex Friend")
     b = people.create_person(name="Bo Friend")
     c = people.create_person(name="Cy Friend")
@@ -203,15 +203,44 @@ def test_general_relationship_paths_and_no_transitive_inference(isolated):
     assert friend_path["paths"][0]["domain"] == "general"
     assert friend_path["paths"][0]["label_en"] == "Friend"
     assert friend_path["paths"][0]["derived"] is False
+    assert all(path["domain"] != "connection" for path in friend_path["paths"])
 
-    with pytest.raises(errors.AppError) as exc:
-        path_service.get_relationship_paths(a["id"], c["id"])
-    assert exc.value.code == "NO_RELATIONSHIP_PATH"
+    # The explorer may show a recorded A → B → C route on request, but the
+    # query-only route must never become a stored/derived "Friend" label.
+    connection_route = path_service.get_relationship_paths(a["id"], c["id"])
+    assert connection_route["paths"][0]["domain"] == "connection"
+    assert connection_route["paths"][0]["label_en"] == "Recorded connection route"
+    assert [edge["type"] for edge in connection_route["paths"][0]["edges"]] == [
+        "general",
+        "general",
+    ]
+    endpoint_relationship = relationship.get_relationship(a["id"], c["id"])
+    assert endpoint_relationship["primary"] == []
+    assert endpoint_relationship["additional"] == []
 
     mentor_path = path_service.get_relationship_paths(mentor["id"], b["id"])
     assert mentor_path["paths"][0]["label_en"] == "Mentor"
     mentee_path = path_service.get_relationship_paths(b["id"], mentor["id"])
     assert mentee_path["paths"][0]["label_en"] == "Mentee"
+
+
+def test_mixed_recorded_general_and_family_route_is_display_only(isolated):
+    outsider = people.create_person(name="Synthetic Route Outsider")
+    general.add_general_relationship(
+        person_a=outsider["id"],
+        person_b="mohammad_yahya_hussain",
+        type="friend",
+    )
+
+    payload = path_service.get_relationship_paths(outsider["id"], "mansoor_hussain")
+    mixed = next(path for path in payload["paths"] if path["domain"] == "connection")
+    assert [edge["type"] for edge in mixed["edges"]] == [
+        "general",
+        "parent_child",
+    ]
+    endpoint_relationship = relationship.get_relationship(outsider["id"], "mansoor_hussain")
+    assert endpoint_relationship["primary"] == []
+    assert endpoint_relationship["additional"] == []
 
 
 def test_graph_neighbors_filters():

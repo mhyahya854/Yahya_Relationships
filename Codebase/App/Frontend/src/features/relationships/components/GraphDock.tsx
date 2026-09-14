@@ -1,15 +1,10 @@
 import { Button, Icon } from "../../../components/ui";
-import type { ExpansionFilter } from "../types";
-import { ExpandControls } from "./ExpandControls";
 import { GraphLegend } from "./GraphLegend";
 
 export function GraphDock({
   personName,
-  active,
-  filters,
   zoomPercent,
   immersive,
-  onToggle,
   onZoomOut,
   onZoomIn,
   onFit,
@@ -17,11 +12,8 @@ export function GraphDock({
   includeGeneral = true,
 }: {
   personName: string;
-  active: Set<ExpansionFilter>;
-  filters?: ExpansionFilter[];
   zoomPercent: number;
   immersive: boolean;
-  onToggle: (filter: ExpansionFilter) => void;
   onZoomOut: () => void;
   onZoomIn: () => void;
   onFit: () => void;
@@ -51,8 +43,6 @@ export function GraphDock({
       >
         <Icon name="fullscreen" />
       </Button>
-      <span className="graph-dock-divider" aria-hidden="true" />
-      <ExpandControls personName={personName} active={active} filters={filters} onToggle={onToggle} />
       <span className="graph-dock-divider" aria-hidden="true" />
       <details className="graph-legend-popover">
         <summary className="graph-dock-button" aria-label="Show relationship legend" title="Relationship legend">

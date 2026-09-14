@@ -229,7 +229,11 @@ export function useRelationshipGraph() {
               id: `overlay:${edge.from}:${edge.to}:${edge.type}`,
               source: edge.from,
               target: edge.to,
-              domain: path.domain,
+              // A display-only mixed connection route still consists of real
+              // family or explicit-general edges. GraphEdgeDto deliberately
+              // keeps that edge semantic rather than inventing a third stored
+              // relationship domain.
+              domain: edge.type === "general" ? "general" : "family",
               type: edge.type,
               subtype: edge.subtype,
             });

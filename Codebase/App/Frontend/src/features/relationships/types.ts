@@ -1,3 +1,4 @@
+import type { DragEvent } from "react";
 import type { Edge, Node } from "@xyflow/react";
 
 export type ExpansionFilter =
@@ -59,7 +60,11 @@ export interface PathEdge {
 
 export interface RelationshipPath {
   id: string;
-  domain: "family" | "general";
+  /**
+   * `connection` is a display-only route through recorded direct facts. It is
+   * deliberately not a relationship label and never becomes stored truth.
+   */
+  domain: "family" | "general" | "connection";
   relationship_type: string;
   semantic_id?: string;
   label_en: string;
@@ -119,6 +124,12 @@ export interface PersonNodeData {
   subtitleUr?: string;
   isPerspective?: boolean;
   isVirtual?: boolean;
+  isFrom?: boolean;
+  isTo?: boolean;
+  isPathIntermediate?: boolean;
+  region?: "origin" | "maternal" | "paternal" | "external" | "family" | "path";
+  onInfo?: (personId: string) => void;
+  onDragStart?: (event: DragEvent<HTMLElement>, personId: string) => void;
 }
 
 export type FlowNode = Node;

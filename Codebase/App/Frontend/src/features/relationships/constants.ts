@@ -43,6 +43,8 @@ export const GENERAL_TYPES: readonly OptionItem[] = [
   { value: "friend", label: "Friend" },
   { value: "childhood_friend", label: "Childhood Friend" },
   { value: "best_friend", label: "Best Friend" },
+  { value: "former_friend", label: "Former Friend" },
+  { value: "enemy", label: "Enemy" },
   { value: "colleague", label: "Colleague" },
   { value: "former_colleague", label: "Former Colleague" },
   { value: "neighbour", label: "Neighbour" },
