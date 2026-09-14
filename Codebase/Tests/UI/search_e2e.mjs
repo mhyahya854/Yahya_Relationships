@@ -193,7 +193,19 @@ async function searchResults() {
 }
 
 async function screenshot(name) {
-  await page.screenshot({ path: join(SCREENSHOTS, name) });
+  const bytes = await page.screenshot();
+  const target = join(SCREENSHOTS, name);
+  let lastError = null;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      writeFileSync(target, bytes);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 5) await sleep(attempt * 150);
+    }
+  }
+  throw lastError;
 }
 
 try {
@@ -282,11 +294,11 @@ try {
   await navigate("Search");
   await submitSearch("Maaz");
   await clickText("[data-result-id='person:muaaz']", "View in Relationships");
-  await page.waitForFunction(() => document.querySelector(".selected-person-panel")?.textContent?.includes("Muaaz"), { timeout: 20_000 });
+  await page.waitForFunction(() => document.querySelector(".relationship-target-card")?.textContent?.includes("Muaaz"), { timeout: 20_000 });
   step("Person handoff selects the exact Relationships target");
   const personHandoff = await page.evaluate(() => ({
     perspective: document.querySelector(".perspective-current")?.textContent,
-    panel: document.querySelector(".selected-person-panel")?.textContent,
+    panel: document.querySelector(".relationship-target-card")?.textContent,
   }));
   if (!personHandoff.perspective.includes(DEFAULT_PERSON_NAME) || !personHandoff.panel.includes(`Relationship to ${DEFAULT_PERSON_NAME}`)) {
     throw new Error("Person handoff silently changed perspective");
@@ -329,15 +341,15 @@ try {
   await screenshot("search-relationship.png");
   await submitSearch("Phase Six supported mentee");
   await clickText(`[data-result-id='general:${generalId}']`, `View Sohaib Hussain → ${DEFAULT_PERSON_NAME}`);
-  await page.waitForFunction((name) => document.querySelector(".selected-person-panel")?.textContent?.includes(name), { timeout: 20_000 }, DEFAULT_PERSON_NAME);
+  await page.waitForFunction((name) => document.querySelector(".relationship-target-card")?.textContent?.includes(name), { timeout: 20_000 }, DEFAULT_PERSON_NAME);
   step("General relationship handoff selects the exact endpoint");
   await page.waitForFunction(
-    () => document.querySelector(".selected-person-panel")?.textContent?.includes("supported mentee"),
+    () => document.querySelector(".relationship-target-card")?.textContent?.includes("supported mentee"),
     { timeout: 20_000 },
   );
   const orientation = await page.evaluate(() => ({
     perspective: document.querySelector(".perspective-current")?.textContent,
-    panel: document.querySelector(".selected-person-panel")?.textContent,
+    panel: document.querySelector(".relationship-target-card")?.textContent,
   }));
   if (!orientation.perspective.includes("Sohaib Hussain") || !orientation.panel.includes("supported mentee")) {
     throw new Error("Canonical general relationship orientation was not preserved");
@@ -356,7 +368,7 @@ try {
   step("Family result explicitly corresponds to the current perspective");
   await clickText(`[data-result-id='${uncle.id}']`, "View in Relationships");
   await page.waitForFunction(() => {
-    const panel = document.querySelector(".selected-person-panel")?.textContent || "";
+    const panel = document.querySelector(".relationship-target-card")?.textContent || "";
     return panel.includes("Sohaib Hussain") && panel.includes("Maternal uncle");
   }, { timeout: 20_000 });
   step("Family handoff preserves perspective, exact target, and displayed relationship");
@@ -396,7 +408,7 @@ try {
   }
   step("The same query automatically recomputes for the new perspective");
 
-  await page.click(".btn.btn-ghost");
+  await page.click(".topbar .btn.btn-ghost");
   await page.waitForFunction((name) => document.querySelector(".perspective-current")?.textContent?.includes(name), {}, DEFAULT_PERSON_NAME);
 
   const journalQueries = [

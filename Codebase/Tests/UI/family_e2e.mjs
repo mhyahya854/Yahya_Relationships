@@ -767,7 +767,7 @@ async function main() {
     step(35, "Exact Family → Relationships perspective handoff");
 
     await page.waitForFunction(() => {
-      const target = document.querySelector(".selected-person-panel strong");
+      const target = document.querySelector(".relationship-target-card .target-card-title > strong");
       return target && target.textContent.includes("Mohammad Yahya Hussain");
     }, { timeout: 8000 });
 
@@ -780,8 +780,8 @@ async function main() {
 
     await page.waitForFunction(() => {
       const perspective = document.querySelector(".perspective-current strong");
-      const target = document.querySelector(".selected-person-panel strong");
-      const relLabel = document.querySelector(".relationships-panel .panel-rel-label");
+      const target = document.querySelector(".relationship-target-card .target-card-title > strong");
+      const relLabel = document.querySelector(".relationship-target-card .target-card-primary-role");
       return (
         perspective &&
         perspective.textContent.includes("Aresha Zubair") &&
@@ -1590,7 +1590,7 @@ async function main() {
     await page.waitForFunction(() =>
       Boolean(
         document.querySelector(".perspective-current strong")?.textContent &&
-        document.querySelector(".selected-person-panel .inspector-profile-row strong")?.textContent
+        document.querySelector(".relationship-target-card .target-card-title > strong")?.textContent
       ),
       { timeout: 10000 },
     );
@@ -1599,14 +1599,14 @@ async function main() {
       if (evidence && !evidence.open) evidence.querySelector("summary")?.click();
     });
     await page.waitForFunction(
-      () => Boolean(document.querySelector(".panel-rel-group .panel-rel-row")?.textContent),
+      () => Boolean(document.querySelector(".target-entry-list .target-entry-row")?.textContent),
       { timeout: 10000 },
     );
 
     const parentHandoff = await page.evaluate(() => ({
       perspective: document.querySelector(".perspective-current strong")?.textContent || "",
-      target: document.querySelector(".selected-person-panel .inspector-profile-row strong")?.textContent || "",
-      relationship: document.querySelector(".panel-rel-group .panel-rel-row")?.textContent || "",
+      target: document.querySelector(".relationship-target-card .target-card-title > strong")?.textContent || "",
+      relationship: document.querySelector(".target-entry-list .target-entry-row")?.textContent || "",
     }));
     if (!parentHandoff.perspective.includes("Irsa Naz") ||
         !parentHandoff.target.includes("Musabiha") ||

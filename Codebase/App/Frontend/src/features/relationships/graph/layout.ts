@@ -12,10 +12,20 @@ export function layoutGraph(
   nodes: Node[],
   edges: Edge[],
   direction: "TB" | "LR" = "TB",
+  centerId?: string,
 ): Node[] {
   const graph = new dagre.graphlib.Graph();
   graph.setDefaultEdgeLabel(() => ({}));
-  graph.setGraph({ rankdir: direction, nodesep: 26, ranksep: 86, marginx: 24, marginy: 24 });
+  graph.setGraph({
+    rankdir: direction,
+    nodesep: 44,
+    edgesep: 24,
+    ranksep: 104,
+    marginx: 32,
+    marginy: 32,
+    acyclicer: "greedy",
+    ranker: "tight-tree",
+  });
 
   const sortedNodes = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
   const sortedEdges = [...edges].sort((a, b) =>
@@ -29,11 +39,25 @@ export function layoutGraph(
   }
   dagre.layout(graph);
 
-  return sortedNodes.map((node) => {
+  const positioned = sortedNodes.map((node) => {
     const position = graph.node(node.id);
     return {
       ...node,
       position: { x: position.x - NODE_WIDTH / 2, y: position.y - NODE_HEIGHT / 2 },
     };
   });
+
+  // Keep the chosen central person at a stable coordinate. React Flow can fit
+  // the translated graph without making the account owner a layout fixture.
+  const center = positioned.find((node) => node.id === centerId);
+  if (!center) return positioned;
+  const offsetX = center.position.x;
+  const offsetY = center.position.y;
+  return positioned.map((node) => ({
+    ...node,
+    position: {
+      x: node.position.x - offsetX,
+      y: node.position.y - offsetY,
+    },
+  }));
 }

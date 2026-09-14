@@ -200,46 +200,49 @@ export function useRelationshipGraph() {
     }
   }, []);
 
-  const focusPath = useCallback((path: RelationshipPath) => {
+  const focusPaths = useCallback((paths: RelationshipPath[]) => {
     setState((current) => {
-      const overlayNodes = [...current.overlayNodes];
-      const overlayEdges = [...current.overlayEdges];
-      const visibleNodeIds = new Set([
-        ...current.nodes.map((node) => node.id),
-        ...overlayNodes.map((node) => node.id),
-      ]);
+      const overlayNodes: GraphNodeDto[] = [];
+      const overlayEdges: GraphEdgeDto[] = [];
+      const visibleNodeIds = new Set(current.nodes.map((node) => node.id));
       const visibleEdgePairs = new Set(
-        [...current.edges, ...overlayEdges].map(
-          (edge) => [edge.source, edge.target].sort().join("::"),
-        ),
+        current.edges.map((edge) => [edge.source, edge.target].sort().join("::")),
       );
-      for (const node of path.nodes) {
-        if (!visibleNodeIds.has(node.id)) {
-          overlayNodes.push({
-            id: node.id,
-            name: node.name,
-            is_virtual: node.is_virtual ?? false,
-            relation_label_en: null,
-            relation_label_ur: null,
-          });
+      for (const path of paths) {
+        for (const node of path.nodes) {
+          if (!visibleNodeIds.has(node.id)) {
+            visibleNodeIds.add(node.id);
+            overlayNodes.push({
+              id: node.id,
+              name: node.name,
+              is_virtual: node.is_virtual ?? false,
+              relation_label_en: null,
+              relation_label_ur: null,
+            });
+          }
         }
-      }
-      for (const edge of path.edges) {
-        const pair = [edge.from, edge.to].sort().join("::");
-        if (!visibleEdgePairs.has(pair)) {
-          overlayEdges.push({
-            id: `overlay:${edge.from}:${edge.to}:${edge.type}`,
-            source: edge.from,
-            target: edge.to,
-            domain: path.domain,
-            type: edge.type,
-            subtype: edge.subtype,
-          });
+        for (const edge of path.edges) {
+          const pair = [edge.from, edge.to].sort().join("::");
+          if (!visibleEdgePairs.has(pair)) {
+            visibleEdgePairs.add(pair);
+            overlayEdges.push({
+              id: `overlay:${edge.from}:${edge.to}:${edge.type}`,
+              source: edge.from,
+              target: edge.to,
+              domain: path.domain,
+              type: edge.type,
+              subtype: edge.subtype,
+            });
+          }
         }
       }
       return { ...current, overlayNodes, overlayEdges };
     });
   }, []);
+
+  const focusPath = useCallback((path: RelationshipPath) => {
+    focusPaths([path]);
+  }, [focusPaths]);
 
   const exitPath = useCallback(() => {
     setState((current) => ({
@@ -262,6 +265,7 @@ export function useRelationshipGraph() {
     toggleExpansion,
     ensureVisible,
     refreshPerspectiveLabels,
+    focusPaths,
     focusPath,
     exitPath,
   };

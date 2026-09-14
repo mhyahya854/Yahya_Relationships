@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "./api";
-import { Avatar, Button } from "./components/ui";
+import { Avatar, Button, Icon } from "./components/ui";
 import { PerspectiveProvider, usePerspective } from "./state";
 import type { Person } from "./types";
 import { BackupsView } from "./views/BackupsView";
@@ -69,7 +69,7 @@ function PerspectiveSelector() {
         >
           <Avatar person={perspectivePerson} size={24} />
           <strong>{perspectivePerson.name}</strong>
-          <span className="chevron">▾</span>
+          <span className="chevron"><Icon name="chevron-down" size={14} /></span>
         </button>
         {open && (
           <div className="perspective-dropdown">
@@ -113,6 +113,9 @@ function PerspectiveSelector() {
 }
 
 function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    window.localStorage.getItem("people-relationships.sidebar-collapsed") === "true",
+  );
   const [screen, setScreen] = useState<Screen>("relationships");
   const [returnContext, setReturnContext] = useState<ReturnContext | null>(null);
   const [searchMounted, setSearchMounted] = useState(false);
@@ -122,6 +125,13 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
   const { perspectivePerson, defaultId, setPerspective } = usePerspective();
   const navigationRequest = useRef(0);
   const relationshipHandoff = useRef<Promise<void>>(Promise.resolve());
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      "people-relationships.sidebar-collapsed",
+      String(sidebarCollapsed),
+    );
+  }, [sidebarCollapsed]);
 
   // Family Session State (persists across tab navigation during app session)
   const [familyFocusId, setFamilyFocusId] = useState<string | null>(null);
@@ -215,8 +225,8 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
   const isCanvasScreen = screen === "relationships" || screen === "family";
 
   return (
-    <div className={`shell ${isCanvasScreen ? "canvas-mode" : ""}`}>
-      <aside className="sidebar">
+    <div className={`shell ${isCanvasScreen ? "canvas-mode" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
           <div className="brand-mark" aria-hidden="true">
             <svg viewBox="0 0 32 32">
@@ -238,6 +248,7 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
               key={item.id}
               className={screen === item.id ? "nav-item active" : "nav-item"}
               aria-current={screen === item.id ? "page" : undefined}
+              title={sidebarCollapsed ? item.label : undefined}
               onClick={() => handlePrimaryNavigate(item.id)}
             >
               <NavIcon screen={item.id} />
@@ -254,26 +265,38 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
           </div>
           <div className="muted tiny">Private · Local-first</div>
         </div>
+        <Button
+          kind="ghost"
+          className="sidebar-toggle icon-button"
+          onClick={() => setSidebarCollapsed((value) => !value)}
+          ariaLabel={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          ariaExpanded={!sidebarCollapsed}
+          title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <Icon name="sidebar" />
+        </Button>
       </aside>
       <main className="main">
-        {rootStatus.state === "READ_ONLY" && (
-          <div role="status" className="status-banner info-note">
-            <strong>Read-only Data Root.</strong> Viewing and searching are available, but changes cannot be saved until this folder is writable or another Data Root is selected.
-          </div>
-        )}
-        {rootStatus.state === "REPAIRABLE" && (
-          <div role="status" className="status-banner info-note">
-            <strong>Data Root has repairable alignment issues.</strong> Reads remain available; review Data Root health before editing.
-          </div>
-        )}
-        {rootStatus.state === "MAINTENANCE" && (
-          <div role="status" className="status-banner info-note">
-            <strong>Data maintenance is in progress.</strong> {rootStatus.maintenance_operation ?? "Root-changing actions are temporarily disabled."}
-          </div>
-        )}
         <header className="topbar">
           <PerspectiveSelector />
         </header>
+        <div className="status-stack">
+          {rootStatus.state === "READ_ONLY" && (
+            <div role="status" className="status-banner info-note">
+              <strong>Read-only Data Root.</strong> Viewing and searching are available, but changes cannot be saved until this folder is writable or another Data Root is selected.
+            </div>
+          )}
+          {rootStatus.state === "REPAIRABLE" && (
+            <div role="status" className="status-banner info-note">
+              <strong>Data Root has repairable alignment issues.</strong> Reads remain available; review Data Root health before editing.
+            </div>
+          )}
+          {rootStatus.state === "MAINTENANCE" && (
+            <div role="status" className="status-banner info-note">
+              <strong>Data maintenance is in progress.</strong> {rootStatus.maintenance_operation ?? "Root-changing actions are temporarily disabled."}
+            </div>
+          )}
+        </div>
         <div className="content">
           {returnContext && screen !== "people" && (
             <div className="navigation-return" role="status">

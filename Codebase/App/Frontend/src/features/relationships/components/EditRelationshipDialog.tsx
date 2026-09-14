@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../../../api";
+import { useDialogFocus } from "../../../components/ui";
 import type {
   GeneralRelationshipFact,
   MarriageFact,
@@ -111,6 +112,7 @@ export const EditRelationshipDialog: React.FC<Props> = ({
   onSaved,
   initialDeleteMode = false,
 }) => {
+  const dialogRef = useDialogFocus<HTMLDivElement>();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -432,7 +434,7 @@ export const EditRelationshipDialog: React.FC<Props> = ({
         data-perspective-id={perspectivePerson.id}
         data-target-id={targetPerson.id}
       >
-        <div className="modal-card">
+        <div ref={dialogRef} className="modal-card" role="dialog" aria-modal="true" aria-label={`Edit ${entry.label_en}`} tabIndex={-1}>
           <div className="modal-header">
             <h3>
               {entry.label_en} ({perspectivePerson.name} &rarr; {targetPerson.name})

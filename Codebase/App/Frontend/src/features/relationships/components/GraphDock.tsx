@@ -32,11 +32,11 @@ export function GraphDock({
     <div className="relationships-footer glass-panel" aria-label="Graph controls and relationship legend">
       <div className="graph-zoom-controls" aria-label="Graph zoom controls">
         <Button className="graph-dock-button" onClick={onZoomOut} ariaLabel="Zoom out" title="Zoom out">
-          <span className="graph-zoom-glyph" aria-hidden="true">−</span>
+          <Icon name="zoom-out" />
         </Button>
         <output className="graph-zoom-value" aria-live="polite">{zoomPercent}%</output>
         <Button className="graph-dock-button" onClick={onZoomIn} ariaLabel="Zoom in" title="Zoom in">
-          <span className="graph-zoom-glyph" aria-hidden="true">+</span>
+          <Icon name="zoom-in" />
         </Button>
       </div>
       <Button className="graph-dock-button" onClick={onFit} ariaLabel="Fit graph to viewport" title="Fit graph to viewport">
@@ -54,7 +54,12 @@ export function GraphDock({
       <span className="graph-dock-divider" aria-hidden="true" />
       <ExpandControls personName={personName} active={active} filters={filters} onToggle={onToggle} />
       <span className="graph-dock-divider" aria-hidden="true" />
-      <GraphLegend includeGeneral={includeGeneral} />
+      <details className="graph-legend-popover">
+        <summary className="graph-dock-button" aria-label="Show relationship legend" title="Relationship legend">
+          <Icon name="legend" />
+        </summary>
+        <GraphLegend includeGeneral={includeGeneral} />
+      </details>
     </div>
   );
 }

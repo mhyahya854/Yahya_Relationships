@@ -79,15 +79,65 @@ def _cousin_rank(item: any) -> tuple:
     return (degree, removal, side_order)
 
 
+def display_rank_key(entry: dict) -> tuple:
+    """Canonical, person-independent ordering for relationship display.
+
+    The tuple keeps a legitimate family role ahead of unrelated general labels,
+    then gives direct canonical family facts (spouse, parent/child, sibling)
+    priority over longer derived identities. Among derived family identities it
+    favors a blood role over an affinal variant, then the shortest human-
+    readable proof. Every non-winning entry remains available as an additional
+    relationship.
+    """
+    distance = entry.get("path_distance") or entry.get("distance")
+    if not isinstance(distance, int) or distance < 1:
+        distance = 1 if not entry.get("derived") else 99
+    domain_order = 0 if entry.get("domain") == "family" else 1
+    relationship_type = str(entry.get("relationship_type") or "").casefold()
+    fact_kind = str(entry.get("stored_fact_kind") or entry.get("kind") or "").casefold()
+    affinal = (
+        fact_kind in {"marriage", "affinal"}
+        or "in_law" in relationship_type
+        or relationship_type in {"chachi", "mami", "phopha", "khalu"}
+        or any(word in relationship_type for word in ("husband", "wife", "spouse"))
+    )
+    stored_order = 0 if not entry.get("derived", False) else 1
+    direct_family_order = 0 if domain_order == 0 and stored_order == 0 and distance == 1 else 1
+    degree = entry.get("degree") if entry.get("degree") is not None else 99
+    removal = entry.get("removal") if entry.get("removal") is not None else 99
+    side = entry.get("side")
+    side_order = 0 if side == "maternal" else (1 if side == "paternal" else 2)
+    semantic = str(entry.get("semantic_id") or relationship_type)
+    label = str(entry.get("label_en") or "").casefold()
+    return (
+        domain_order,
+        direct_family_order,
+        1 if affinal else 0,
+        distance,
+        stored_order,
+        degree,
+        removal,
+        side_order,
+        semantic,
+        label,
+    )
+
+
+def _rank_relationship_entries(entries: list[dict]) -> list[dict]:
+    return sorted(entries, key=display_rank_key)
+
+
 def _family_entries(pair: dict) -> tuple[list[dict], list[dict]]:
-    primary = [
-        labels.normalize_family_entry(item)
-        for item in pair.get("main", [])
-    ]
-    additional = [
-        labels.normalize_family_entry(item)
-        for item in pair.get("additional", [])
-    ]
+    def normalize(item: dict) -> dict:
+        entry = labels.normalize_family_entry(item)
+        da = item.get("da")
+        db = item.get("db")
+        if isinstance(da, int) and isinstance(db, int):
+            entry["path_distance"] = da + db
+        return entry
+
+    primary = [normalize(item) for item in pair.get("main", [])]
+    additional = [normalize(item) for item in pair.get("additional", [])]
     return primary, additional
 
 
@@ -178,6 +228,9 @@ def _bind_paths_and_metadata(
         entry["path_ids"] = [p["id"] for p in matching]
         if matching:
             p0 = matching[0]
+            entry["path_distance"] = min(
+                path.get("distance", 99) for path in matching
+            )
             if not entry.get("side") and p0.get("side"):
                 entry["side"] = p0["side"]
             if entry.get("degree") is None and p0.get("degree") is not None:
@@ -268,10 +321,13 @@ def get_relationship(
     _bind_paths_and_metadata(family_additional, all_paths, model, perspective_person_id, target_person_id)
     _bind_paths_and_metadata(general_primary, all_paths, model, perspective_person_id, target_person_id)
 
-    # Explicit general relationships surface first; direct family facts and
-    # derived direct blood roles come next; cousin paths remain additional.
-    primary = general_primary + family_primary
-    additional = family_additional
+    # One deterministic easiest role is the calm default. Alternatives remain
+    # canonical evidence and are never deleted or collapsed into a new fact.
+    ranked = _rank_relationship_entries(
+        general_primary + family_primary + family_additional
+    )
+    primary = ranked[:1]
+    additional = ranked[1:]
     return {
         "perspective": perspective,
         "target": target,
@@ -307,14 +363,19 @@ def list_relationships_from(
             general_primary = _general_entries(
                 general_rows, person_id, target_id
             )
-            primary = general_primary + family_primary
-            additional = family_additional
+            ranked = _rank_relationship_entries(
+                general_primary + family_primary + family_additional
+            )
+            primary = ranked[:1]
+            additional = ranked[1:]
             if domain == "general":
-                primary = general_primary
-                additional = []
+                ranked = _rank_relationship_entries(general_primary)
+                primary = ranked[:1]
+                additional = ranked[1:]
             elif domain == "family":
-                primary = family_primary
-                additional = family_additional
+                ranked = _rank_relationship_entries(family_primary + family_additional)
+                primary = ranked[:1]
+                additional = ranked[1:]
             if direct_only:
                 additional = []
             if not primary and not additional:

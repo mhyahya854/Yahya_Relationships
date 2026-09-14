@@ -21,12 +21,11 @@ import {
 } from "../components/ui";
 import { usePerspective } from "../state";
 import type { Person } from "../types";
-import { relationshipsApi } from "../features/relationships/api";
 import { GraphDock } from "../features/relationships/components/GraphDock";
-import { PathFocusPanel } from "../features/relationships/components/PathFocusPanel";
 import { PersonNode } from "../features/relationships/components/PersonNode";
+import { RelationshipTargetCard } from "../features/relationships/components/RelationshipTargetCard";
 import { edgeVisual } from "../features/relationships/graph/edgeStyles";
-import { layoutGraph } from "../features/relationships/graph/layout";
+import { layoutGraph, NODE_HEIGHT, NODE_WIDTH } from "../features/relationships/graph/layout";
 import { useKeyboardNavigation } from "../features/relationships/hooks/useKeyboardNavigation";
 import { useRelationshipGraph } from "../features/relationships/hooks/useRelationshipGraph";
 import type {
@@ -47,36 +46,73 @@ function pathPairKey(a: string, b: string): string {
   return [a, b].sort().join("::");
 }
 
-function buildRoleMap(path: RelationshipPath): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const edge of path.edges) {
-    map.set(pathPairKey(edge.from, edge.to), edge.role ?? "");
+type PathHighlight = {
+  roles: Set<string>;
+  maternal: boolean;
+  paternal: boolean;
+  general: boolean;
+};
+
+function buildPathHighlights(paths: RelationshipPath[]): Map<string, PathHighlight> {
+  const map = new Map<string, PathHighlight>();
+  for (const path of paths) {
+    for (const edge of path.edges) {
+      const pair = pathPairKey(edge.from, edge.to);
+      const highlight = map.get(pair) ?? {
+        roles: new Set<string>(),
+        maternal: false,
+        paternal: false,
+        general: false,
+      };
+      if (edge.role) highlight.roles.add(edge.role);
+      if (path.domain === "general") highlight.general = true;
+      if (path.domain === "family" && path.side === "maternal") highlight.maternal = true;
+      if (path.domain === "family" && path.side === "paternal") highlight.paternal = true;
+      map.set(pair, highlight);
+    }
   }
   return map;
 }
 
 function buildFlowEdges(
   edgeDtos: GraphEdgeDto[],
-  focusPath: RelationshipPath | null,
-  pathRoleMap: Map<string, string>,
+  highlightedPaths: RelationshipPath[],
+  pathHighlights: Map<string, PathHighlight>,
 ): Edge[] {
+  const hasHighlights = highlightedPaths.length > 0;
   return edgeDtos.map((dto) => {
     const visual = edgeVisual(dto);
     const pair = pathPairKey(dto.source, dto.target);
-    const isPath = focusPath ? pathRoleMap.has(pair) : false;
+    const highlight = pathHighlights.get(pair);
+    const isPath = Boolean(highlight);
+    const isOverlap = Boolean(highlight?.maternal && highlight?.paternal);
+    const className = [
+      isPath ? "rf-edge-path" : "",
+      highlight?.maternal ? "rf-edge-maternal" : "",
+      highlight?.paternal ? "rf-edge-paternal" : "",
+      highlight?.general ? "rf-edge-general" : "",
+      isOverlap ? "rf-edge-overlap" : "",
+    ].filter(Boolean).join(" ");
+    const highlightedStroke = isOverlap
+      ? "var(--family-line)"
+      : highlight?.maternal
+        ? "var(--maternal)"
+        : highlight?.paternal
+          ? "var(--paternal)"
+          : visual.stroke;
     return {
       id: dto.id,
       source: dto.source,
       target: dto.target,
-      type: "default",
+      type: "smoothstep",
       style: {
-        stroke: focusPath && !isPath ? "var(--disabled-fg)" : visual.stroke,
+        stroke: isPath ? highlightedStroke : visual.stroke,
         strokeWidth: isPath ? 3 : visual.strokeWidth,
         strokeDasharray: visual.strokeDasharray,
-        opacity: focusPath && !isPath ? 0.28 : 1,
+        opacity: hasHighlights && !isPath ? 0.34 : 1,
       },
-      className: focusPath && isPath ? "rf-edge-path" : undefined,
-      label: focusPath && isPath ? pathRoleMap.get(pair) : undefined,
+      className: className || undefined,
+      label: highlight?.roles.size ? [...highlight.roles].join(" · ") : undefined,
       labelStyle: { fontSize: 11, fill: "var(--text-secondary)", fontWeight: 600 },
       labelBgStyle: { fill: "var(--surface-elevated)", fillOpacity: 0.94 },
       labelBgPadding: [6, 3] as [number, number],
@@ -102,22 +138,17 @@ function RelationshipsContent({
   const { perspectiveId, perspectivePerson, setPerspective, returnToDefault } =
     usePerspective();
   const graph = useRelationshipGraph();
-  const { fitView, zoomIn, zoomOut } = useReactFlow();
+  const { fitBounds, fitView, zoomIn, zoomOut } = useReactFlow();
   const [people, setPeople] = useState<Person[]>([]);
   const [peopleLoaded, setPeopleLoaded] = useState(false);
   const [groups, setGroups] = useState<any[]>([]);
   const [selected, setSelected] = useState<Person | null>(null);
-  const [relationshipResult, setRelationshipResult] = useState<{
-    primary: RelationshipEntry[];
-    additional: RelationshipEntry[];
-  } | null>(null);
+  const [selectedTargets, setSelectedTargets] = useState<Person[]>([]);
   const [relationshipError, setRelationshipError] = useState<unknown>(null);
-  const [evidenceOpen, setEvidenceOpen] = useState(false);
-  const [focus, setFocus] = useState<{
-    entry: RelationshipEntry;
-    paths: RelationshipPath[];
-    pathIndex: number;
-  } | null>(null);
+  const [highlightedPathsByTarget, setHighlightedPathsByTarget] = useState<Record<string, RelationshipPath[]>>({});
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [revealPathsVersion, setRevealPathsVersion] = useState(0);
+  const [clearPathsVersion, setClearPathsVersion] = useState(0);
   const [comparePicker, setComparePicker] = useState(false);
   const [compareTarget, setCompareTarget] = useState<Person | null>(null);
   const [journalFor, setJournalFor] = useState<Person | null>(null);
@@ -154,36 +185,15 @@ function RelationshipsContent({
     void loadPeopleAndGroups();
   }, [loadPeopleAndGroups]);
 
-  const loadRelationships = useCallback(async () => {
-    if (!perspectiveId || !selected) return;
-    try {
-      const payload = await api.relationships.get(perspectiveId, selected.id);
-      setRelationshipResult({
-        primary: payload.primary,
-        additional: payload.additional,
-      });
-      setRelationshipError(null);
-    } catch (err: unknown) {
-      setRelationshipError(err);
-    }
-  }, [perspectiveId, selected]);
-
   useEffect(() => {
     if (!perspectiveId) return;
-    setFocus(null);
-    setRelationshipResult(null);
+    setHighlightedPathsByTarget({});
+    setSelectedTargets((current) => current.filter((person) => person.id !== perspectiveId));
+    setSelected((current) => current?.id === perspectiveId ? null : current);
     expandedCountRef.current = 0;
     void graph.reset(perspectiveId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perspectiveId]);
-
-  useEffect(() => {
-    void loadRelationships();
-  }, [loadRelationships]);
-
-  useEffect(() => {
-    setEvidenceOpen(Boolean(relationshipResult?.additional.length));
-  }, [relationshipResult, selected?.id]);
 
   const handleSavedMutation = async (desc: string) => {
     setUndoNotice(desc);
@@ -191,9 +201,7 @@ function RelationshipsContent({
     if (perspectiveId) {
       void graph.reset(perspectiveId);
     }
-    if (selected) {
-      void loadRelationships();
-    }
+    setRefreshVersion((value) => value + 1);
   };
 
   const handleUndo = async () => {
@@ -205,9 +213,7 @@ function RelationshipsContent({
         if (perspectiveId) {
           void graph.reset(perspectiveId);
         }
-        if (selected) {
-          void loadRelationships();
-        }
+        setRefreshVersion((value) => value + 1);
       }
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Undo failed");
@@ -231,11 +237,13 @@ function RelationshipsContent({
 
   const selectPerson = useCallback(
     (person: Person) => {
+      if (person.id === perspectiveId) return;
       setSelected(person);
+      setSelectedTargets((current) => current.some((target) => target.id === person.id)
+        ? current
+        : [...current, person]);
       onTargetChange?.(person.id);
       setRelationshipError(null);
-      setFocus(null);
-      graph.exitPath();
       graph.ensureVisible({
         id: person.id,
         name: person.name,
@@ -265,92 +273,55 @@ function RelationshipsContent({
     }
   }, [initialTargetId, onTargetUnavailable, people, peopleLoaded, selectPerson, selected?.id]);
 
-  const showWhy = useCallback(
-    async (entry: RelationshipEntry) => {
-      if (!perspectiveId || !selected) return;
-      graph.exitPath();
-      try {
-        const response = await relationshipsApi.paths(
-          perspectiveId,
-          selected.id,
-        );
-        let matching: RelationshipPath[] = [];
-        if (entry.path_ids && entry.path_ids.length > 0) {
-          const pathIdSet = new Set(entry.path_ids);
-          matching = response.paths.filter((p) => pathIdSet.has(p.id));
-        }
-        if (!matching.length && (entry.semantic_id || entry.relationship_type)) {
-          const semId = entry.semantic_id || entry.relationship_type;
-          matching = response.paths.filter(
-            (p) => (p.semantic_id || p.relationship_type) === semId,
-          );
-        }
-        const paths = matching.length ? matching : response.paths;
-        if (!paths.length) {
-          setRelationshipError(
-            new Error(
-              "No supported relationship path was found within max depth.",
-            ),
-          );
-          return;
-        }
-        setRelationshipError(null);
-        setFocus({ entry, paths, pathIndex: 0 });
-        graph.focusPath(paths[0]);
-      } catch (err) {
-        setRelationshipError(err);
+  const highlightedPaths = useMemo(
+    () => Object.values(highlightedPathsByTarget).flat(),
+    [highlightedPathsByTarget],
+  );
+
+  useEffect(() => {
+    if (highlightedPaths.length) graph.focusPaths(highlightedPaths);
+    else graph.exitPath();
+  }, [graph.exitPath, graph.focusPaths, highlightedPaths]);
+
+  const pathNodeHighlights = useMemo(() => {
+    const map = new Map<string, { maternal: boolean; paternal: boolean; general: boolean }>();
+    for (const path of highlightedPaths) {
+      for (const node of path.nodes) {
+        const value = map.get(node.id) ?? { maternal: false, paternal: false, general: false };
+        if (path.domain === "general") value.general = true;
+        if (path.domain === "family" && path.side === "maternal") value.maternal = true;
+        if (path.domain === "family" && path.side === "paternal") value.paternal = true;
+        map.set(node.id, value);
       }
-    },
-    [graph, perspectiveId, selected],
-  );
-
-  const selectFocusedPath = useCallback(
-    (index: number) => {
-      if (!focus) return;
-      const path = focus.paths[index];
-      if (!path) return;
-      graph.exitPath();
-      graph.focusPath(path);
-      setFocus({ ...focus, pathIndex: index });
-    },
-    [focus, graph],
-  );
-
-  const exitPathMode = useCallback(() => {
-    if (!focus) return;
-    setFocus(null);
-    graph.exitPath();
-    window.setTimeout(() => fitView({ padding: 0.1, duration: 350, maxZoom: 1 }), 40);
-  }, [focus, graph, fitView]);
-
-  const activePath = focus ? focus.paths[focus.pathIndex] : null;
-  const pathNodeIds = useMemo(() => {
-    const ids = new Set<string>();
-    if (activePath) {
-      activePath.nodes.forEach((node) => ids.add(node.id));
     }
-    return ids;
-  }, [activePath]);
-  const pathRoleMap = useMemo(
-    () => (activePath ? buildRoleMap(activePath) : new Map<string, string>()),
-    [activePath],
+    return map;
+  }, [highlightedPaths]);
+
+  const pathHighlights = useMemo(
+    () => buildPathHighlights(highlightedPaths),
+    [highlightedPaths],
   );
 
   const flowEdges: Edge[] = useMemo(
-    () => buildFlowEdges(visibleEdgeDtos, activePath, pathRoleMap),
-    [visibleEdgeDtos, activePath, pathRoleMap],
+    () => buildFlowEdges(visibleEdgeDtos, highlightedPaths, pathHighlights),
+    [visibleEdgeDtos, highlightedPaths, pathHighlights],
   );
 
   const flowNodes: Node[] = useMemo(() => {
     const nodes = visibleNodeDtos.map((dto) => {
-      const isPath = pathNodeIds.has(dto.id);
-      const className = focus
-        ? isPath
-          ? "rf-path-node"
-          : "rf-dim"
-        : dto.id === selected?.id
-          ? "rf-node-selected"
-          : "";
+      const pathTone = pathNodeHighlights.get(dto.id);
+      const isPath = Boolean(pathTone);
+      const isTarget = selectedTargets.some((person) => person.id === dto.id);
+      const className = [
+        highlightedPaths.length && !isPath ? "rf-dim" : "",
+        isPath ? "rf-path-node" : "",
+        pathTone?.maternal ? "rf-path-maternal" : "",
+        pathTone?.paternal ? "rf-path-paternal" : "",
+        pathTone?.general ? "rf-path-general" : "",
+        pathTone?.maternal && pathTone?.paternal ? "rf-path-overlap" : "",
+        isTarget ? "rf-node-selected" : "",
+        dto.id === selected?.id ? "rf-node-active-target" : "",
+      ].filter(Boolean).join(" ");
       return {
         id: dto.id,
         type: "person",
@@ -366,13 +337,14 @@ function RelationshipsContent({
         },
       };
     });
-    return layoutGraph(nodes, flowEdges);
+    return layoutGraph(nodes, flowEdges, "TB", perspectiveId ?? undefined);
   }, [
     visibleNodeDtos,
-    focus,
-    pathNodeIds,
+    highlightedPaths.length,
+    pathNodeHighlights,
     perspectiveId,
     selected,
+    selectedTargets,
     flowEdges,
   ]);
 
@@ -389,17 +361,38 @@ function RelationshipsContent({
   }, [visibleNodeDtos.length, fitView]);
 
   useEffect(() => {
-    if (!activePath) return;
-    const ids = activePath.nodes.map((node) => node.id);
+    if (!highlightedPaths.length) return;
     const frame = window.setTimeout(() => {
-      fitView({
-        nodes: ids.map((id) => ({ id })),
-        padding: 0.3,
-        duration: 600,
-      });
-    }, 120);
+      const highlightedNodeIds = new Set(
+        highlightedPaths.flatMap((path) => path.nodes.map((node) => node.id)),
+      );
+      if (perspectiveId) highlightedNodeIds.add(perspectiveId);
+      for (const [targetId, paths] of Object.entries(highlightedPathsByTarget)) {
+        if (paths.length) highlightedNodeIds.add(targetId);
+      }
+      const pathNodes = flowNodes.filter((node) => highlightedNodeIds.has(node.id));
+      if (!pathNodes.length) return;
+      const minX = Math.min(...pathNodes.map((node) => node.position.x));
+      const minY = Math.min(...pathNodes.map((node) => node.position.y));
+      const maxX = Math.max(...pathNodes.map((node) => node.position.x + NODE_WIDTH));
+      const maxY = Math.max(...pathNodes.map((node) => node.position.y + NODE_HEIGHT));
+      void fitBounds(
+        { x: minX, y: minY, width: Math.max(NODE_WIDTH, maxX - minX), height: Math.max(NODE_HEIGHT, maxY - minY) },
+        { padding: 0.18, duration: 220 },
+      );
+    }, 160);
     return () => window.clearTimeout(frame);
-  }, [activePath, fitView]);
+  }, [fitBounds, flowNodes, highlightedPaths, highlightedPathsByTarget, perspectiveId]);
+
+  // The inspector changes the React Flow viewport width. Refit only after its
+  // width transition has settled; fitting against the old width can leave the
+  // meaningful graph cropped behind the panel or entirely outside the stage.
+  useEffect(() => {
+    const frame = window.setTimeout(() => {
+      fitView({ padding: 0.12, duration: 0, maxZoom: 1 });
+    }, 360);
+    return () => window.clearTimeout(frame);
+  }, [fitView, selectedTargets.length]);
 
   const toggleExpansionForCenter = useCallback(
     (filter: ExpansionFilter) => {
@@ -433,9 +426,15 @@ function RelationshipsContent({
   }, []);
 
   const showPrimaryPath = useCallback(() => {
-    const primary = relationshipResult?.primary[0];
-    if (primary) void showWhy(primary);
-  }, [relationshipResult, showWhy]);
+    if (selected) setRevealPathsVersion((value) => value + 1);
+  }, [selected]);
+
+  const exitPathMode = useCallback(() => {
+    setHighlightedPathsByTarget({});
+    setClearPathsVersion((value) => value + 1);
+    graph.exitPath();
+    window.setTimeout(() => fitView({ padding: 0.1, duration: 350, maxZoom: 1 }), 40);
+  }, [graph, fitView]);
 
   useEffect(() => {
     const syncFullscreenState = () => {
@@ -481,13 +480,13 @@ function RelationshipsContent({
       void exitImmersive();
       return;
     }
-    if (focus) {
+    if (highlightedPaths.length) {
       exitPathMode();
       return;
     }
     if (comparePicker) setComparePicker(false);
     if (compareTarget) setCompareTarget(null);
-  }, [comparePicker, compareTarget, exitImmersive, exitPathMode, focus, immersive, nativeFullscreen]);
+  }, [comparePicker, compareTarget, exitImmersive, exitPathMode, highlightedPaths.length, immersive, nativeFullscreen]);
 
   useKeyboardNavigation({
     onSearch: focusSearch,
@@ -503,9 +502,45 @@ function RelationshipsContent({
     onEscape,
   });
 
-  const centerPerson = selected ?? perspectivePerson ?? null;
+  const handleHighlightedPathsChange = useCallback((personId: string, paths: RelationshipPath[]) => {
+    setHighlightedPathsByTarget((current) => {
+      const existing = current[personId] ?? [];
+      if (existing.length === paths.length && existing.every((path, index) => path.id === paths[index]?.id)) {
+        return current;
+      }
+      if (!paths.length) {
+        if (!(personId in current)) return current;
+        const next = { ...current };
+        delete next[personId];
+        return next;
+      }
+      return { ...current, [personId]: paths };
+    });
+  }, []);
+
+  const activateTarget = useCallback((person: Person) => {
+    setSelected(person);
+    onTargetChange?.(person.id);
+  }, [onTargetChange]);
+
+  const removeTarget = useCallback((personId: string) => {
+    const nextTargets = selectedTargets.filter((person) => person.id !== personId);
+    setSelectedTargets(nextTargets);
+    if (selected?.id === personId) {
+      const nextActive = nextTargets[0] ?? null;
+      setSelected(nextActive);
+      onTargetChange?.(nextActive?.id ?? null);
+    }
+    setHighlightedPathsByTarget((current) => {
+      if (!(personId in current)) return current;
+      const next = { ...current };
+      delete next[personId];
+      return next;
+    });
+  }, [onTargetChange, selected?.id, selectedTargets]);
+
+  const centerPerson = perspectivePerson ?? null;
   const perspectiveName = perspectivePerson?.name ?? perspectiveId ?? "";
-  const primaryRelationship = relationshipResult?.primary[0] ?? null;
 
   return (
     <div className="view relationships-view">
@@ -521,7 +556,7 @@ function RelationshipsContent({
           className={`relationships-graph-area ${immersive ? "is-immersive" : ""}`}
           data-immersive={immersive ? "true" : "false"}
         >
-          <div className={`relationship-graph-stage ${selected ? "has-inspector" : ""}`}>
+          <div className={`relationship-graph-stage ${selectedTargets.length ? "has-inspector" : ""}`}>
             <ReactFlow
               nodes={flowNodes}
               edges={flowEdges}
@@ -543,8 +578,7 @@ function RelationshipsContent({
                 if (person) void setPerspective(person.id);
               }}
               onPaneClick={() => {
-                setSelected(null);
-                onTargetChange?.(null);
+                setSearchOpen(false);
               }}
               proOptions={{ hideAttribution: true }}
             >
@@ -591,115 +625,58 @@ function RelationshipsContent({
               )}
             </div>
           </div>
-          {focus && activePath && (
+          {highlightedPaths.length > 0 && (
             <div className="graph-focus-badge">
-              Path focus: {focus.entry.label_en} · press Esc to exit
+              {highlightedPaths.length} highlighted path{highlightedPaths.length === 1 ? "" : "s"} across {Object.keys(highlightedPathsByTarget).filter((id) => highlightedPathsByTarget[id]?.length).length} target{Object.keys(highlightedPathsByTarget).filter((id) => highlightedPathsByTarget[id]?.length).length === 1 ? "" : "s"} · press Esc to clear
             </div>
           )}
-          {selected ? (
-        <aside className="relationships-panel glass-panel">
-          {focus && activePath && selected ? (
-            <PathFocusPanel
-              entry={focus.entry}
-              path={activePath}
-              perspectiveName={perspectiveName}
-              target={selected}
-              totalForLabel={focus.paths.length}
-              activeIndex={focus.pathIndex}
-              onSelectPath={selectFocusedPath}
-              onExit={exitPathMode}
-            />
-          ) : selected ? (
-            <div className="selected-person-panel">
-              <div className="inspector-profile-row">
-                <Avatar person={selected} size={60} />
-                <div className="inspector-profile-copy">
-                  <strong>{selected.name}</strong>
-                  <div className="inspector-relationship-line">
-                    {primaryRelationship?.label_en ?? "Connection"}
-                    {primaryRelationship?.label_ur && (
-                      <span dir="rtl" lang="ur"> · {primaryRelationship.label_ur}</span>
-                    )}
-                  </div>
+          {selectedTargets.length > 0 && perspectiveId && (
+            <aside className="relationships-panel relationship-explorer glass-panel" aria-label="Relationship Explorer">
+              <div className="relationship-explorer-head">
+                <div>
+                  <strong>Relationship Explorer</strong>
+                  <span>{selectedTargets.length} target{selectedTargets.length === 1 ? "" : "s"} relative to {perspectiveName}</span>
                 </div>
-                <Button kind="ghost" className="icon-button inspector-close" onClick={() => {
-                  setSelected(null);
-                  onTargetChange?.(null);
-                }} ariaLabel="Close selected person" title="Close selected person"><Icon name="close" /></Button>
+                <Button
+                  kind="ghost"
+                  onClick={() => {
+                    setSelectedTargets([]);
+                    setSelected(null);
+                    setHighlightedPathsByTarget({});
+                    onTargetChange?.(null);
+                  }}
+                >
+                  Clear all
+                </Button>
               </div>
-
-              <div className="inspector-primary-actions">
-                {onNavigateToProfile && (
-                  <Button onClick={() => onNavigateToProfile(selected.id)}><Icon name="profile" /> <span>View Profile</span><span className="inspector-chevron">›</span></Button>
-                )}
-                <Button onClick={() => setJournalFor(selected)}><Icon name="journal" /> <span>Journal</span><span className="inspector-chevron">›</span></Button>
-                <Button onClick={() => void setPerspective(selected.id)}><Icon name="path" /> <span>View from this person</span><span className="inspector-chevron">›</span></Button>
+              <div className="relationship-target-stack">
+                {selectedTargets.map((person) => (
+                  <RelationshipTargetCard
+                    key={person.id}
+                    person={person}
+                    perspectiveId={perspectiveId}
+                    perspectiveName={perspectiveName}
+                    active={selected?.id === person.id}
+                    refreshVersion={refreshVersion}
+                    revealPathsVersion={selected?.id === person.id ? revealPathsVersion : 0}
+                    clearPathsVersion={clearPathsVersion}
+                    onActivate={() => activateTarget(person)}
+                    onRemove={() => removeTarget(person.id)}
+                    onMakeCentral={() => void setPerspective(person.id)}
+                    onHighlightedPathsChange={handleHighlightedPathsChange}
+                    onNavigateToProfile={onNavigateToProfile}
+                    onOpenJournal={setJournalFor}
+                    onNavigateToFamily={onNavigateToFamily}
+                    onAddRelationship={() => { activateTarget(person); setShowAddRel(true); }}
+                    onEditRelationship={(entry) => { activateTarget(person); setEditingEntry(entry); }}
+                    onCompare={() => { activateTarget(person); setComparePicker(true); }}
+                    onEditPerson={() => { activateTarget(person); setPersonModalTarget(person); setPersonModalMode("edit"); }}
+                    onDeletePerson={() => { activateTarget(person); setPersonModalTarget(person); setPersonModalMode("delete"); }}
+                  />
+                ))}
               </div>
-
-              <div className="inspector-metadata">
-                <div className="inspector-meta-row">
-                  <Icon name="profile" />
-                  <div><span>Full name</span><strong>{selected.name}</strong></div>
-                </div>
-                <div className="inspector-meta-row">
-                  <Icon name="family" />
-                  <div><span>Relationship to {perspectiveName}</span><strong>{primaryRelationship?.label_en ?? "Not recorded"}</strong></div>
-                </div>
-                <div className="inspector-meta-row">
-                  <Icon name="journal" />
-                  <div><span>Perspectives available</span><strong>View their family and connections</strong></div>
-                </div>
-              </div>
-
-              <details
-                className="inspector-disclosure inspector-evidence"
-                open={evidenceOpen}
-                onToggle={(event) => setEvidenceOpen(event.currentTarget.open)}
-              >
-                <summary><Icon name="path" /> Relationship evidence</summary>
-                <div className="inspector-disclosure-body">
-                  {relationshipResult ? (
-                    <>
-                      <EntryGroup
-                        title="Primary"
-                        entries={relationshipResult.primary}
-                        onShowWhy={(entry) => void showWhy(entry)}
-                        onEditEntry={(entry) => setEditingEntry(entry)}
-                      />
-                      {relationshipResult.additional.length > 0 && (
-                        <EntryGroup
-                          title="Additional paths"
-                          entries={relationshipResult.additional}
-                          onShowWhy={(entry) => void showWhy(entry)}
-                          onEditEntry={(entry) => setEditingEntry(entry)}
-                        />
-                      )}
-                      {relationshipResult.primary.length === 0 && relationshipResult.additional.length === 0 && (
-                        <div className="empty-inline">No recorded relationship from this perspective.</div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="muted small">Calculating…</div>
-                  )}
-                </div>
-              </details>
-
-              <details className="inspector-disclosure inspector-manage">
-                <summary><Icon name="more" /> More actions</summary>
-                <div className="inspector-disclosure-body inspector-manage-grid">
-                  <Button kind="primary" onClick={() => setShowAddRel(true)}><Icon name="add" /> Add Relationship</Button>
-                  {onNavigateToFamily && (
-                    <Button onClick={() => onNavigateToFamily(selected.id)}><Icon name="family" /> View Family Tree<span className="sr-only"> View Family</span></Button>
-                  )}
-                  <Button onClick={() => setComparePicker(true)}><Icon name="compare" /> Compare</Button>
-                  <Button onClick={() => { setPersonModalTarget(selected); setPersonModalMode("edit"); }}><Icon name="edit" /> Edit Person</Button>
-                  <Button kind="danger" onClick={() => { setPersonModalTarget(selected); setPersonModalMode("delete"); }}>Delete Person</Button>
-                </div>
-              </details>
-            </div>
-          ) : null}
-        </aside>
-          ) : null}
+            </aside>
+          )}
 
           <GraphDock
             personName={centerPerson?.name ?? "…"}
@@ -792,72 +769,6 @@ function RelationshipsContent({
           onDismiss={() => setUndoNotice(null)}
         />
       )}
-    </div>
-  );
-}
-
-function EntryGroup({
-  title,
-  entries,
-  onShowWhy,
-  onEditEntry,
-}: {
-  title: string;
-  entries: RelationshipEntry[];
-  onShowWhy: (entry: RelationshipEntry) => void;
-  onEditEntry: (entry: RelationshipEntry) => void;
-}) {
-  return (
-    <div className="panel-rel-group">
-      <div className="rel-section-title">{title}</div>
-      {entries.map((entry, index) => (
-        <div
-          className="panel-rel-row"
-          key={`${entry.relationship_type}-${entry.semantic_id || ""}-${index}`}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
-            padding: "8px 0",
-            borderBottom: "1px solid var(--border-subtle)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-            <div className="panel-rel-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
-              <span style={{ fontWeight: 600 }}>{entry.label_en}</span>
-              <span
-                className={`badge-fact ${entry.derived ? "badge-derived" : "badge-explicit"}`}
-                title={entry.derived ? "Derived from stored family facts" : "Directly stored factual data"}
-              >
-                {entry.derived ? "derived" : "stored fact"}
-              </span>
-              {entry.side && entry.side !== "unspecified" && (
-                <span className="badge-fact badge-side">
-                  {entry.side}
-                </span>
-              )}
-              {entry.kind && entry.kind !== "direct" && (
-                <span className="badge-fact badge-kind">
-                  {entry.kind}
-                </span>
-              )}
-            </div>
-            <div style={{ display: "flex", gap: 4 }}>
-              <Button kind="ghost" onClick={() => onEditEntry(entry)}>
-                {entry.derived ? "Source" : "Edit"}
-              </Button>
-              <Button kind="ghost" onClick={() => onShowWhy(entry)}>
-                Why
-              </Button>
-            </div>
-          </div>
-          {entry.label_ur && (
-            <div className="relation-ur" dir="rtl" lang="ur" style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-              {entry.label_ur}
-            </div>
-          )}
-        </div>
-      ))}
     </div>
   );
 }

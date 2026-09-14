@@ -197,6 +197,28 @@ function check(condition, label) {
   passed += 1;
   console.log(`✓ [Visual E2E ${passed}] ${label}`);
 }
+async function visibleGraphNodeCount(selector = ".react-flow__node") {
+  return page.$$eval(selector, (nodes) => {
+    const stage = document.querySelector(".relationship-graph-stage")?.getBoundingClientRect();
+    if (!stage) return 0;
+    return nodes.filter((node) => {
+      const box = node.getBoundingClientRect();
+      return box.width > 0 && box.height > 0 && box.right > stage.left && box.left < stage.right && box.bottom > stage.top && box.top < stage.bottom;
+    }).length;
+  });
+}
+async function waitForVisibleGraphNodes(selector, minimum, label) {
+  await page.waitForFunction((nodeSelector, expected) => {
+    const stage = document.querySelector(".relationship-graph-stage")?.getBoundingClientRect();
+    if (!stage) return false;
+    const visible = [...document.querySelectorAll(nodeSelector)].filter((node) => {
+      const box = node.getBoundingClientRect();
+      return box.width > 0 && box.height > 0 && box.right > stage.left && box.left < stage.right && box.bottom > stage.top && box.top < stage.bottom;
+    }).length;
+    return visible >= expected;
+  }, { timeout: 5_000 }, selector, minimum);
+  check((await visibleGraphNodeCount(selector)) >= minimum, label);
+}
 async function clickText(scope, text) {
   await page.waitForFunction((selector, expected) => [...document.querySelectorAll(`${selector} button`)].some((button) => {
     const box = button.getBoundingClientRect();
@@ -253,7 +275,19 @@ async function shot(name, description = "Visual and interaction evidence.", cont
       element.blur();
     }
   });
-  await page.screenshot({ path: target, fullPage: false });
+  const screenshotBytes = await page.screenshot({ fullPage: false });
+  let screenshotError = null;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      writeFileSync(target, screenshotBytes);
+      screenshotError = null;
+      break;
+    } catch (error) {
+      screenshotError = error;
+      if (attempt < 5) await sleep(attempt * 150);
+    }
+  }
+  if (screenshotError) throw screenshotError;
   const normalizedName = name.replaceAll("\\", "/");
   const [area, file] = normalizedName.split("/");
   const state = (file ?? area).replace(/\.png$/i, "").replaceAll("-", " ");
@@ -318,7 +352,18 @@ async function shot(name, description = "Visual and interaction evidence.", cont
   for (const [aliasName, aliasDescription, aliasReference] of aliases) {
     const aliasTarget = join(REVIEW_DIR, aliasName);
     mkdirSync(dirname(aliasTarget), { recursive: true });
-    await page.screenshot({ path: aliasTarget, fullPage: false });
+    let aliasError = null;
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      try {
+        writeFileSync(aliasTarget, screenshotBytes);
+        aliasError = null;
+        break;
+      } catch (error) {
+        aliasError = error;
+        if (attempt < 5) await sleep(attempt * 150);
+      }
+    }
+    if (aliasError) throw aliasError;
     screenshotIndex.push({
       name: aliasName,
       theme,
@@ -335,7 +380,21 @@ function escapeTable(value) {
   return String(value ?? "").replaceAll("|", "\\|").replaceAll("\n", " ");
 }
 
-function writeReviewArtifacts() {
+async function writeTextWithRetry(path, contents) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    try {
+      writeFileSync(path, contents, "utf8");
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 6) await sleep(attempt * 150);
+    }
+  }
+  throw lastError;
+}
+
+async function writeReviewArtifacts() {
   for (const area of Object.keys(AREA_NAMES)) mkdirSync(join(REVIEW_DIR, area), { recursive: true });
   const readme = [
     "# Phase 10 Final UI Review",
@@ -353,7 +412,7 @@ function writeReviewArtifacts() {
     readme.push("");
   }
   while (readme.at(-1) === "") readme.pop();
-  writeFileSync(join(REVIEW_DIR, "README.md"), `${readme.join("\n")}\n`, "utf8");
+  await writeTextWithRetry(join(REVIEW_DIR, "README.md"), `${readme.join("\n")}\n`);
 
   const manifestPath = resolve(REPO, "Documentation/Testing/ui-control-screenshot-manifest.md");
   mkdirSync(dirname(manifestPath), { recursive: true });
@@ -390,7 +449,7 @@ function writeReviewArtifacts() {
     "",
     "TOTAL FAILURES: 0",
   );
-  writeFileSync(manifestPath, `${rows.join("\n")}\n`, "utf8");
+  await writeTextWithRetry(manifestPath, `${rows.join("\n")}\n`);
 }
 async function box(selector) {
   return page.$eval(selector, (element) => {
@@ -562,6 +621,8 @@ function certifiedFamilyFixture(people) {
   addChildren(["nadim", "matea"], ["soren", "remi"]);
   addChildren(["yasmin", "jun"], ["aika", "teo"]);
   parent_child.push(
+    { parent: people.adnan.id, child: people.maeve.id, role: "father", kind: "biological" },
+    { parent: people.pari.id, child: people.maeve.id, role: "mother", kind: "biological" },
     { parent: people.mira.id, child: people.kian.id, role: "mother", kind: "adopted" },
     { parent: people.idris.id, child: people.luna.id, role: "father", kind: "step" },
     { parent: people.oren.id, child: people.darya.id, role: "father", kind: "foster" },
@@ -579,6 +640,7 @@ function certifiedFamilyFixture(people) {
     ["katerina", "sebastian", "divorced", 1992], ["kamal", "layla", "married", 1987],
     ["mira", "elias", "married", 2012], ["zayan", "aaliyah", "married", 2013],
     ["nadim", "matea", "married", 1998], ["yasmin", "jun", "married", 1999],
+    ["kamal", "maeve", "widowed", 2004], ["nadim", "maeve", "married", 2009],
   ];
   const marriages = marriageSpecs.map(([a, b, status, year], display_order) => {
     const [spouse_a, spouse_b] = [people[a].id, people[b].id].sort();
@@ -602,7 +664,7 @@ function certifiedFamilyFixture(people) {
     parent_child,
     marriages,
     sibling_groups,
-    multipath: { from: people.mira.id, to: people.zayan.id },
+    multipath: { from: people.mira.id, to: people.maeve.id },
   };
 }
 
@@ -663,7 +725,9 @@ async function seedFixture() {
   check(certification.marriages >= 12, "synthetic fixture contains at least twelve marriages");
   check(certification.sibling_groups >= 6, "synthetic fixture contains multiple sibling groups");
   check(["biological", "adopted", "step", "foster", "guardian", "unknown"].every((kind) => certification.parent_kinds.includes(kind)), "all required parent-child kinds survive canonical validation");
-  check(certification.multipath_paths >= 2 && certification.multipath_sides.includes("maternal") && certification.multipath_sides.includes("paternal"), "canonical path engine proves maternal and paternal multipath ancestry");
+  check(certification.multipath_paths >= 4 && certification.multipath_sides.includes("maternal") && certification.multipath_sides.includes("paternal"), "canonical path engine proves at least four maternal/paternal roles for one target");
+  check(["paternal_aunt", "maternal_aunt", "chachi", "mami"].every((role) => certification.four_role_semantics.includes(role)), "four-role target includes blood and culturally meaningful affinal semantics");
+  check(certification.reverse_primary === "Niece", "four-role target reverse perspective remains canonically correct");
 
   const generalRelationships = [
     ["mira", "darya", "close_friend"], ["mira", "quinn", "childhood_friend"],
@@ -707,6 +771,10 @@ async function captureDarkMajorStates(fixture) {
   await page.waitForSelector(".relationships-graph-area .react-flow", { timeout: 30_000 });
   await switchTheme("dark");
   await shot("15-dark-mode/shell.png", "Dark application shell with global perspective and theme controls.", "Navigation; Perspective of; theme switch");
+  await page.click("[aria-label='Collapse sidebar']");
+  await page.waitForFunction(() => document.querySelector(".shell")?.classList.contains("sidebar-collapsed"));
+  await shot("15-dark-mode/sidebar-collapsed.png", "Dark compact sidebar with icon-only destinations and preserved active state.", "Expand sidebar; navigation icons; Perspective of");
+  await page.click("[aria-label='Expand sidebar']");
 
   await nav("People");
   await page.waitForSelector(".people-table-row", { timeout: 20_000 });
@@ -976,6 +1044,34 @@ try {
   await page.waitForSelector(".perspective-dropdown", { visible: true });
   await shot("00-shell/perspective-dropdown.png", "Application-wide Perspective of control with person choices open.", "Perspective of; person options; dropdown close");
   await page.click(".perspective-current");
+  const expandedSidebarWidth = (await box(".sidebar")).width;
+  const nodeCountBeforeSidebar = await page.$$eval(".react-flow__node", (nodes) => nodes.length);
+  await page.click("[aria-label='Collapse sidebar']");
+  await page.waitForFunction(() => document.querySelector(".shell")?.classList.contains("sidebar-collapsed"));
+  await page.waitForFunction((previousWidth) => {
+    const sidebar = document.querySelector(".sidebar");
+    return sidebar && sidebar.getBoundingClientRect().width < previousWidth - 20;
+  }, { timeout: 3000 }, expandedSidebarWidth);
+  check((await box(".sidebar")).width < expandedSidebarWidth, "sidebar collapses without covering the canvas");
+  check(await page.$$eval(".react-flow__node", (nodes, expected) => nodes.length === expected, nodeCountBeforeSidebar), "sidebar collapse preserves graph state");
+  check(await page.$eval("[aria-label='Expand sidebar']", (button) => button.getAttribute("aria-expanded") === "false"), "sidebar collapse exposes truthful accessible state");
+  await shot("00-shell/sidebar-collapsed.png", "Compact icon-only sidebar preserves the active Connections workspace.", "Expand sidebar; icon navigation; perspective");
+  await page.reload({ waitUntil: "networkidle0", timeout: 40_000 });
+  await page.waitForSelector(".relationships-graph-area .react-flow", { timeout: 30_000 });
+  check(Boolean(await page.$(".shell.sidebar-collapsed")), "sidebar preference persists across application reload");
+  await page.click("[aria-label='Expand sidebar']");
+  await page.waitForFunction(() => !document.querySelector(".shell")?.classList.contains("sidebar-collapsed"));
+  await shot("00-shell/sidebar-expanded.png", "Expanded sidebar restores labels without resetting the active workspace.", "Collapse sidebar; full navigation labels; perspective");
+  const centeredIcons = await page.$$eval(".icon-button", (buttons) => buttons.every((button) => {
+    const style = getComputedStyle(button);
+    const buttonBox = button.getBoundingClientRect();
+    const icon = button.querySelector(".ui-icon");
+    if (!icon || style.display === "none" || buttonBox.width < 2 || buttonBox.height < 2) return true;
+    const iconBox = icon.getBoundingClientRect();
+    return Math.abs((buttonBox.left + buttonBox.width / 2) - (iconBox.left + iconBox.width / 2)) <= 1.5
+      && Math.abs((buttonBox.top + buttonBox.height / 2) - (iconBox.top + iconBox.height / 2)) <= 1.5;
+  }));
+  check(centeredIcons, "visible shared icon-only controls are optically centered within 1.5px");
   const graphBox = await box(".relationships-graph-area");
   check(graphBox.width > 500 && graphBox.height > 360, "Relationships canvas has nonzero usable area");
   check(Boolean(await page.$(".graph-zoom-controls")), "Relationships graph controls are visible");
@@ -983,11 +1079,15 @@ try {
   check(!(await page.$(".relationships-panel")), "empty selected-person panel stays hidden");
   check(await page.$$eval(".person-node-card", (nodes) => nodes.every((node) => node.scrollWidth <= node.clientWidth + 1)), "long relationship node text is contained");
   await shot("03-connections/full-graph-default.png", "Connections full-canvas default with all family and general links visible.", "Graph nodes; zoom controls; expansion controls; search icon");
+  await page.click("[aria-label='Collapse sidebar']");
+  await page.waitForFunction(() => document.querySelector(".shell")?.classList.contains("sidebar-collapsed"));
   await page.click("[aria-label='Enter graph fullscreen']");
   await page.waitForFunction(() => document.querySelector(".relationships-graph-area")?.getAttribute("data-immersive") === "true");
   await shot("03-connections/fullscreen.png", "Connections immersive mode keeps the graph and floating controls usable.", "Exit fullscreen; search; zoom; fit; legend");
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.querySelector(".relationships-graph-area")?.getAttribute("data-immersive") === "false");
+  check(Boolean(await page.$(".shell.sidebar-collapsed")), "fullscreen exit restores the saved sidebar state");
+  await page.click("[aria-label='Expand sidebar']");
 
   await page.click("[aria-label='Zoom in']");
   await shot("03-connections/zoom-in-result.png", "Connections graph after activating Zoom In.", "Zoom In");
@@ -1009,20 +1109,113 @@ try {
   await shot("03-connections/search-results.png", "Connections search results for a long bilingual synthetic person.", "Search result selection");
   await page.click(".person-search-row");
   await page.waitForFunction(() => document.querySelector(".relationships-panel")?.textContent?.includes("Darya Sol"));
-  check(Boolean(await page.$(".selected-person-panel")), "relationship details state is visible");
+  check(Boolean(await page.$(".relationship-target-card")), "relationship details state is visible");
   check((await page.$eval(".relationships-panel", (node) => node.scrollHeight >= node.clientHeight)), "relationship details panel supports long content");
-  await shot("03-connections/person-selected.png", "Selected-person inspector over the graph with a long bilingual name.", "Person node; View Profile; View Family Tree; Compare; Journal; Add Relationship");
+  await shot("03-connections/person-selected.png", "Selected-person inspector with multipath mode off and a long bilingual name.", "Person node; Show all relationship paths; Profile; Family Tree; Compare; Journal");
 
-  if (!(await page.$eval(".inspector-evidence", (node) => node.open))) await page.click(".inspector-evidence summary");
-  await clickText(".relationships-panel", "Why");
-  await page.waitForSelector(".graph-focus-badge", { visible: true });
-  await shot("03-connections/relationship-path.png", "Primary relationship proof path highlighted while other edges recede.", "Why; path selector; exit path");
+  const centralBeforeTargets = await page.$eval(".relationships-head", (node) => node.textContent);
+  await page.focus(".relationships-search-wrap input");
+  await setValue(".relationships-search-wrap input", fixture.people.maeve.name);
+  await page.waitForSelector(".relationships-search-wrap .person-search-row", { visible: true });
+  await page.click(".relationships-search-wrap .person-search-row");
+  await page.waitForFunction(() => document.querySelectorAll(".relationship-target-card").length === 2);
+  check((await page.$eval(".relationships-head", (node) => node.textContent)) === centralBeforeTargets, "adding a target does not replace the central person");
+
+  await page.evaluate(() => {
+    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Maeve Rowan"));
+    card?.querySelector(".relationship-path-toggle input")?.click();
+  });
+  await page.waitForFunction(() => {
+    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Maeve Rowan"));
+    return Boolean(card?.querySelector(".target-path-option.tone-maternal") && card?.querySelector(".target-path-option.tone-paternal"));
+  });
+  await page.evaluate(() => {
+    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Maeve Rowan"));
+    for (const option of card?.querySelectorAll(".target-path-option.tone-maternal, .target-path-option.tone-paternal") ?? []) {
+      const input = option.querySelector("input");
+      if (input && !input.checked) input.click();
+    }
+  });
+  try {
+    await page.waitForSelector(".react-flow__edge.rf-edge-maternal", { visible: true });
+    await page.waitForSelector(".react-flow__edge.rf-edge-paternal", { visible: true });
+  } catch (error) {
+    const pathDebug = await page.evaluate(() => ({
+      badge: document.querySelector(".graph-focus-badge")?.textContent ?? null,
+      options: [...document.querySelectorAll(".relationship-target-card")]
+        .find((node) => node.textContent?.includes("Maeve Rowan"))
+        ?.querySelectorAll(".target-path-option")
+        ? [...([...document.querySelectorAll(".relationship-target-card")]
+          .find((node) => node.textContent?.includes("Maeve Rowan"))
+          ?.querySelectorAll(".target-path-option") ?? [])].map((option) => ({
+            className: option.className,
+            checked: option.querySelector("input")?.checked ?? false,
+            text: option.textContent?.trim() ?? "",
+          }))
+        : [],
+      edgeClasses: [...document.querySelectorAll(".react-flow__edge")].map((edge) => edge.getAttribute("class")),
+      nodeClasses: [...document.querySelectorAll(".react-flow__node")].map((node) => node.getAttribute("class")),
+    }));
+    console.error("Maternal/paternal path diagnostic:", JSON.stringify(pathDebug, null, 2));
+    throw error;
+  }
+  await waitForVisibleGraphNodes(".react-flow__node.rf-path-node", 4, "maternal and paternal path nodes remain visible after automatic viewport focus");
+  await shot("03-connections/maternal-paternal-paths.png", "One target exposes simultaneous canonical maternal and paternal proof paths without a fabricated mixed color.", "Maternal path; paternal path; independent checkboxes");
+
+  await page.evaluate(() => {
+    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Darya Sol"));
+    if (!card?.querySelector(".relationship-path-toggle")) card?.querySelector(".target-card-collapse")?.click();
+  });
+  await page.waitForFunction(() => {
+    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Darya Sol"));
+    return Boolean(card?.querySelector(".relationship-path-toggle input"));
+  });
+  await page.evaluate(() => {
+    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Darya Sol"));
+    card?.querySelector(".relationship-path-toggle input")?.click();
+  });
+  await page.waitForFunction(() => document.querySelector(".graph-focus-badge")?.textContent?.includes("2 targets"));
+  check(await page.$$eval(".relationship-target-card", (cards) => cards.length === 2), "multiple Relationship Explorer target cards coexist");
+  await waitForVisibleGraphNodes(".react-flow__node", 2, "multiple-target path focus keeps meaningful graph nodes on-canvas");
+  await shot("03-connections/multiple-targets.png", "Two independent target cards and their selected paths coexist relative to one unchanged central person.", "Two targets; independent path state; Clear all");
+  await shot("03-connections/relationship-path.png", "Canonical relationship paths for multiple targets remain highlighted while unrelated graph context recedes.", "Show all relationship paths; independent path selectors");
+
+  await page.evaluate(() => {
+    const card = [...document.querySelectorAll(".relationship-target-card")].find((node) => node.textContent?.includes("Maeve Rowan"));
+    card?.querySelector(".target-card-remove")?.click();
+  });
+  await page.waitForFunction(() => document.querySelectorAll(".relationship-target-card").length === 1);
+  check((await page.$eval(".relationship-target-card", (node) => node.textContent)).includes("Darya Sol"), "removing one target preserves the remaining target");
+  check(Boolean(await page.$(".react-flow__node.rf-path-node")), "removing one target preserves the remaining target path overlay");
+  await waitForVisibleGraphNodes(".react-flow__node", 2, "remaining target path stays visible after isolated target removal");
+  await shot("03-connections/target-removal-isolated.png", "Removing one target preserves the other target and its independent graph overlay.", "Remove target; remaining path state");
   await page.keyboard.press("Escape");
-  await page.waitForSelector(".selected-person-panel", { visible: true });
+  await page.waitForSelector(".relationship-target-card", { visible: true });
+
+  await page.click(".inspector-evidence summary");
+  await clickText(".inspector-evidence", "Edit");
+  await page.waitForSelector(".edit-relationship-dialog .modal-card", { visible: true });
+  await shot("03-connections/edit-relationship-dialog.png", "Stored relationship evidence opens in the shared accessible edit dialog without changing the fact.", "Edit relationship; Close");
+  await clickText(".edit-relationship-dialog", "Close");
+  await page.waitForFunction(() => !document.querySelector(".edit-relationship-dialog"));
 
   await page.click(".inspector-manage summary");
   await clickText(".relationships-panel", "Add Relationship");
   await page.waitForSelector(".modal-card");
+  const overlayContract = await page.$eval(".modal-backdrop", (backdrop) => {
+    const style = getComputedStyle(backdrop);
+    const modal = backdrop.querySelector(".modal-card, .modal");
+    const pageBehind = document.querySelector(".relationships-view");
+    return {
+      blur: style.backdropFilter || style.webkitBackdropFilter,
+      background: style.backgroundColor,
+      pageVisible: Boolean(pageBehind && getComputedStyle(pageBehind).visibility !== "hidden" && pageBehind.getBoundingClientRect().width > 0),
+      focusInside: Boolean(modal?.contains(document.activeElement)),
+    };
+  });
+  check(overlayContract.blur.includes("blur") && overlayContract.blur !== "none", "modal backdrop applies real soft blur");
+  check(overlayContract.pageVisible, "modal backdrop preserves the actual underlying application screen");
+  check(overlayContract.focusInside, "modal captures keyboard focus while the underlying page remains visible");
   await shot("03-connections/add-relationship-dialog.png", "Add Relationship dialog opened from the selected inspector.", "Add Relationship; type controls; Cancel");
   const lightDialog = await themeSnapshot(".modal-card");
   await switchTheme("dark");
@@ -1062,14 +1255,14 @@ try {
   await clickText(".modal-card", "Cancel");
   await page.waitForFunction(() => !document.querySelector(".modal-card"));
 
-  await page.$eval(".inspector-close", (button) => button.click());
+  await page.$eval(".target-card-remove", (button) => button.click());
   await page.waitForFunction(() => !document.querySelector(".relationships-panel"));
   await shot("03-connections/person-closed.png", "Full graph restored after closing the selected-person inspector.", "Close selected person");
 
-  await setValue(".relationships-search-wrap input", fixture.people.mira.name);
+  await setValue(".relationships-search-wrap input", fixture.people.hana.name);
   await page.waitForSelector(".relationships-search-wrap .person-search-row", { visible: true });
   await page.click(".relationships-search-wrap .person-search-row");
-  await page.waitForFunction(() => document.querySelector(".relationships-panel")?.textContent?.includes("Mira Rahim"));
+  await page.waitForFunction(() => document.querySelector(".relationships-panel")?.textContent?.includes("Hana Calder-Rahim"));
   await page.click(".inspector-manage summary");
   await clickText(".relationships-panel", "Add Relationship");
   await setValue("#target-person-search-input", fixture.people.qadir.name);
@@ -1084,7 +1277,7 @@ try {
   });
   await page.waitForFunction(() => document.querySelectorAll(".modal-card").length === 1);
   await clickText(".modal-card", "Cancel");
-  await page.$eval(".inspector-close", (button) => button.click());
+  await page.$eval(".target-card-remove", (button) => button.click());
   await page.waitForFunction(() => !document.querySelector(".relationships-panel"));
 
   await nav("People");
@@ -1352,6 +1545,12 @@ try {
       await shellChecks(label);
       check((await box(".content")).width > 700, `${label}: main content keeps useful width`);
       await shot(`14-cross-screen/responsive-${width}x${height}.png`, `${label} responsive shell and full-canvas Connections layout.`, "Sidebar; Perspective of; navigation; canvas controls");
+      await page.click("[aria-label='Collapse sidebar']");
+      await page.waitForFunction(() => document.querySelector(".shell")?.classList.contains("sidebar-collapsed"));
+      await shellChecks(`${label} collapsed`);
+      await shot(`14-cross-screen/responsive-${width}x${height}-sidebar-collapsed.png`, `${label} compact sidebar preserves the Connections workspace and active state.`, "Expand sidebar; icon navigation; Perspective of; canvas controls");
+      await page.click("[aria-label='Expand sidebar']");
+      await page.waitForFunction(() => !document.querySelector(".shell")?.classList.contains("sidebar-collapsed"));
     }
 
     await page.setViewport({ width: 1500, height: 1000 });
@@ -1366,7 +1565,9 @@ try {
     await page.goto("http://localhost:1420?visualState=readonly", { waitUntil: "networkidle0", timeout: 40_000 });
     await page.waitForSelector(".nav");
     const banner = await box("[role='status'].info-note");
-    check(banner.bottom <= (await box(".topbar")).y + 80, "read-only banner does not obscure navigation");
+    const perspective = await box(".perspective-selector");
+    check(banner.y >= perspective.bottom + 8, "read-only banner begins below the reserved Perspective control space");
+    check(!(banner.x < perspective.right && banner.right > perspective.x && banner.y < perspective.bottom && banner.bottom > perspective.y), "read-only banner never overlaps the Perspective control");
     check((await page.$eval("[role='status'].info-note", (node) => node.textContent)).includes("Read-only"), "read-only state includes text semantics");
     await shot("10-recovery/read-only-root.png", "Configured read-only state with persistent semantic warning.", "Read-only banner; navigation; non-mutating controls");
 
@@ -1381,6 +1582,7 @@ try {
 
   const forbiddenDialogs = await page.evaluate(() => window.__forbiddenDialogs ?? 0);
   check(forbiddenDialogs === 0, "no browser prompt, alert, or confirm was used");
+  if (errors.length) console.error("Unexpected browser errors:", JSON.stringify(errors, null, 2));
   check(errors.length === 0, "no unexpected console or page errors");
   check(!(await page.evaluate(() => Boolean(document.querySelector("script[data-user-content], .journal-view img")))), "hostile fixture content did not create active elements");
   verifyProduction();
@@ -1389,7 +1591,7 @@ try {
     check(screenshotIndex.length >= 50, "exhaustive screenshot package contains at least 50 meaningful states");
     check(discoveredControls.size >= 50, "visual pass inventories rendered controls across captured states");
     check(interactionEvidence.length >= 25, "control evidence includes real interaction events");
-    writeReviewArtifacts();
+    await writeReviewArtifacts();
   }
   console.log(`Visual E2E complete: ${passed} checks passed.`);
 } finally {

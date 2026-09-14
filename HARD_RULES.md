@@ -32,12 +32,21 @@ batch). Historical evidence stays in `Database/Sources/`.
 - Parent-child records store the parent, child, role, and kind.
 - A layout helper may shape the path; it never replaces the actual parent or
   child card as the semantic endpoint.
+- Incoming ancestry for a married person penetrates the visual union and ends
+  on that exact person. It never ends on the couple container or implies that
+  the spouse is also a child of those parents.
 
 ## 5. Marriage semantics
 
-- Spouses stay physically adjacent in the diagram.
-- The marriage line is direct spouse-to-spouse.
-- Child routing is a separate layout concept below the couple.
+- Every spouse remains an individual semantic person node.
+- Spouses stay physically adjacent inside a larger visual union container.
+- The union container is a layout and grouping aid only; it is never a person
+  or a semantic relationship endpoint.
+- The marriage line is direct spouse-to-spouse, with marriage metadata shown
+  inside the visual union rather than attached to one spouse.
+- Child routing is a separate layout concept below the couple. Both spouse
+  nodes feed a shared child junction and shared children descend from it.
+- Each spouse can independently receive ancestry on their own person node.
 
 ## 6. Sibling semantics
 
@@ -90,6 +99,9 @@ batch). Historical evidence stays in `Database/Sources/`.
 - Irsa pink, Mansoor blue, neutral shared couple grouping.
 - Secondary cross-relations: neutral gray.
 - Color is never the only way to understand a relationship.
+- Pink and blue are side-context shading, not relationship types. Marriage,
+  parent-child, and other edge semantics remain independently identifiable.
+- General, non-family connections remain side-neutral.
 
 ## 13. Kinship calculation
 
@@ -101,14 +113,23 @@ batch). Historical evidence stays in `Database/Sources/`.
 ## 14. Multiple relationship paths
 
 - Never collapse multiple valid relationships into one.
-- Direct relationships display first; remaining cousin paths appear under
-  "additional derived relationship paths".
+- Show one deterministic easiest relationship by default, ranked by canonical
+  family/general domain, proof distance, blood/affinal character, stored versus
+  derived status when comparable, and stable semantic tie-breakers.
+- Every other valid role and proof path remains available as derived evidence.
+- "Show all relationship paths" is off by default and exposes that canonical
+  evidence without storing a new relationship fact.
+- Multiple targets and multiple proof paths may be selected at the same time.
 
 ## 15. Perspective mode
 
 - `canonical_focus_person` = Mohammad Yahya Hussain.
 - `selected_perspective` is temporary UI state; changing it never changes the
   database or the master graph geometry.
+- In Connections, the selected perspective is the central person and any
+  person may temporarily become central.
+- Selected target people are independent of the central person. Adding or
+  removing targets and path highlights never changes canonical data.
 
 ## 16. Photos
 
@@ -136,5 +157,7 @@ batch). Historical evidence stays in `Database/Sources/`.
 
 ## 20. Expansion
 
-- Family data grows through the controlled data/source workflow, then a
-  rebuild. The app is read-only and never edits family data.
+- Family data grows only through the controlled application service and source
+  workflow, followed by canonical validation and rebuild. UI layout,
+  perspective, sidebar, theme, and path-selection preferences never mutate
+  relationship truth.

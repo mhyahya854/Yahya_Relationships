@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../../../api";
+import { useDialogFocus } from "../../../components/ui";
 import type { DuplicateCandidate, Group, MutationPreviewResult, Person } from "../../../types";
 
 interface Props {
@@ -19,6 +20,7 @@ export const PersonEditorModal: React.FC<Props> = ({
   onSaved,
   onOpenExisting,
 }) => {
+  const dialogRef = useDialogFocus<HTMLDivElement>();
   const [name, setName] = useState(person?.name || "");
   const [aliasesText, setAliasesText] = useState(person?.aliases.join(", ") || "");
   const [gender, setGender] = useState<string>(person?.gender || "unknown");
@@ -184,7 +186,7 @@ export const PersonEditorModal: React.FC<Props> = ({
 
   return (
     <div className="modal-backdrop">
-      <div className="modal-card">
+      <div ref={dialogRef} className="modal-card" role="dialog" aria-modal="true" aria-label={`${mode === "add" ? "Add" : mode === "edit" ? "Edit" : "Delete"} person`} tabIndex={-1}>
         <div className="modal-header">
           <h3>
             {mode === "add" && "+ Add Person"}

@@ -81,6 +81,19 @@ const vite = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["--prefix"
 backend.stderr.on("data", (data) => { if (/Traceback|ERROR/.test(data.toString())) console.error(data.toString()); });
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+async function unlinkWithRetry(path, attempts = 6) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      unlinkSync(path);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await sleep(attempt * 150);
+    }
+  }
+  throw lastError;
+}
 async function waitForUrl(url, timeout = 30_000) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
@@ -189,7 +202,7 @@ try {
   await page.waitForSelector(".view", { timeout: 20_000 });
   step("Family and Relationships load for a one-person root");
 
-  unlinkSync(bootstrap);
+  await unlinkWithRetry(bootstrap);
   const nonempty = join(sandbox, "Nonempty");
   mkdirSync(nonempty);
   writeFileSync(join(nonempty, "keep.txt"), "keep", "utf8");
@@ -277,7 +290,7 @@ try {
   const backupResult = await post("/api/backups", { label: "Phase 8 external restore" });
   const backupPath = backupResult.backup.path;
   const backupBefore = collectFiles(backupPath);
-  unlinkSync(bootstrap);
+  await unlinkWithRetry(bootstrap);
   await reload();
   await clickText("main", "Restore From Backup");
   const restoreForm = await page.$eval("main", (node) => node.textContent);
@@ -329,7 +342,7 @@ try {
 
   const ownerJournal = collectFiles(join(movedRoot, "Database/People")).find((row) => row.path.endsWith("/journal.md"));
   const journalPath = join(movedRoot, "Database/People", ownerJournal.path);
-  unlinkSync(journalPath);
+  await unlinkWithRetry(journalPath);
   const orphan = join(movedRoot, "Database/People/Other/human-review/notes.md");
   mkdirSync(dirname(orphan), { recursive: true });
   writeFileSync(orphan, "preserve", "utf8");

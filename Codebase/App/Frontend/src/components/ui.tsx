@@ -5,8 +5,19 @@ import {
   type ReactNode,
   type RefCallback,
 } from "react";
+import { createPortal } from "react-dom";
 import { initialsOf } from "../markdown";
 import type { Person } from "../types";
+
+export function useDialogFocus<T extends HTMLElement = HTMLDivElement>() {
+  const dialogRef = useRef<T>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus({ preventScroll: true });
+    return () => previous?.focus({ preventScroll: true });
+  }, []);
+  return dialogRef;
+}
 
 export function Button({
   children,
@@ -67,6 +78,8 @@ export type IconName =
   | "add"
   | "back"
   | "backup"
+  | "chevron-down"
+  | "chevron-right"
   | "close"
   | "compare"
   | "edit"
@@ -81,6 +94,7 @@ export type IconName =
   | "profile"
   | "reload"
   | "search"
+  | "sidebar"
   | "target"
   | "view"
   | "zoom-in"
@@ -91,6 +105,8 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     add: <path d="M12 5v14M5 12h14" />,
     back: <path d="m15 18-6-6 6-6" />,
     backup: <><ellipse cx="12" cy="5" rx="7" ry="3" /><path d="M5 5v7c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 12v7c0 1.7 3.1 3 7 3s7-1.3 7-3v-7" /></>,
+    "chevron-down": <path d="m7 9 5 5 5-5" />,
+    "chevron-right": <path d="m9 7 5 5-5 5" />,
     close: <path d="m6 6 12 12M18 6 6 18" />,
     compare: <><circle cx="9" cy="12" r="5" /><circle cx="15" cy="12" r="5" /></>,
     edit: <><path d="m4 20 4.2-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z" /><path d="m13.8 7.2 3 3" /></>,
@@ -105,6 +121,7 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     profile: <><circle cx="12" cy="8" r="4" /><path d="M5 21c.7-4.2 3-6.3 7-6.3s6.3 2.1 7 6.3" /></>,
     reload: <><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 4v7h-7" /></>,
     search: <><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 4 4" /></>,
+    sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M13 9l3 3-3 3" /></>,
     target: <><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="2" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></>,
     view: <><path d="M2.5 12s3.2-5.5 9.5-5.5 9.5 5.5 9.5 5.5-3.2 5.5-9.5 5.5S2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="2.5" /></>,
     "zoom-in": <><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 4 4M10.5 7.5v6M7.5 10.5h6" /></>,
@@ -132,7 +149,9 @@ export function Modal({
   closeOnEscape?: boolean;
   className?: string;
 }) {
-  return (
+  const dialogRef = useDialogFocus<HTMLDivElement>();
+
+  return createPortal(
     <div
       className="modal-backdrop"
       onMouseDown={onClose}
@@ -141,11 +160,13 @@ export function Modal({
       }}
     >
       <div
+        ref={dialogRef}
         className={`modal ${wide ? "modal-wide" : ""} ${className}`.trim()}
         onMouseDown={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={typeof title === "string" ? title : "Dialog"}
+        tabIndex={-1}
       >
         <div className="modal-head">
           <h2>{title}</h2>
@@ -155,7 +176,8 @@ export function Modal({
         </div>
         <div className="modal-body">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -479,6 +479,7 @@ def _derived_paths(
     target_id: str,
     explicit_sibling: bool,
     max_depth: int,
+    include_affinal: bool = True,
 ) -> list[dict]:
     paths = []
     records = family_paths.pair_record_paths(
@@ -529,6 +530,65 @@ def _derived_paths(
                 derived=True,
             )
         )
+
+    if include_affinal:
+        target_gender = _gender_of(people_index, target_id)
+        for marriage in model["marriages"]:
+            if target_id not in (marriage["person1"], marriage["person2"]):
+                continue
+            if marriage.get("status") == "divorced":
+                continue
+            spouse_id = (
+                marriage["person2"]
+                if marriage["person1"] == target_id
+                else marriage["person1"]
+            )
+            if spouse_id == perspective_id:
+                continue
+            spouse_paths = _derived_paths(
+                model=model,
+                people_index=people_index,
+                perspective_id=perspective_id,
+                target_id=spouse_id,
+                explicit_sibling=False,
+                max_depth=max_depth - 1,
+                include_affinal=False,
+            )
+            for spouse_path in spouse_paths:
+                spec = legacy.AFFINAL_SPOUSE_ROLES.get(
+                    (spouse_path["relationship_type"], target_gender)
+                )
+                if not spec:
+                    continue
+                en, ur, affinal_role, side = spec
+                node_ids = [node["id"] for node in spouse_path["nodes"]] + [target_id]
+                if len(node_ids) - 1 > max_depth:
+                    continue
+                entry = labels.normalize_family_entry({
+                    "semantic_id": affinal_role,
+                    "en": en,
+                    "ur": ur,
+                    "kind": "affinal",
+                    "affinal_role": affinal_role,
+                    "side": side,
+                    "target_gender": target_gender,
+                    "derived": True,
+                })
+                paths.append(
+                    _path_payload(
+                        domain="family",
+                        entry=entry,
+                        node_ids=node_ids,
+                        model=model,
+                        people_index=people_index,
+                        side=side,
+                        common_ancestors=[
+                            ancestor["id"]
+                            for ancestor in spouse_path.get("common_ancestors", [])
+                        ],
+                        derived=True,
+                    )
+                )
     # Meaningful/simple paths first, deterministic ties.
     paths.sort(
         key=lambda path: (

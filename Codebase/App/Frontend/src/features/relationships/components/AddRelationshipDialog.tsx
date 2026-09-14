@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../../../api";
-import { PersonSearch } from "../../../components/ui";
+import { PersonSearch, useDialogFocus } from "../../../components/ui";
 import type { MutationPreviewResult, Person } from "../../../types";
 import { MutationPreviewDialog } from "../../mutations/components/MutationPreviewDialog";
 import {
@@ -27,6 +27,7 @@ export const AddRelationshipDialog: React.FC<Props> = ({
   onSaved,
   initialTargetPersonId,
 }) => {
+  const dialogRef = useDialogFocus<HTMLDivElement>();
   const [targetSearch, setTargetSearch] = useState("");
   const [targetId, setTargetId] = useState<string>(initialTargetPersonId || "");
   const [domain, setDomain] = useState<"family" | "general">("family");
@@ -262,7 +263,7 @@ export const AddRelationshipDialog: React.FC<Props> = ({
   return (
     <>
       <div className="modal-backdrop">
-        <div className="modal-card">
+        <div ref={dialogRef} className="modal-card" role="dialog" aria-modal="true" aria-label={`Add Relationship from ${sourcePerson.name}`} tabIndex={-1}>
           <div className="modal-header">
             <h3>+ Add Relationship from {sourcePerson.name}</h3>
             <button className="btn-close" onClick={onClose}>

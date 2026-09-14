@@ -7,6 +7,8 @@ Every image was freshly captured from the real application with an isolated, rep
 | File | Theme | Viewport | Demonstrates | Reference status | Controls/states shown |
 |---|---|---:|---|---|---|
 | [perspective-dropdown.png](00-shell/perspective-dropdown.png) | light | 1500×1000 | Application-wide Perspective of control with person choices open. | Inferred | Perspective of; person options; dropdown close |
+| [sidebar-collapsed.png](00-shell/sidebar-collapsed.png) | light | 1500×1000 | Compact icon-only sidebar preserves the active Connections workspace. | Inferred | Expand sidebar; icon navigation; perspective |
+| [sidebar-expanded.png](00-shell/sidebar-expanded.png) | light | 1500×1000 | Expanded sidebar restores labels without resetting the active workspace. | Inferred | Collapse sidebar; full navigation labels; perspective |
 
 ## People
 
@@ -45,8 +47,12 @@ Every image was freshly captured from the real application with an isolated, rep
 | [relationship-filter-result.png](03-connections/relationship-filter-result.png) | light | 1500×1000 | Connections graph after toggling the General relationship type. | Inferred | Parents; Children; Siblings; Spouses; General |
 | [search-open.png](03-connections/search-open.png) | light | 1500×1000 | Collapsed Connections search expanded from its icon control. | Inferred | Search icon; search field; close search |
 | [search-results.png](03-connections/search-results.png) | light | 1500×1000 | Connections search results for a long bilingual synthetic person. | Inferred | Search result selection |
-| [person-selected.png](03-connections/person-selected.png) | light | 1500×1000 | Selected-person inspector over the graph with a long bilingual name. | Reference-matched | Person node; View Profile; View Family Tree; Compare; Journal; Add Relationship |
-| [relationship-path.png](03-connections/relationship-path.png) | light | 1500×1000 | Primary relationship proof path highlighted while other edges recede. | Inferred | Why; path selector; exit path |
+| [person-selected.png](03-connections/person-selected.png) | light | 1500×1000 | Selected-person inspector with multipath mode off and a long bilingual name. | Reference-matched | Person node; Show all relationship paths; Profile; Family Tree; Compare; Journal |
+| [maternal-paternal-paths.png](03-connections/maternal-paternal-paths.png) | light | 1500×1000 | One target exposes simultaneous canonical maternal and paternal proof paths without a fabricated mixed color. | Inferred | Maternal path; paternal path; independent checkboxes |
+| [multiple-targets.png](03-connections/multiple-targets.png) | light | 1500×1000 | Two independent target cards and their selected paths coexist relative to one unchanged central person. | Inferred | Two targets; independent path state; Clear all |
+| [relationship-path.png](03-connections/relationship-path.png) | light | 1500×1000 | Canonical relationship paths for multiple targets remain highlighted while unrelated graph context recedes. | Inferred | Show all relationship paths; independent path selectors |
+| [target-removal-isolated.png](03-connections/target-removal-isolated.png) | light | 1500×1000 | Removing one target preserves the other target and its independent graph overlay. | Inferred | Remove target; remaining path state |
+| [edit-relationship-dialog.png](03-connections/edit-relationship-dialog.png) | light | 1500×1000 | Stored relationship evidence opens in the shared accessible edit dialog without changing the fact. | Inferred | Edit relationship; Close |
 | [add-relationship-dialog.png](03-connections/add-relationship-dialog.png) | light | 1500×1000 | Add Relationship dialog opened from the selected inspector. | Reference-matched | Add Relationship; type controls; Cancel |
 | [compare-picker.png](03-connections/compare-picker.png) | light | 1500×1000 | Compare picker opened from the selected inspector. | Inferred | Compare; person choices; close |
 | [compare-result.png](03-connections/compare-result.png) | light | 1500×1000 | Two-person relationship comparison result. | Inferred | Compare person; View from controls; close |
@@ -147,6 +153,7 @@ Every image was freshly captured from the real application with an isolated, rep
 
 | File | Theme | Viewport | Demonstrates | Reference status | Controls/states shown |
 |---|---|---:|---|---|---|
+| [light-03-connections-edit-relationship-dialog.png](12-dialogs/light-03-connections-edit-relationship-dialog.png) | light | 1500×1000 | Cross-screen dialog evidence from the same live application state. Source state: 03-connections/edit-relationship-dialog.png. | Inferred | Edit relationship; Close |
 | [light-03-connections-add-relationship-dialog.png](12-dialogs/light-03-connections-add-relationship-dialog.png) | light | 1500×1000 | Cross-screen dialog evidence from the same live application state. Source state: 03-connections/add-relationship-dialog.png. | Reference-matched | Add Relationship; type controls; Cancel |
 | [dark-15-dark-mode-add-relationship-dialog.png](12-dialogs/dark-15-dark-mode-add-relationship-dialog.png) | dark | 1500×1000 | Cross-screen dialog evidence from the same live application state. Source state: 15-dark-mode/add-relationship-dialog.png. | Inferred | Theme switch; active dialog; Cancel |
 | [light-03-connections-compare-picker.png](12-dialogs/light-03-connections-compare-picker.png) | light | 1500×1000 | Cross-screen dialog evidence from the same live application state. Source state: 03-connections/compare-picker.png. | Inferred | Compare; person choices; close |
@@ -179,10 +186,15 @@ Every image was freshly captured from the real application with an isolated, rep
 | File | Theme | Viewport | Demonstrates | Reference status | Controls/states shown |
 |---|---|---:|---|---|---|
 | [responsive-980x640.png](14-cross-screen/responsive-980x640.png) | light | 980×640 | configured minimum responsive shell and full-canvas Connections layout. | Inferred | Sidebar; Perspective of; navigation; canvas controls |
+| [responsive-980x640-sidebar-collapsed.png](14-cross-screen/responsive-980x640-sidebar-collapsed.png) | light | 980×640 | configured minimum compact sidebar preserves the Connections workspace and active state. | Inferred | Expand sidebar; icon navigation; Perspective of; canvas controls |
 | [responsive-1366x768.png](14-cross-screen/responsive-1366x768.png) | light | 1366×768 | 1366x768 responsive shell and full-canvas Connections layout. | Inferred | Sidebar; Perspective of; navigation; canvas controls |
+| [responsive-1366x768-sidebar-collapsed.png](14-cross-screen/responsive-1366x768-sidebar-collapsed.png) | light | 1366×768 | 1366x768 compact sidebar preserves the Connections workspace and active state. | Inferred | Expand sidebar; icon navigation; Perspective of; canvas controls |
 | [responsive-1440x900.png](14-cross-screen/responsive-1440x900.png) | light | 1440×900 | 1440x900 responsive shell and full-canvas Connections layout. | Inferred | Sidebar; Perspective of; navigation; canvas controls |
+| [responsive-1440x900-sidebar-collapsed.png](14-cross-screen/responsive-1440x900-sidebar-collapsed.png) | light | 1440×900 | 1440x900 compact sidebar preserves the Connections workspace and active state. | Inferred | Expand sidebar; icon navigation; Perspective of; canvas controls |
 | [responsive-1500x1000.png](14-cross-screen/responsive-1500x1000.png) | light | 1500×1000 | 1500x1000 responsive shell and full-canvas Connections layout. | Inferred | Sidebar; Perspective of; navigation; canvas controls |
+| [responsive-1500x1000-sidebar-collapsed.png](14-cross-screen/responsive-1500x1000-sidebar-collapsed.png) | light | 1500×1000 | 1500x1000 compact sidebar preserves the Connections workspace and active state. | Inferred | Expand sidebar; icon navigation; Perspective of; canvas controls |
 | [responsive-1920x1080.png](14-cross-screen/responsive-1920x1080.png) | light | 1920×1080 | 1920x1080 responsive shell and full-canvas Connections layout. | Inferred | Sidebar; Perspective of; navigation; canvas controls |
+| [responsive-1920x1080-sidebar-collapsed.png](14-cross-screen/responsive-1920x1080-sidebar-collapsed.png) | light | 1920×1080 | 1920x1080 compact sidebar preserves the Connections workspace and active state. | Inferred | Expand sidebar; icon navigation; Perspective of; canvas controls |
 
 ## Dark Mode
 
@@ -192,6 +204,7 @@ Every image was freshly captured from the real application with an isolated, rep
 | [connections-default.png](15-dark-mode/connections-default.png) | dark | 1500×1000 | Real Dark mode applied live to the full Connections canvas. | Inferred | Theme switch; graph canvas; graph edges; floating controls |
 | [add-relationship-dialog.png](15-dark-mode/add-relationship-dialog.png) | dark | 1500×1000 | Open relationship dialog updated live after switching to Dark mode. | Inferred | Theme switch; active dialog; Cancel |
 | [shell.png](15-dark-mode/shell.png) | dark | 1500×1000 | Dark application shell with global perspective and theme controls. | Inferred | Navigation; Perspective of; theme switch |
+| [sidebar-collapsed.png](15-dark-mode/sidebar-collapsed.png) | dark | 1500×1000 | Dark compact sidebar with icon-only destinations and preserved active state. | Inferred | Expand sidebar; navigation icons; Perspective of |
 | [people.png](15-dark-mode/people.png) | dark | 1500×1000 | Dense 52-person directory in Dark mode with bilingual and long names. | Inferred | Filters; search; sort; Add Person; row actions |
 | [profile-overview.png](15-dark-mode/profile-overview.png) | dark | 1500×1000 | Synthetic long-name profile Overview in Dark mode. | Inferred | Relationship Path; Family Tree; Edit; Compare; tabs |
 | [profile-connections.png](15-dark-mode/profile-connections.png) | dark | 1500×1000 | Profile Connections tab in Dark mode. | Inferred | Overview; Connections; Journal; related-person actions |
@@ -223,7 +236,7 @@ Every image was freshly captured from the real application with an isolated, rep
 | [light-09-first-run-use-existing-route.png](16-reference-comparisons/light-09-first-run-use-existing-route.png) | light | 1500×1000 | Final implementation corresponding to the supplied reference; dynamic fixture data intentionally differs. Source state: 09-first-run/use-existing-route.png. | Reference-matched | Path; Browse; Inspect Data Root; Back |
 | [light-09-first-run-restore-route.png](16-reference-comparisons/light-09-first-run-restore-route.png) | light | 1500×1000 | Final implementation corresponding to the supplied reference; dynamic fixture data intentionally differs. Source state: 09-first-run/restore-route.png. | Reference-matched | Backup source; Browse; Verify Backup; Back |
 | [light-09-first-run-create-route.png](16-reference-comparisons/light-09-first-run-create-route.png) | light | 1500×1000 | Final implementation corresponding to the supplied reference; dynamic fixture data intentionally differs. Source state: 09-first-run/create-route.png. | Reference-matched | Location; name; gender; Review; Back |
-| [light-03-connections-person-selected.png](16-reference-comparisons/light-03-connections-person-selected.png) | light | 1500×1000 | Final implementation corresponding to the supplied reference; dynamic fixture data intentionally differs. Source state: 03-connections/person-selected.png. | Reference-matched | Person node; View Profile; View Family Tree; Compare; Journal; Add Relationship |
+| [light-03-connections-person-selected.png](16-reference-comparisons/light-03-connections-person-selected.png) | light | 1500×1000 | Final implementation corresponding to the supplied reference; dynamic fixture data intentionally differs. Source state: 03-connections/person-selected.png. | Reference-matched | Person node; Show all relationship paths; Profile; Family Tree; Compare; Journal |
 | [light-03-connections-add-relationship-dialog.png](16-reference-comparisons/light-03-connections-add-relationship-dialog.png) | light | 1500×1000 | Final implementation corresponding to the supplied reference; dynamic fixture data intentionally differs. Source state: 03-connections/add-relationship-dialog.png. | Reference-matched | Add Relationship; type controls; Cancel |
 | [light-11-errors-invalid-mutation.png](16-reference-comparisons/light-11-errors-invalid-mutation.png) | light | 1500×1000 | Final implementation corresponding to the supplied reference; dynamic fixture data intentionally differs. Source state: 11-errors/invalid-mutation.png. | Reference-matched | Preview Consequences; Cancel; validation message |
 | [light-01-people-directory-default.png](16-reference-comparisons/light-01-people-directory-default.png) | light | 1500×1000 | Final implementation corresponding to the supplied reference; dynamic fixture data intentionally differs. Source state: 01-people/directory-default.png. | Reference-matched | Add Person; filters; search; sort; Profile; Edit; Delete |

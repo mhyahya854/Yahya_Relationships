@@ -248,6 +248,18 @@ def structured_family_semantic(
             return ("wife", entry.get("en") or "Wife", entry.get("ur") or "بیوی", None, None, None)
         return ("husband", entry.get("en") or "Husband", entry.get("ur") or "شوہر", None, None, None)
 
+    if kind == "affinal":
+        semantic_id = entry.get("affinal_role") or entry.get("relationship_type")
+        if semantic_id:
+            return (
+                semantic_id,
+                entry.get("en") or entry.get("label_en") or semantic_id.replace("_", " ").title(),
+                entry.get("ur") or entry.get("label_ur"),
+                None,
+                None,
+                entry.get("side"),
+            )
+
     if kind == "parent_child":
         role = entry.get("role")
         suffix = (

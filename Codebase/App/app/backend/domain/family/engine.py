@@ -1636,8 +1636,17 @@ UNCLE_AUNT_UR = {
     ("paternal", "female"): "پھوپھی",
 }
 
+# Relationship to a relative's spouse. These are derived from a canonical
+# blood role plus an explicit marriage and are never stored as new facts.
+AFFINAL_SPOUSE_ROLES = {
+    ("paternal_uncle", "female"): ("Paternal uncle's wife", "چچی", "chachi", "paternal"),
+    ("maternal_uncle", "female"): ("Maternal uncle's wife", "ممانی", "mami", "maternal"),
+    ("paternal_aunt", "male"): ("Paternal aunt's husband", "پھوپھا", "phopha", "paternal"),
+    ("maternal_aunt", "male"): ("Maternal aunt's husband", "خالو", "khalu", "maternal"),
+}
 
-def _pair_relationship_entries(data, first, second, people_index):
+
+def _pair_relationship_entries(data, first, second, people_index, *, include_affinal=True):
     """All meaningful relationship terms from `first`'s perspective to
     `second`: explicit primary facts first, then every distinct derived path
     (direct blood roles and cousin paths)."""
@@ -1944,6 +1953,41 @@ def _pair_relationship_entries(data, first, second, people_index):
                         removal=removal,
                         target_gender=gender_of(second),
                     )
+    if include_affinal:
+        target_gender = gender_of(second)
+        for marriage in data["marriages"]:
+            if second not in (marriage["person1"], marriage["person2"]):
+                continue
+            if marriage.get("status") == "divorced":
+                continue
+            spouse_id = (
+                marriage["person2"]
+                if marriage["person1"] == second
+                else marriage["person1"]
+            )
+            if spouse_id == first:
+                continue
+            spouse_entries = _pair_relationship_entries(
+                data, first, spouse_id, people_index, include_affinal=False
+            )
+            for spouse_entry in spouse_entries:
+                spouse_semantic = str(spouse_entry.get("en") or "").casefold().replace(" ", "_")
+                spec = AFFINAL_SPOUSE_ROLES.get((spouse_semantic, target_gender))
+                if not spec:
+                    continue
+                en, ur, affinal_role, side = spec
+                add(
+                    en,
+                    ur,
+                    "direct",
+                    kind="affinal",
+                    semantic_id=affinal_role,
+                    affinal_role=affinal_role,
+                    side=side,
+                    target_gender=target_gender,
+                    via_spouse_id=spouse_id,
+                    derived=True,
+                )
     return entries
 
 
@@ -2138,9 +2182,9 @@ def build_mermaid(data):
     ]
 
     # Invisible routing-only helpers reserve separate relationship lanes while
-    # keeping external links attached to whole couple clusters. This preserves
-    # the compact LR spouse layout in Mermaid 11.4.1. The HTML renderer extends
-    # those paths to the actual person cards after Mermaid finishes.
+    # every visible relationship still terminates on a real person card. This
+    # preserves the compact LR spouse layout without making a union container
+    # or routing helper into a semantic endpoint.
     top_rel_groups = []
     below_rel_groups = []
 
@@ -2206,9 +2250,10 @@ def build_mermaid(data):
     lines.append("")
 
     # --- REAL FAMILY EDGES ------------------------------------------------
-    # Couple cluster -> family junction (vertical parent relationship), then
-    # junction -> each child. A married child is reached through that child's
-    # own couple cluster so individual spouse cards stay side by side.
+    # Both spouse person nodes converge on a separate shared-child junction,
+    # then the junction reaches each child PERSON node. The visual union
+    # container is never a semantic endpoint; ancestry therefore penetrates a
+    # married child's container and lands on the correct individual.
     real_edges = []
 
     def keep_secondary_linked_children_adjacent(children):
@@ -2242,9 +2287,13 @@ def build_mermaid(data):
 
     for key in junction_keys:
         parent_label = _couple_parent_label(key, children_by_couple, rels)
+        first, second = key
         real_edges.append(
-            f'    {_cluster_id(key)} -->|"{mermaid_escape(parent_label)}"| '
+            f'    {_person_node_id(first)} -->|"{mermaid_escape(parent_label)}"| '
             f'{_junction_id(key)}'
+        )
+        real_edges.append(
+            f"    {_person_node_id(second)} --> {_junction_id(key)}"
         )
         # Current-master layout preference only: keep the bridge child nearest
         # the center. Maternal siblings fan toward it from the left; paternal
@@ -2268,11 +2317,7 @@ def build_mermaid(data):
                 reverse=(root_branch == PATERNAL),
             )
         for child in children:
-            target = (
-                _cluster_id(couple_of_person[child])
-                if child in couple_of_person
-                else _person_node_id(child)
-            )
+            target = _person_node_id(child)
             real_edges.append(f"    {_junction_id(key)} --> {target}")
 
     # --- LAYOUT-ONLY HELPERS / PIN EDGES ---------------------------------
@@ -2280,10 +2325,9 @@ def build_mermaid(data):
     # ancestry-to-spouse pin edges are generated at all.
 
     # --- Secondary recorded relationships --------------------------------
-    # Neutral dotted relationship paths use invisible lane helpers. Married
-    # members attach to the couple boundary here so Mermaid keeps spouses in a
-    # compact LR unit; family.html extends the same path to the real person card.
-    # Unmarried members already attach directly to their real person card.
+    # Neutral dotted relationship paths use invisible lane helpers. Every
+    # relationship terminates on its actual person card, including married
+    # people inside a visual union container.
     secondary_edges = []
     for group in top_rel_groups + below_rel_groups:
         helper = _route_node_id(group["id"])
@@ -2302,11 +2346,7 @@ def build_mermaid(data):
                 )
             )
         for index, member in enumerate(members):
-            endpoint = (
-                _cluster_id(couple_of_person[member])
-                if member in couple_of_person
-                else _person_node_id(member)
-            )
+            endpoint = _person_node_id(member)
             link = f'-. "{label}" .-' if index == 0 else "-.-"
             if group in top_rel_groups:
                 secondary_edges.append(f"    {helper} {link} {endpoint}")

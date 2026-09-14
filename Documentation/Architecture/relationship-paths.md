@@ -3,8 +3,8 @@
 ## One sentence
 
 Every relationship label the canonical engine produces can be "proved" by an
-objective graph path returned by the Python backend — and the Relationships
-screen renders that path in React Flow when you press **Show why**.
+objective graph path returned by the Python backend — and the Connections
+screen can render several independently selected paths in React Flow.
 
 ## Data flow
 
@@ -25,7 +25,7 @@ Label layer (kinship/labels.py)
     v
 FastAPI (GET /api/relationships/{p}/{t}/paths)
     |
-    +-> React Flow Relationships screen ("Show why", path focus)
+    +-> React Flow Connections screen (multi-target Relationship Explorer)
     +-> Hermes tool get_relationship_paths
 ```
 
@@ -65,6 +65,16 @@ They are not stored in SQLite, not cached authoritatively, and never mutate
 facts. If a family or general relationship write happens, the next path
 request simply reads the updated database.
 
+## Canonical display ranking
+
+`services/relationship.py` applies one person-independent ranking function to
+pair, list, comparison, and contextual consumers. It presents exactly one calm
+default relationship while preserving every other legitimate entry. The key
+orders canonical family roles before unrelated general labels, then proof
+distance, blood versus affinal character, stored versus derived status when
+semantically comparable, degree/removal, side, and stable semantic identifiers.
+No name-specific output is hard-coded.
+
 ## Path JSON shape
 
 Each path contains a deterministic id (hash of domain, semantic type, node
@@ -73,17 +83,39 @@ applicable, common ancestors, ordered `nodes`, typed `edges`
 (`parent_child`, `marriage`, `sibling_group`, `general` + subtype), and a
 `derived` flag.
 
-## Show why / path focus (frontend)
+## Relationship Explorer and path focus (frontend)
 
-1. The side panel lists Primary and Additional paths from
-   `get_relationship`.
-2. **Show why** calls the path endpoint, finds paths whose label matches the
-   clicked relationship, and enters path focus mode.
-3. React Flow dims everything else, highlights path nodes/edges, adds missing
-   path nodes (including virtual "Shared ancestors" nodes) as a temporary
-   overlay, fits the path into view and shows a template-generated
-   explanation (no LLM).
-4. Esc / *Exit path* restores the previous graph state.
+1. The current Perspective remains the central person. Clicking or searching
+   adds target people without replacing that center.
+2. Each target card shows the ranked default relationship and additional-role
+   count. **Show all relationship paths** is off by default.
+3. Turning it on loads canonical paths on demand. Every path has an independent
+   checkbox, and each target retains its own selection state.
+4. React Flow unions every selected path into one deterministic overlay, adds
+   missing path nodes only once, dims unrelated context, and preserves the
+   relationship type while applying approved maternal/paternal side shading.
+   A shared segment may carry both translucent side treatments; no fabricated
+   third relationship color is introduced.
+5. Removing one target removes only that target's overlay. Esc clears current
+   path emphasis without changing facts, target membership, or the central
+   person.
+
+## Family union routing
+
+Family Tree remains genealogy-only. Married people stay separate person nodes
+inside a visual union container with a direct spouse-to-spouse marriage line.
+Incoming ancestry penetrates that container and ends on the correct individual.
+Both spouses feed a distinct shared-child junction for their children. The
+container and routing junctions are never semantic relationship endpoints.
+
+## Hermes boundary for future model choice
+
+This phase documents architecture only; it does not implement a model chooser.
+Hermes tools consume canonical structured relationship services and must remain
+independent of any future LLM/provider/model selection. A future model layer may
+explain canonical results, but it must not derive, rank, store, or mutate family
+truth. Provider credentials and UI preferences must remain outside the DataRoot
+relationship schema.
 
 ## Key files
 

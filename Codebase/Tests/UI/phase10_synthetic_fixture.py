@@ -18,6 +18,7 @@ from pathlib import Path
 from app.backend.domain.family import engine
 from app.backend.domain.relationships import path_service
 from app.backend.model import load_model, validate_model
+from app.backend.services import relationship
 
 
 REQUIRED_PARENT_KINDS = {
@@ -115,14 +116,28 @@ def main() -> None:
         max_paths=50,
     )["paths"]
     path_sides = {path.get("side") for path in paths}
+    relationship_result = relationship.get_relationship(
+        fixture["multipath"]["from"], fixture["multipath"]["to"]
+    )
+    relationship_entries = (
+        relationship_result["primary"] + relationship_result["additional"]
+    )
+    semantic_roles = {entry["semantic_id"] for entry in relationship_entries}
+    reverse_result = relationship.get_relationship(
+        fixture["multipath"]["to"], fixture["multipath"]["from"]
+    )
 
     assert 45 <= len(model["people"]) <= 70
     assert generations >= 5
     assert len(model["marriages"]) >= 12
     assert len(model["sibling_groups"]) >= 6
     assert REQUIRED_PARENT_KINDS <= parent_kinds
-    assert len(paths) >= 2
+    assert len(paths) >= 4
     assert {"maternal", "paternal"} <= path_sides
+    assert {"paternal_aunt", "maternal_aunt", "chachi", "mami"} <= semantic_roles
+    assert len(relationship_result["primary"]) == 1
+    assert all(entry.get("path_ids") for entry in relationship_entries)
+    assert reverse_result["primary"][0]["label_en"] == "Niece"
 
     print(json.dumps({
         "people": len(model["people"]),
@@ -133,6 +148,8 @@ def main() -> None:
         "sibling_groups": len(model["sibling_groups"]),
         "multipath_paths": len(paths),
         "multipath_sides": sorted(side for side in path_sides if side),
+        "four_role_semantics": sorted(semantic_roles),
+        "reverse_primary": reverse_result["primary"][0]["label_en"],
         "mermaid_bytes": len(mermaid.encode("utf-8")),
     }, ensure_ascii=False))
 

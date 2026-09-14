@@ -1,5 +1,5 @@
 import puppeteer from "puppeteer-core";
-import { mkdirSync, copyFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,9 +37,22 @@ function report(name, ok, detail) {
 async function shot(name) {
   await sleep(700);
   const outPath = `${OUT}/${name}.png`;
-  await page.screenshot({ path: outPath });
   const docPath = `${DOC_SHOTS}/${name}.png`;
-  copyFileSync(outPath, docPath);
+  const bytes = await page.screenshot();
+  for (const target of [outPath, docPath]) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      try {
+        writeFileSync(target, bytes);
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 5) await sleep(attempt * 150);
+      }
+    }
+    if (lastError) throw lastError;
+  }
 }
 
 async function typeInto(selector, text) {
@@ -170,8 +183,9 @@ await page.waitForFunction(
 
 // Click + Add Relationship button
 await openInspectorSection(".inspector-manage");
-await clickText(".relationships-panel button", "Add Relationship");
-await page.waitForSelector(".modal-card", { timeout: 5000 });
+await page.evaluate(() => [...document.querySelectorAll(".inspector-manage button")]
+  .find((button) => button.textContent?.includes("Add Relationship"))?.click());
+await page.waitForSelector(".modal-card", { timeout: 10000 });
 await typeInto(".form-group input[placeholder*='Search']", "Adeel");
 await sleep(300);
 await selectPersonInModal("Adeel");
@@ -206,8 +220,9 @@ await page.waitForFunction(() => !document.querySelector(".modal-card"), { timeo
 
 // 5. Add General Friend Relationship and capture relationship-added
 await openInspectorSection(".inspector-manage");
-await clickText(".relationships-panel button", "Add Relationship");
-await page.waitForSelector(".modal-card", { timeout: 5000 });
+await page.evaluate(() => [...document.querySelectorAll(".inspector-manage button")]
+  .find((button) => button.textContent?.includes("Add Relationship"))?.click());
+await page.waitForSelector(".modal-card", { timeout: 10000 });
 await typeInto(".form-group input[placeholder*='Search']", "Adeel");
 await sleep(300);
 await selectPersonInModal("Adeel");

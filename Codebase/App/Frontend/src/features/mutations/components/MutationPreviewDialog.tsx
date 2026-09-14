@@ -1,4 +1,5 @@
 import React from "react";
+import { useDialogFocus } from "../../../components/ui";
 import type { MutationPreviewResult } from "../../../types";
 
 interface Props {
@@ -14,9 +15,10 @@ export const MutationPreviewDialog: React.FC<Props> = ({
   onCancel,
   loading = false,
 }) => {
+  const dialogRef = useDialogFocus<HTMLDivElement>();
   return (
     <div className="modal-backdrop mutation-preview-dialog">
-      <div className="modal-card">
+      <div ref={dialogRef} className="modal-card" role="dialog" aria-modal="true" aria-label={preview.valid ? "Consequence Preview" : "Invalid Mutation"} tabIndex={-1}>
         <div className="modal-header">
           <h3>
             {preview.valid ? (

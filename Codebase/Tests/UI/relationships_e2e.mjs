@@ -143,9 +143,21 @@ async function main() {
 
     // Helper utilities
     async function clickButtonText(text) {
+      await page.waitForFunction((expected) => [...document.querySelectorAll("button, .btn")].some((button) => {
+        const style = window.getComputedStyle(button);
+        const visible = button.getClientRects().length > 0 && style.visibility !== "hidden" && style.display !== "none";
+        return visible && button.textContent && button.textContent.trim().toLowerCase().includes(expected.toLowerCase());
+      }), { timeout: 10_000 }, text);
       const handle = await page.evaluateHandle((expected) => {
-        const buttons = [...document.querySelectorAll("button, .btn")];
-        return buttons.find((b) => b.textContent && b.textContent.trim().toLowerCase().includes(expected.toLowerCase()));
+        const buttons = [...document.querySelectorAll("button, .btn")].filter((button) => {
+          const style = window.getComputedStyle(button);
+          const visible = button.getClientRects().length > 0 && style.visibility !== "hidden" && style.display !== "none";
+          return visible && button.textContent && button.textContent.trim().toLowerCase().includes(expected.toLowerCase());
+        });
+        return buttons.find((button) => button.closest(".modal-backdrop"))
+          || buttons.find((button) => button.closest(".relationship-target-card.is-active"))
+          || buttons[0]
+          || null;
       }, text);
       const element = handle.asElement();
       if (!element) throw new Error(`Button with text '${text}' not found.`);
@@ -206,9 +218,10 @@ async function main() {
       if (!row) throw new Error(`Person search row for '${name}' not found.`);
       await row.click();
       await sleep(600);
-      const evidence = await page.$(".inspector-evidence");
-      if (evidence && !(await page.$eval(".inspector-evidence", (element) => element.open))) {
-        await page.click(".inspector-evidence summary");
+      const evidenceSelector = ".relationship-target-card.is-active .inspector-evidence";
+      const evidence = await page.$(evidenceSelector);
+      if (evidence && !(await page.$eval(evidenceSelector, (element) => element.open))) {
+        await page.click(`${evidenceSelector} summary`);
         await sleep(250);
       }
     }
@@ -259,53 +272,51 @@ async function main() {
     step(4, "Select another person (Aresha Zubair)");
 
     // 5. Primary relationship appears
-    await page.waitForSelector(".selected-person-panel", { timeout: 6000 });
-    const panelText = await page.$eval(".selected-person-panel", (el) => el.textContent);
+    await page.waitForSelector(".relationship-target-card", { timeout: 6000 });
+    const panelText = await page.$eval(".relationship-target-card", (el) => el.textContent);
     if (!panelText.toLowerCase().includes("cousin")) {
       throw new Error(`Expected cousin relationship in panel, got: ${panelText}`);
     }
     step(5, "Primary relationship appears");
 
     // 6. Additional paths appear for a known multipath case
-    if (!panelText.toLowerCase().includes("additional paths")) {
-      throw new Error("Expected Additional paths section for Aresha Zubair.");
+    if (!panelText.toLowerCase().includes("other relationship")) {
+      throw new Error("Expected the additional-role count for Aresha Zubair.");
     }
-    step(6, "Additional paths appear for multi-path case");
+    step(6, "Additional relationship count appears for multi-path case");
 
-    // 7. Show Why
-    await clickButtonText("Why");
+    // 7. Reveal all canonical relationship paths
+    await page.click(".relationship-path-toggle input");
     await sleep(600);
-    step(7, "Click Show Why");
+    step(7, "Open Show all relationship paths");
 
     // 8. Highlighted proof path visible
-    await page.waitForSelector(".path-focus-panel", { timeout: 6000 });
-    const isFocusBadge = await page.$(".graph-focus-badge");
-    if (!isFocusBadge) throw new Error("Graph focus badge not displayed during path focus.");
+    await page.waitForSelector(".target-path-option", { timeout: 6000 });
+    const highlightedNode = await page.$(".react-flow__node.rf-path-node");
+    if (!highlightedNode) throw new Error("Graph path nodes were not emphasized.");
     step(8, "Highlighted proof path visible");
 
-    // 9. Switch proof path
-    const hasPath2Btn = await page.evaluate(() => {
-      const btns = [...document.querySelectorAll(".path-alternatives button")];
-      return btns.some((b) => b.textContent && b.textContent.includes("Path 2"));
-    });
-    if (hasPath2Btn) {
-      await clickButtonText("Path 2");
+    // 9. Select a second proof path without replacing the first
+    const hasPath2 = await page.$$eval(".target-path-option input", (inputs) => inputs.length > 1);
+    if (hasPath2) {
+      await page.click(".target-path-option:nth-of-type(2) input");
       await sleep(400);
     }
-    step(9, "Switch proof path to alternative path");
+    step(9, "Select an additional proof path simultaneously");
 
-    // 10. Different objective path highlighted
-    const proofHeader = await page.$eval(".path-focus-panel .rel-section-title", (el) => el.textContent);
-    step(10, `Different objective path highlighted (${proofHeader})`);
+    // 10. Multiple objective paths remain independently selected
+    const selectedProofs = await page.$$eval(".target-path-option input:checked", (inputs) => inputs.length);
+    if (hasPath2 && selectedProofs < 2) throw new Error("Second proof path replaced the first selection.");
+    step(10, `${selectedProofs} objective path selection(s) highlighted`);
 
-    // 11. Exit Show Why
-    await clickButtonText("Exit path");
+    // 11. Close all-path mode
+    await page.click(".relationship-path-toggle input");
     await sleep(500);
-    step(11, "Exit Show Why");
+    step(11, "Close Show all relationship paths");
 
     // 12. Original graph state restored
-    const badgeAfterExit = await page.$(".graph-focus-badge");
-    if (badgeAfterExit) throw new Error("Focus badge did not clear after exiting path mode.");
+    const highlightedAfterExit = await page.$(".react-flow__node.rf-path-node");
+    if (highlightedAfterExit) throw new Error("Path emphasis did not clear after closing all-path mode.");
     step(12, "Original graph state cleanly restored");
 
     // 13. Expand parents
@@ -342,7 +353,7 @@ async function main() {
     step(16, "Expand general relationships");
 
     // 17. Perspective switch from node
-    await clickButtonText("View from this person");
+    await clickButtonText("Make central person");
     await sleep(800);
     step(17, "Perspective switch from node");
 
@@ -437,14 +448,17 @@ async function main() {
     step(24, "Graph refreshes after adding relationship");
 
     // 25. Edit it
+    await openInspectorDisclosure(".relationship-target-card.is-active .inspector-evidence");
     const editBtnHandle = await page.evaluateHandle(() => {
-      const btns = [...document.querySelectorAll(".panel-rel-row button")];
-      return btns.find((b) => b.textContent && b.textContent.includes("Edit"));
+      const rows = [...document.querySelectorAll(".relationship-target-card.is-active .target-entry-row")];
+      const row = rows.find((candidate) => candidate.textContent?.includes("Directly stored fact"));
+      return row ? [...row.querySelectorAll("button")].find((button) => button.textContent?.includes("Edit")) : null;
     });
     const editBtn = editBtnHandle.asElement();
     if (editBtn) {
       await editBtn.click();
       await sleep(500);
+      await page.waitForSelector(".edit-relationship-dialog .modal-card", { timeout: 5000 });
 
       // Verify Stored Explicit Fact badge
       const isExplicit = await page.evaluate(() => {
@@ -474,9 +488,11 @@ async function main() {
       step(25, "Edit general relationship fields and save fact");
 
       // Re-open edit dialog to test delete
+      await openInspectorDisclosure(".relationship-target-card.is-active .inspector-evidence");
       const editBtnHandle2 = await page.evaluateHandle(() => {
-        const btns = [...document.querySelectorAll(".panel-rel-row button")];
-        return btns.find((b) => b.textContent && b.textContent.includes("Edit"));
+        const rows = [...document.querySelectorAll(".relationship-target-card.is-active .target-entry-row")];
+        const row = rows.find((candidate) => candidate.textContent?.includes("Directly stored fact"));
+        return row ? [...row.querySelectorAll("button")].find((button) => button.textContent?.includes("Edit")) : null;
       });
       const editBtn2 = editBtnHandle2.asElement();
       if (editBtn2) {
@@ -592,13 +608,14 @@ async function main() {
 
     // 31. Marriage fact editing and undo
     await searchPerson("Abrar Hussain");
-    await clickButtonText("View from this person");
+    await clickButtonText("Make central person");
     await sleep(800);
     await searchPerson("Shaheen Abrar");
     await sleep(600);
+    await openInspectorDisclosure(".relationship-target-card.is-active .inspector-evidence");
 
     const editWifeBtn = await page.evaluateHandle(() => {
-      const rows = [...document.querySelectorAll(".panel-rel-row")];
+      const rows = [...document.querySelectorAll(".relationship-target-card.is-active .target-entry-row")];
       const wifeRow = rows.find((r) => r.textContent && r.textContent.includes("Wife"));
       return wifeRow ? [...wifeRow.querySelectorAll("button")].find((b) => b.textContent.includes("Edit")) : null;
     });
@@ -647,9 +664,10 @@ async function main() {
     await sleep(800);
     await searchPerson("Maham Mansoor");
     await sleep(600);
+    await openInspectorDisclosure(".relationship-target-card.is-active .inspector-evidence");
 
     const editSisterBtn = await page.evaluateHandle(() => {
-      const rows = [...document.querySelectorAll(".panel-rel-row")];
+      const rows = [...document.querySelectorAll(".relationship-target-card.is-active .target-entry-row")];
       const sisterRow = rows.find((r) => r.textContent && r.textContent.includes("Sister"));
       return sisterRow ? [...sisterRow.querySelectorAll("button")].find((b) => b.textContent.includes("Edit")) : null;
     });
@@ -696,7 +714,7 @@ async function main() {
       const isCardOpen = await page.$(".modal-card");
       if (!isCardOpen) {
         const reopenBtn = await page.evaluateHandle(() => {
-          const rows = [...document.querySelectorAll(".panel-rel-row")];
+          const rows = [...document.querySelectorAll(".target-entry-row")];
           const sisterRow = rows.find((r) => r.textContent && r.textContent.includes("Sister"));
           return sisterRow ? [...sisterRow.querySelectorAll("button")].find((b) => b.textContent.includes("Edit")) : null;
         });
@@ -738,7 +756,7 @@ async function main() {
     await sleep(600);
 
     const sourceBtnHandle = await page.evaluateHandle(() => {
-      const rows = [...document.querySelectorAll(".panel-rel-row")];
+      const rows = [...document.querySelectorAll(".target-entry-row")];
       const cousinRow = rows.find((r) => r.textContent && r.textContent.toLowerCase().includes("cousin"));
       return cousinRow ? [...cousinRow.querySelectorAll("button")].find((b) => b.textContent.includes("Source")) : null;
     });
@@ -798,7 +816,7 @@ async function main() {
     await sleep(600);
 
     const editDirBtn = await page.evaluateHandle(() => {
-      const rows = [...document.querySelectorAll(".panel-rel-row")];
+      const rows = [...document.querySelectorAll(".target-entry-row")];
       const dirRow = rows.find((r) => r.textContent && r.textContent.includes("Mentor"));
       return dirRow ? [...dirRow.querySelectorAll("button")].find((b) => b.textContent.includes("Edit")) : null;
     });
@@ -824,7 +842,7 @@ async function main() {
       await sleep(400);
 
       // Now switch perspective to Abrar Hussain (the reverse perspective / target person)
-      await clickButtonText("View from this person");
+      await clickButtonText("Make central person");
       await sleep(800);
 
       // Now select Mohammad Yahya Hussain
@@ -832,7 +850,7 @@ async function main() {
       await sleep(600);
 
       const editRevBtn = await page.evaluateHandle(() => {
-        const rows = [...document.querySelectorAll(".panel-rel-row")];
+        const rows = [...document.querySelectorAll(".target-entry-row")];
         const dirRow = rows.find((r) => r.textContent && (r.textContent.includes("Mentee") || r.textContent.includes("Mentor")));
         return dirRow ? [...dirRow.querySelectorAll("button")].find((b) => b.textContent.includes("Edit")) : null;
       });
@@ -916,14 +934,15 @@ async function main() {
     await sleep(600);
 
     // Make perspective Arsalan Israr
-    await clickButtonText("View from this person");
+    await clickButtonText("Make central person");
     await sleep(800);
     await searchPerson("Falak Naz");
     await sleep(600);
+    await openInspectorDisclosure(".relationship-target-card.is-active .inspector-evidence");
 
     // Open marriage edit dialog
     const editMarriageBtn = await page.evaluateHandle(() => {
-      const rows = [...document.querySelectorAll(".panel-rel-row")];
+      const rows = [...document.querySelectorAll(".relationship-target-card.is-active .target-entry-row")];
       const mRow = rows.find((r) => r.textContent && r.textContent.includes("Wife"));
       return mRow ? [...mRow.querySelectorAll("button")].find((b) => b.textContent.includes("Edit")) : null;
     });
@@ -988,9 +1007,10 @@ async function main() {
     await sleep(400);
     await searchPerson("Abrar Hussain");
     await sleep(600);
+    await openInspectorDisclosure(".relationship-target-card.is-active .inspector-evidence");
 
     const editGenNotesBtn = await page.evaluateHandle(() => {
-      const rows = [...document.querySelectorAll(".panel-rel-row")];
+      const rows = [...document.querySelectorAll(".relationship-target-card.is-active .target-entry-row")];
       const dirRow = rows.find((r) => r.textContent && r.textContent.includes("Mentor"));
       return dirRow ? [...dirRow.querySelectorAll("button")].find((b) => b.textContent.includes("Edit")) : null;
     });

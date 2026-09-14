@@ -21,6 +21,19 @@ interface Props {
   initialFocusId?: string | null;
 }
 
+function fittedFamilyZoom(container: HTMLElement): number | null {
+  const svg = container.querySelector<SVGSVGElement>("svg");
+  const wrap = container.closest<HTMLElement>(".family-canvas-wrap");
+  if (!svg || !wrap) return null;
+  const viewBox = svg.viewBox?.baseVal;
+  const naturalWidth = viewBox?.width || svg.width?.baseVal?.value || svg.getBoundingClientRect().width;
+  const naturalHeight = viewBox?.height || svg.height?.baseVal?.value || svg.getBoundingClientRect().height;
+  if (!naturalWidth || !naturalHeight) return null;
+  const scaleX = (wrap.clientWidth - 56) / naturalWidth;
+  const scaleY = (wrap.clientHeight - 72) / naturalHeight;
+  return +Math.min(1, Math.max(0.22, Math.min(scaleX, scaleY))).toFixed(2);
+}
+
 export function FamilyView({
   onNavigateToProfile,
   onNavigateToRelationships,
@@ -177,7 +190,7 @@ export function FamilyView({
     }
   };
 
-  function highlightNode(container: HTMLElement, personId: string) {
+  function highlightNode(container: HTMLElement, personId: string, center = true) {
     container.querySelectorAll(".family-highlight").forEach((node) => {
       node.classList.remove("family-highlight");
     });
@@ -186,6 +199,7 @@ export function FamilyView({
     );
     if (!node) return;
     node.classList.add("family-highlight");
+    if (!center) return;
     const viewport = container.closest<HTMLElement>(".family-canvas-wrap");
     if (!viewport) return;
     const nodeBounds = node.getBoundingClientRect();
@@ -312,12 +326,15 @@ export function FamilyView({
           });
         });
 
-        // Center current focus node after diagram render
-        if (selected) {
-          highlightNode(container, selected.id);
-        } else if (currentFocusId) {
-          highlightNode(container, currentFocusId);
-        }
+        // Open on a readable, relationship-focused neighborhood like the
+        // approved graph composition. The explicit Fit control remains the
+        // complete-tree overview for large families.
+        const fitted = fittedFamilyZoom(container);
+        setZoom(Math.max(0.5, fitted ?? 0.5));
+        window.setTimeout(() => {
+          if (selected) highlightNode(container, selected.id);
+          else if (currentFocusId) highlightNode(container, currentFocusId);
+        }, 80);
       })
       .catch((err: unknown) => setError(err))
       .finally(() => {
@@ -337,18 +354,10 @@ export function FamilyView({
 
   const handleFit = () => {
     if (!diagramRef.current) return;
-    const svg = diagramRef.current.querySelector("svg");
-    const wrap = diagramRef.current.closest(".family-canvas-wrap");
-    if (svg && wrap) {
-      const wrapRect = wrap.getBoundingClientRect();
-      const svgRect = svg.getBoundingClientRect();
-      const scaleX = (wrapRect.width - 48) / (svg.clientWidth || svgRect.width);
-      const scaleY = (wrapRect.height - 48) / (svg.clientHeight || svgRect.height);
-      const newZoom = Math.min(1.0, Math.max(0.35, Math.min(scaleX, scaleY)));
-      setZoom(+newZoom.toFixed(2));
-    } else {
-      setZoom(1);
-    }
+    const fitted = fittedFamilyZoom(diagramRef.current);
+    setZoom(fitted ?? 1);
+    const wrap = diagramRef.current.closest<HTMLElement>(".family-canvas-wrap");
+    window.setTimeout(() => wrap?.scrollTo({ left: 0, top: 0, behavior: "smooth" }), 40);
   };
 
   const handleCenterFocus = () => {

@@ -169,7 +169,19 @@ async function search(selector, value) {
 }
 async function screenshot(name) {
   await sleep(300);
-  await page.screenshot({ path: join(SHOTS, name) });
+  const bytes = await page.screenshot();
+  const target = join(SHOTS, name);
+  let lastError = null;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      writeFileSync(target, bytes);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 5) await sleep(attempt * 150);
+    }
+  }
+  throw lastError;
 }
 async function nav(label) {
   await clickText(".nav", label);
@@ -236,7 +248,7 @@ try {
   await page.waitForFunction(() => document.querySelector(".modal")?.textContent?.includes("Amina Root A"));
   step("People opens the canonical profile target");
   await clickText(".modal", "Show Relationship Path");
-  await page.waitForFunction(() => document.querySelector(".selected-person-panel")?.textContent?.includes("Amina Root A"), { timeout: 20_000 });
+  await page.waitForFunction(() => document.querySelector(".relationship-target-card")?.textContent?.includes("Amina Root A"), { timeout: 20_000 });
   step("Profile to Relationships targets the same canonical person");
   await clickText(".navigation-return", "Return to People");
   await page.waitForFunction(() => document.querySelector(".modal")?.textContent?.includes("Amina Root A"));
@@ -252,17 +264,19 @@ try {
   if (await page.$(".modal")) throw new Error("Primary People navigation reopened a stale contextual profile");
   await nav("Relationships");
   await search(".relationships-search-wrap input", "Farah Root A");
-  await page.waitForSelector(".person-search-row", { visible: true });
-  await page.click(".person-search-row");
-  await page.waitForFunction(() => document.querySelector(".selected-person-panel")?.textContent?.includes("Farah Root A"));
-  await clickText(".selected-person-panel", "View Profile");
+  await page.waitForFunction((name) => [...document.querySelectorAll(".relationships-search-wrap .person-search-row")]
+    .some((row) => row.textContent?.includes(name)), { timeout: 20_000 }, "Farah Root A");
+  await page.evaluate((name) => [...document.querySelectorAll(".relationships-search-wrap .person-search-row")]
+    .find((row) => row.textContent?.includes(name))?.click(), "Farah Root A");
+  await page.waitForFunction(() => document.querySelector(".relationship-target-card")?.textContent?.includes("Farah Root A"));
+  await clickText(".relationship-target-card", "View Profile");
   await page.waitForFunction(() => document.querySelector(".modal")?.textContent?.includes("Farah Root A"));
   await clickText(".modal", "Return to Relationships");
-  await page.waitForFunction(() => document.querySelector(".selected-person-panel")?.textContent?.includes("Farah Root A"));
-  await clickText(".selected-person-panel", "View Family");
+  await page.waitForFunction(() => document.querySelector(".relationship-target-card")?.textContent?.includes("Farah Root A"));
+  await clickText(".relationship-target-card", "View Family");
   await page.waitForFunction(() => document.querySelector(".family-side")?.textContent?.includes("Farah Root A"));
   await clickText(".navigation-return", "Return to Relationships");
-  await page.waitForFunction(() => document.querySelector(".selected-person-panel")?.textContent?.includes("Farah Root A"));
+  await page.waitForFunction(() => document.querySelector(".relationship-target-card")?.textContent?.includes("Farah Root A"));
   step("Relationships to Profile/Family and return preserves the exact target without stale People state");
 
   await nav("Family");
@@ -282,7 +296,7 @@ try {
   if (!clickedFarah) throw new Error("Farah canonical Family node not found");
   await page.waitForFunction(() => document.querySelector(".family-side")?.textContent?.includes("Farah Root A"));
   await clickText(".family-side", "View in Relationships");
-  await page.waitForFunction(() => document.querySelector(".relationships-head")?.textContent?.includes("Amina Root A") && document.querySelector(".selected-person-panel")?.textContent?.includes("Farah Root A"), { timeout: 20_000 });
+  await page.waitForFunction(() => document.querySelector(".relationships-head")?.textContent?.includes("Amina Root A") && document.querySelector(".relationship-target-card")?.textContent?.includes("Farah Root A"), { timeout: 20_000 });
   step("Family to Relationships awaits the exact Amina-to-Farah handoff");
   await screenshot("navigation-family-to-relationships.png");
   await clickText(".navigation-return", "Return to Family");
@@ -314,7 +328,7 @@ try {
       [...(article?.querySelectorAll("button") ?? [])].find((button) => button.textContent?.includes("View in Relationships"))?.click();
     }
   });
-  await page.waitForFunction(() => document.querySelector(".selected-person-panel")?.textContent?.includes("Farah Root A"), { timeout: 20_000 });
+  await page.waitForFunction(() => document.querySelector(".relationship-target-card")?.textContent?.includes("Farah Root A"), { timeout: 20_000 });
   step("Rapid contextual handoffs deterministically select the last canonical target");
   await clickText(".navigation-return", "Return to Search");
 

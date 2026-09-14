@@ -298,10 +298,21 @@ try {
 
   await clickText(".nav", "Relationships");
   await page.waitForSelector(".relationships-search-wrap input", { timeout: 15_000 });
+  const targetIsCentral = await page.$eval(
+    ".perspective-current strong",
+    (node, expected) => node.textContent?.includes(expected),
+    personName,
+  );
+  if (targetIsCentral) {
+    await page.click(".perspective-current");
+    await page.waitForSelector(".perspective-dropdown");
+    await clickText(".perspective-dropdown", "Aresha Zubair");
+    await page.waitForFunction(() => document.querySelector(".perspective-current strong")?.textContent?.includes("Aresha Zubair"));
+  }
   await setValue(".relationships-search-wrap input", personName);
   await page.waitForSelector(".person-search-row", { timeout: 10_000 });
   await page.click(".person-search-row");
-  await page.waitForSelector(".selected-person-panel");
+  await page.waitForSelector(".relationship-target-card");
   await clickText(".relationships-panel .inspector-primary-actions", "Journal");
   await page.waitForFunction((expected) => document.querySelector(".journal-view")?.textContent?.includes(expected), {}, "Roman Urdu");
   step("Relationships opened the same canonical Journal content");

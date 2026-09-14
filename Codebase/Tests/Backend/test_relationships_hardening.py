@@ -272,7 +272,8 @@ def test_same_type_opposite_directional_relationships_coexist(isolated):
 
     # Query from perspective of A
     rel_a = relationship.get_relationship(p_a, p_b)
-    entries_a = rel_a["primary"]
+    assert len(rel_a["primary"]) == 1
+    entries_a = rel_a["primary"] + rel_a["additional"]
     assert len(entries_a) == 2
     # One entry where A is Mentor, one where A is Mentee
     labels_a = {e["label_en"] for e in entries_a}
