@@ -21,6 +21,8 @@ type PositionedNode = Node & {
     region?: ConnectionRegion;
     /** A route-only node can request a deliberately stable lane. */
     preferredPosition?: { x: number; y: number };
+    /** Active routes update their own lane without disturbing direct context. */
+    forcePreferredPosition?: boolean;
   };
 };
 
@@ -28,58 +30,117 @@ const SECTOR_SLOTS: Record<Exclude<ConnectionRegion, "origin">, Array<{ x: numbe
   // These are card top-left coordinates around the stable FROM card at 0,0.
   // Their placement is deliberately radial/contextual, not a generational rank.
   maternal: [
-    { x: -500, y: -300 }, { x: -745, y: -190 }, { x: -455, y: -95 },
-    { x: -730, y: 5 }, { x: -470, y: 105 },
+    { x: -330, y: -205 }, { x: -470, y: -115 }, { x: -345, y: -65 },
+    { x: -445, y: 15 }, { x: -330, y: 82 },
   ],
   paternal: [
-    { x: 500, y: -300 }, { x: 745, y: -190 }, { x: 455, y: -95 },
-    { x: 730, y: 5 }, { x: 470, y: 105 },
+    { x: 330, y: -205 }, { x: 470, y: -115 }, { x: 345, y: -65 },
+    { x: 445, y: 15 }, { x: 330, y: 82 },
   ],
   siblings: [
-    { x: -410, y: 30 }, { x: -525, y: 175 }, { x: -355, y: 220 },
-    { x: -600, y: 315 }, { x: -340, y: 365 },
+    { x: -285, y: 12 }, { x: -390, y: 128 }, { x: -250, y: 168 },
+    { x: -455, y: 250 }, { x: -235, y: 280 },
   ],
   partner: [
-    { x: 345, y: 30 }, { x: 475, y: 175 }, { x: 305, y: 220 },
+    { x: 265, y: 12 }, { x: 375, y: 128 }, { x: 225, y: 168 },
   ],
   children: [
-    { x: -155, y: 295 }, { x: 120, y: 295 }, { x: -285, y: 430 },
-    { x: -10, y: 445 }, { x: 265, y: 430 },
+    { x: -135, y: 225 }, { x: 105, y: 225 }, { x: -245, y: 335 },
+    { x: -10, y: 350 }, { x: 225, y: 335 },
   ],
   // External links sit below and around FROM; they do not form a boxed branch.
   external: [
-    { x: -650, y: 350 }, { x: -405, y: 475 }, { x: -135, y: 555 },
-    { x: 145, y: 555 }, { x: 415, y: 475 }, { x: 660, y: 350 },
-    { x: -670, y: 585 }, { x: 665, y: 585 }, { x: -395, y: 680 },
-    { x: 390, y: 680 },
+    { x: -420, y: 230 }, { x: -250, y: 305 }, { x: -72, y: 350 },
+    { x: 115, y: 350 }, { x: 290, y: 305 }, { x: 440, y: 230 },
+    { x: -355, y: 420 }, { x: 365, y: 420 }, { x: -120, y: 472 },
+    { x: 155, y: 472 },
   ],
   family: [
-    { x: -240, y: -165 }, { x: 240, y: -165 }, { x: -620, y: 225 },
-    { x: 620, y: 225 }, { x: -115, y: 565 }, { x: 150, y: 565 },
+    { x: -185, y: -135 }, { x: 185, y: -135 }, { x: -390, y: 172 },
+    { x: 390, y: 172 }, { x: -105, y: 400 }, { x: 135, y: 400 },
   ],
   // A small neutral path lane is only used for route-only intermediates. The
   // normal direct-context positions are retained while TO changes.
   path: [
-    { x: -165, y: -405 }, { x: 150, y: -405 }, { x: -190, y: 620 },
-    { x: 175, y: 620 }, { x: -475, y: 575 }, { x: 455, y: 575 },
+    { x: -135, y: -310 }, { x: 125, y: -310 }, { x: -150, y: 455 },
+    { x: 140, y: 455 }, { x: -365, y: 405 }, { x: 345, y: 405 },
   ],
   target: [
-    { x: -520, y: 650 }, { x: 520, y: 650 }, { x: 0, y: 780 },
-    { x: 0, y: -470 }, { x: -650, y: 260 }, { x: 650, y: 260 },
+    { x: -360, y: 430 }, { x: 360, y: 430 }, { x: 0, y: 530 },
+    { x: 0, y: -360 }, { x: -460, y: 210 }, { x: 460, y: 210 },
   ],
 };
 
-function slotFor(region: ConnectionRegion, index: number): { x: number; y: number } {
+// A six-person world should not inherit the footprint of a busy owner view.
+// These slots preserve the same semantic compass points as SECTOR_SLOTS, but
+// keep a small perspective conversational and wholly inside the canvas.
+const COMPACT_SECTOR_SLOTS: Record<Exclude<ConnectionRegion, "origin">, Array<{ x: number; y: number }>> = {
+  maternal: [
+    { x: -250, y: -160 }, { x: -395, y: -45 }, { x: -250, y: -15 },
+    { x: -355, y: 55 }, { x: -245, y: 115 },
+  ],
+  paternal: [
+    { x: 250, y: -160 }, { x: 395, y: -45 }, { x: 250, y: -15 },
+    { x: 355, y: 55 }, { x: 245, y: 115 },
+  ],
+  siblings: [
+    { x: -275, y: 85 }, { x: -430, y: 175 }, { x: -225, y: 235 },
+    { x: -395, y: 285 }, { x: -210, y: 335 },
+  ],
+  partner: [
+    { x: 275, y: 85 }, { x: 410, y: 175 }, { x: 220, y: 235 },
+  ],
+  children: [
+    { x: -115, y: 215 }, { x: 135, y: 215 }, { x: -245, y: 305 },
+    { x: 10, y: 330 }, { x: 240, y: 305 },
+  ],
+  external: [
+    { x: -360, y: 245 }, { x: -220, y: 350 }, { x: 25, y: 385 },
+    { x: 265, y: 350 }, { x: 390, y: 245 }, { x: -385, y: 390 },
+  ],
+  family: [
+    { x: -200, y: -100 }, { x: 200, y: -100 }, { x: -340, y: 160 },
+    { x: 340, y: 160 }, { x: -80, y: 365 }, { x: 160, y: 365 },
+  ],
+  path: [
+    { x: -105, y: -245 }, { x: 105, y: -245 }, { x: -110, y: 350 },
+    { x: 110, y: 350 }, { x: -300, y: 315 }, { x: 285, y: 315 },
+  ],
+  target: [
+    { x: -260, y: 300 }, { x: 260, y: 300 }, { x: 0, y: 385 },
+    { x: 0, y: -285 }, { x: -365, y: 165 }, { x: 365, y: 165 },
+  ],
+};
+
+function layoutScaleFor(nodeCount: number): number {
+  // Small direct worlds should feel close and conversational. Dense worlds get
+  // just enough room to avoid overlap, rather than inheriting a huge fixed
+  // canvas designed for the largest fixture.
+  if (nodeCount <= 3) return 0.5;
+  if (nodeCount <= 6) return 0.6;
+  if (nodeCount <= 9) return 0.82;
+  if (nodeCount <= 15) return 0.91;
+  return 1;
+}
+
+function slotFor(
+  region: ConnectionRegion,
+  index: number,
+  scale: number,
+  slotsByRegion: typeof SECTOR_SLOTS = SECTOR_SLOTS,
+): { x: number; y: number } {
   if (region === "origin") return { x: 0, y: 0 };
-  const slots = SECTOR_SLOTS[region];
-  if (index < slots.length) return slots[index];
+  const slots = slotsByRegion[region];
+  if (index < slots.length) {
+    return { x: slots[index].x * scale, y: slots[index].y * scale };
+  }
   // Overflow stays in the same contextual sector rather than turning into a
   // graph-wide generation row. The modest offset keeps its edges readable.
   const base = slots[index % slots.length];
   const ring = Math.floor(index / slots.length);
   return {
-    x: base.x + (base.x < 0 ? -1 : 1) * ring * 130,
-    y: base.y + ring * 115,
+    x: (base.x + (base.x < 0 ? -1 : 1) * ring * 104) * scale,
+    y: (base.y + ring * 92) * scale,
   };
 }
 
@@ -106,9 +167,28 @@ export function layoutConnectionGraph(
   centerId?: string,
   previousPositions?: ReadonlyMap<string, { x: number; y: number }>,
 ): Node[] {
-  const occupied: Array<{ x: number; y: number }> = [];
+  // Stable direct-context cards must reserve their space before route-only
+  // nodes are packed. Sorting route nodes alphabetically first used to let an
+  // intermediate temporarily claim the same slot as a later direct card.
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const forcedIds = new Set(
+    nodes
+      .filter((node) => (node as PositionedNode).data.forcePreferredPosition)
+      .map((node) => node.id),
+  );
+  const occupied: Array<{ x: number; y: number }> = previousPositions
+    ? [...previousPositions.entries()]
+      .filter(([id]) => nodeIds.has(id) && !forcedIds.has(id))
+      .map(([, position]) => position)
+    : [];
   const regionCounts = new Map<ConnectionRegion, number>();
   const sorted = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
+  const nodeCount = Math.max(0, nodes.length - (centerId ? 1 : 0));
+  const usesCompactSlots = nodeCount <= 6;
+  const slotsByRegion = usesCompactSlots ? COMPACT_SECTOR_SLOTS : SECTOR_SLOTS;
+  const scale = usesCompactSlots
+    ? (nodeCount <= 3 ? 0.72 : 1)
+    : layoutScaleFor(nodeCount);
 
   return sorted.map((node) => {
     const typed = node as PositionedNode;
@@ -117,16 +197,52 @@ export function layoutConnectionGraph(
       : typed.data.region ?? "family";
     const existing = previousPositions?.get(node.id);
     const preferred = typed.data.preferredPosition;
+    if (preferred && typed.data.forcePreferredPosition) {
+      // Route-only cards can update as the user selects a different canonical
+      // path. Their direct-context neighbours retain their stored positions.
+      const routeOffsets = [{ x: 0, y: 0 }];
+      for (let ring = 1; ring <= 3; ring += 1) {
+        for (let row = -ring; row <= ring; row += 1) {
+          for (let column = -ring; column <= ring; column += 1) {
+            if (Math.max(Math.abs(row), Math.abs(column)) !== ring) continue;
+            routeOffsets.push({ x: column * 132, y: row * 108 });
+          }
+        }
+      }
+      // Preserve the intended route lane before trying a wholesale new
+      // quadrant. Side-by-side openings and then lower openings keep a long
+      // route in the visible immediate-context envelope; the previous
+      // row-major search chose the upper-left corner first, which could push
+      // a perfectly valid intermediate card off the top of the canvas.
+      routeOffsets.sort((left, right) => {
+        const distance = left.x ** 2 + left.y ** 2 - (right.x ** 2 + right.y ** 2);
+        if (distance) return distance;
+        const vertical = Math.abs(left.y) - Math.abs(right.y);
+        if (vertical) return vertical;
+        if (left.y !== right.y) return right.y - left.y;
+        const horizontal = Math.abs(left.x) - Math.abs(right.x);
+        if (horizontal) return horizontal;
+        return left.x - right.x;
+      });
+      const clampRoutePoint = (point: { x: number; y: number }) => ({
+        x: Math.max(-560, Math.min(560, point.x)),
+        y: Math.max(-220, Math.min(590, point.y)),
+      });
+      const position = routeOffsets
+        .map((offset) => clampRoutePoint({ x: preferred.x + offset.x, y: preferred.y + offset.y }))
+        .find((candidate) => !overlaps(candidate, occupied)) ?? clampRoutePoint(preferred);
+      occupied.push(position);
+      return { ...node, position };
+    }
     if (existing) {
-      occupied.push(existing);
       return { ...node, position: existing };
     }
 
     let index = regionCounts.get(region) ?? 0;
-    let position = preferred ?? slotFor(region, index);
+    let position = preferred ?? slotFor(region, index, scale, slotsByRegion);
     while (overlaps(position, occupied)) {
       index += 1;
-      position = slotFor(region, index);
+      position = slotFor(region, index, scale, slotsByRegion);
     }
     regionCounts.set(region, index + 1);
     occupied.push(position);

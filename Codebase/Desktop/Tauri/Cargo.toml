@@ -1,8 +1,8 @@
 [package]
 name = "people-relationships"
 version = "0.5.0"
-description = "Local-first personal relationship brain"
-authors = ["People Relationships"]
+description = "Mosaic — Your private people, memories & connections archive."
+authors = ["Mosaic"]
 edition = "2021"
 
 [lib]

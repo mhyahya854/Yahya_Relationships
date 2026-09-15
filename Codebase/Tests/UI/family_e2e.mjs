@@ -5,11 +5,14 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { spawn, execSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createServer } from "node:net";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../..");
 const REPO_ROOT = resolve(ROOT, "..");
-const DOC_SHOTS = resolve(REPO_ROOT, "Documentation/UI-Screenshots");
+const DOC_SHOTS = process.env.FAMILY_E2E_SCREENSHOT_DIR
+  ? resolve(process.env.FAMILY_E2E_SCREENSHOT_DIR)
+  : resolve(REPO_ROOT, "Documentation/UI-Screenshots");
 mkdirSync(DOC_SHOTS, { recursive: true });
 
 const EDGE = existsSync("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe")
@@ -64,6 +67,30 @@ const env = {
   PEOPLE_RELATIONSHIPS_ROOT: tempRoot,
 };
 
+function reserveLoopbackPort() {
+  return new Promise((resolvePort, rejectPort) => {
+    const server = createServer();
+    server.once("error", rejectPort);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close(() => rejectPort(new Error("Could not reserve a loopback test port.")));
+        return;
+      }
+      server.close((error) => error ? rejectPort(error) : resolvePort(address.port));
+    });
+  });
+}
+
+// Family regression must keep its copied Data Root private even if a developer
+// already has the application running on the conventional development ports.
+const backendPort = await reserveLoopbackPort();
+const vitePort = await reserveLoopbackPort();
+const apiOrigin = `http://127.0.0.1:${backendPort}`;
+const webOrigin = `http://127.0.0.1:${vitePort}`;
+env.PR_BACKEND_PORT = String(backendPort);
+env.VITE_BACKEND_URL = apiOrigin;
+
 console.log("[E2E] Spawning isolated FastAPI backend...");
 const backend = spawn(python, ["-m", "app.backend.main"], {
   cwd: ROOT,
@@ -81,7 +108,7 @@ backend.stderr.on("data", (d) => {
 console.log("[E2E] Spawning Vite frontend...");
 const vite = spawn(
   process.platform === "win32" ? "npm.cmd" : "npm",
-  ["--prefix", "App/Frontend", "run", "dev"],
+  ["--prefix", "App/Frontend", "run", "dev", "--", "--host", "127.0.0.1", "--port", String(vitePort), "--strictPort"],
   {
     cwd: ROOT,
     stdio: "pipe",
@@ -116,11 +143,11 @@ async function main() {
 
   try {
     console.log("[E2E] Waiting for backend readiness...");
-    const bOk = await waitForUrl("http://127.0.0.1:8765/api/health", 25000);
+    const bOk = await waitForUrl(`${apiOrigin}/api/health`, 25000);
     if (!bOk) throw new Error("Backend failed to start in sandbox.");
 
     console.log("[E2E] Waiting for frontend readiness...");
-    const fOk = await waitForUrl("http://localhost:1420", 25000);
+    const fOk = await waitForUrl(webOrigin, 25000);
     if (!fOk) throw new Error("Vite frontend failed to start.");
 
     console.log("[E2E] Launching browser...");
@@ -206,7 +233,7 @@ async function main() {
       await sleep(300);
     }
 
-    await page.goto("http://localhost:1420", { waitUntil: "networkidle2" });
+    await page.goto(webOrigin, { waitUntil: "networkidle2" });
     await sleep(1000);
 
     // -----------------------------------------------------------------------
@@ -549,15 +576,13 @@ async function main() {
     // 25. Invalid/error path shows safe UI
     // -----------------------------------------------------------------------
     // Select an invalid focus by triggering reload with corrupted query or verify empty
-    const safeErrorUi = await page.evaluate(async () => {
-      try {
-        const res = await fetch("http://127.0.0.1:8765/api/family/view?focus_person_id=nonexistent_invalid");
-        const json = await res.json();
-        return res.status === 404 && json.error && json.error.code === "NOT_FOUND";
-      } catch {
-        return false;
-      }
-    });
+    const invalidFocusResponse = await fetch(
+      `${apiOrigin}/api/family/view?focus_person_id=nonexistent_invalid`,
+    );
+    const invalidFocusJson = await invalidFocusResponse.json();
+    const safeErrorUi =
+      invalidFocusResponse.status === 404 &&
+      invalidFocusJson.error?.code === "NOT_FOUND";
     if (!safeErrorUi) throw new Error("Backend does not cleanly return structured 404 for invalid focus");
     step(25, "Invalid/error path shows safe UI");
 
@@ -591,7 +616,7 @@ async function main() {
     // -----------------------------------------------------------------------
     // 28. Focus search finds alias
     // -----------------------------------------------------------------------
-    await fetch("http://127.0.0.1:8765/api/people", {
+    await fetch(`${apiOrigin}/api/people`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -781,7 +806,7 @@ async function main() {
     await page.waitForFunction(() => {
       const perspective = document.querySelector(".perspective-current strong");
       const target = document.querySelector(".relationship-target-card .target-card-title > strong");
-      const relLabel = document.querySelector(".relationship-target-card .target-card-primary-role");
+      const relLabel = document.querySelector(".relationship-target-card .target-card-title span");
       return (
         perspective &&
         perspective.textContent.includes("Aresha Zubair") &&
@@ -1297,7 +1322,7 @@ async function main() {
     await page.evaluate(() => {
       window.__familyPwned = undefined;
     });
-    await fetch("http://127.0.0.1:8765/api/people", {
+    await fetch(`${apiOrigin}/api/people`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1585,7 +1610,7 @@ async function main() {
     await clickButtonText("View in Relationships");
     await page.waitForFunction(() => {
       const title = document.querySelector(".view-head h1");
-      return title?.textContent.includes("Relationships");
+      return title?.textContent.includes("Connections");
     }, { timeout: 8000 });
     await page.waitForFunction(() =>
       Boolean(
@@ -1599,14 +1624,14 @@ async function main() {
       if (evidence && !evidence.open) evidence.querySelector("summary")?.click();
     });
     await page.waitForFunction(
-      () => Boolean(document.querySelector(".target-entry-list .target-entry-row")?.textContent),
+      () => Boolean(document.querySelector(".target-path-list .target-path-option strong")?.textContent),
       { timeout: 10000 },
     );
 
     const parentHandoff = await page.evaluate(() => ({
       perspective: document.querySelector(".perspective-current strong")?.textContent || "",
       target: document.querySelector(".relationship-target-card .target-card-title > strong")?.textContent || "",
-      relationship: document.querySelector(".target-entry-list .target-entry-row")?.textContent || "",
+      relationship: document.querySelector(".relationship-target-card .target-card-title span")?.textContent || "",
     }));
     if (!parentHandoff.perspective.includes("Irsa Naz") ||
         !parentHandoff.target.includes("Musabiha") ||

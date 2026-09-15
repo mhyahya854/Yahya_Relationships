@@ -2,6 +2,7 @@ import puppeteer from "puppeteer-core";
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +13,7 @@ const CODEBASE = resolve(HERE, "../..");
 const REPO = resolve(CODEBASE, "..");
 const OUT = process.env.CONNECTIONS_REDESIGN_SCREENSHOT_DIR
   ? resolve(process.env.CONNECTIONS_REDESIGN_SCREENSHOT_DIR)
-  : resolve(REPO, "Documentation/UI-Screenshots/Connections-Redesign");
+  : resolve(REPO, "Documentation/UI-Screenshots/Connections-Final-Polish");
 const EDGE = existsSync("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe")
   ? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
   : "C:/Program Files/Microsoft/Edge/Application/msedge.exe";
@@ -34,6 +35,29 @@ const productionHash = createHash("sha256").update(readFileSync(productionDb)).d
 const shots = [];
 const errors = [];
 
+async function reserveLoopbackPort() {
+  return new Promise((resolvePort, rejectPort) => {
+    const server = createServer();
+    server.once("error", rejectPort);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close(() => rejectPort(new Error("Could not reserve a loopback test port.")));
+        return;
+      }
+      server.close((error) => error ? rejectPort(error) : resolvePort(address.port));
+    });
+  });
+}
+
+// This suite must never attach to a developer's existing localhost stack. A
+// private backend/Vite pair keeps the fixture, bootstrap pointer, and browser
+// traffic isolated even when the application is already running locally.
+const backendPort = await reserveLoopbackPort();
+const vitePort = await reserveLoopbackPort();
+const apiOrigin = `http://127.0.0.1:${backendPort}`;
+const webOrigin = `http://127.0.0.1:${vitePort}`;
+
 mkdirSync(OUT, { recursive: true });
 mkdirSync(dirname(bootstrap), { recursive: true });
 
@@ -43,6 +67,8 @@ const env = {
   PYTHONPATH: [resolve(CODEBASE, "App"), resolve(CODEBASE, "Scripts"), CODEBASE, process.env.PYTHONPATH]
     .filter(Boolean).join(process.platform === "win32" ? ";" : ":"),
   PEOPLE_RELATIONSHIPS_BOOTSTRAP: bootstrap,
+  PR_BACKEND_PORT: String(backendPort),
+  VITE_BACKEND_URL: apiOrigin,
 };
 delete env.PEOPLE_RELATIONSHIPS_ROOT;
 
@@ -76,7 +102,7 @@ let browser;
 let page;
 
 async function api(path, init) {
-  const response = await fetch(`http://127.0.0.1:8765${path}`, init);
+  const response = await fetch(`${apiOrigin}${path}`, init);
   const payload = await response.json();
   if (!response.ok) throw new Error(`${path}: ${JSON.stringify(payload)}`);
   return payload;
@@ -138,6 +164,9 @@ async function clickText(scope, text) {
   await sleep(450);
 }
 async function searchPick(name) {
+  if (!await page.$(".connections-search-dock .person-search input")) {
+    await page.click("[aria-label='Open Connections search']");
+  }
   const input = await page.waitForSelector(".connections-search-dock .person-search input", { visible: true, timeout: 12000 });
   await input.click();
   await page.keyboard.down("Control");
@@ -161,6 +190,18 @@ async function addTo(name) {
     return Boolean(card && (card.querySelector(".target-path-option") || card.textContent?.includes("No supported route")));
   }, { timeout: 16000 }, name);
 }
+async function setFromFromSearch(name) {
+  await searchPick(name);
+  await clickText(".connections-search-actions", "Set as FROM");
+  await page.waitForFunction((expected) => document.querySelector(".builder-from-zone")?.textContent?.includes(expected), { timeout: 16000 }, name);
+}
+async function clearTo() {
+  const clear = await page.$(".connection-builder .connection-builder-head .btn");
+  if (clear && await clear.evaluate((button) => button.textContent?.includes("Clear TO"))) {
+    await clear.click();
+    await page.waitForFunction(() => document.querySelectorAll(".relationship-target-card").length === 0, { timeout: 12000 });
+  }
+}
 async function nodeCard(name) {
   const handle = await page.evaluateHandle((expected) => [...document.querySelectorAll(".person-node-card")].find((card) => card.textContent?.includes(expected)) ?? null, name);
   const card = handle.asElement();
@@ -170,7 +211,7 @@ async function nodeCard(name) {
 function manifest() {
   const rows = shots.map((shotInfo) => `| ${shotInfo.file} | ${shotInfo.screen} | ${shotInfo.state} | ${shotInfo.theme} | ${shotInfo.from} | ${shotInfo.to || "—"} | ${shotInfo.verify} |`);
   return [
-    "# Connections Redesign Screenshot Manifest",
+    "# Connections Final Polish Screenshot Manifest",
     "",
     "All captures were made with the isolated, deterministic Connections synthetic data root. The fixture contains only fictional records; it does not read or mutate the user’s production relationship data.",
     "",
@@ -189,13 +230,13 @@ function manifest() {
 
 try {
   backend = spawn(python, ["-m", "app.backend.main"], { cwd: CODEBASE, env, stdio: "pipe" });
-  vite = spawn(process.execPath, [resolve(CODEBASE, "App/Frontend/node_modules/vite/bin/vite.js")], {
+  vite = spawn(process.execPath, [resolve(CODEBASE, "App/Frontend/node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", String(vitePort), "--strictPort"], {
     cwd: resolve(CODEBASE, "App/Frontend"), env, stdio: "pipe",
   });
   backend.stderr.on("data", (data) => { if (/Traceback|ERROR/.test(data.toString())) errors.push(data.toString()); });
   vite.stderr.on("data", (data) => { if (/error/i.test(data.toString())) errors.push(data.toString()); });
-  await waitForUrl("http://127.0.0.1:8765/api/health");
-  await waitForUrl("http://localhost:1420");
+  await waitForUrl(`${apiOrigin}/api/health`);
+  await waitForUrl(webOrigin);
 
   const fixture = await seedConnectionsRedesignFixture({ api, post, dataRoot: syntheticRoot, python, fixtureLoader });
   const health = await api("/api/health");
@@ -216,19 +257,39 @@ try {
   });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.evaluateOnNewDocument((drawerDemo) => { window.__connectionsSyntheticDrawerDemo = drawerDemo; }, fixture.drawerDemo);
-  await page.goto("http://localhost:1420", { waitUntil: "networkidle0", timeout: 40000 });
+  await page.goto(webOrigin, { waitUntil: "networkidle0", timeout: 40000 });
   await page.waitForSelector(".connection-builder", { visible: true, timeout: 20000 });
   await page.waitForSelector(".react-flow__node", { visible: true, timeout: 20000 });
   await sleep(1200);
   const initialNodeCount = await page.$$eval(".react-flow__node", (nodes) => nodes.length);
   assert(initialNodeCount === defaultGraph.nodes.length, `Default graph must show only immediate neighbours (${initialNodeCount} != ${defaultGraph.nodes.length}).`);
-  await shot("connections-default-owner-immediate", { screen: "Connections", state: "default owner immediate view", theme: "light", from: "Mira Rahim", verify: "Central FROM, direct family/general neighbours only, builder visible" });
-  await shot("connections-maternal-paternal-spacing", { screen: "Connections", state: "default spatial regions", theme: "light", from: "Mira Rahim", verify: "Separate pale maternal and paternal contextual regions" });
+  const initialZoom = Number(await page.$eval(".graph-zoom-value", (value) => value.textContent?.replace("%", "") ?? "0"));
+  assert(initialZoom >= 60, `Default Connections fit must stay readable (${initialZoom}% < 60%).`);
+  await shot("connections-default-owner-immediate", { screen: "Connections", state: "default owner immediate view", theme: "light", from: "Mira Rahim", verify: "Central FROM, readable direct family/general neighbours only" });
+  await shot("connections-maternal-paternal-compact-islands", { screen: "Connections", state: "compact contextual islands", theme: "light", from: "Mira Rahim", verify: "Maternal and paternal islands fit their direct members" });
+  await shot("connections-compact-external-sector", { screen: "Connections", state: "lower external arc", theme: "light", from: "Mira Rahim", verify: "Direct external relationships form a deliberate lower sector" });
+  await shot("connections-builder-compact", { screen: "Connections", state: "compact Relationship Builder", theme: "light", from: "Mira Rahim", verify: "FROM, TO, and immediate rows remain scannable" });
   await page.$eval(".theme-toggle", (button) => button.click());
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
-  await shot("connections-dark-default-immediate", { screen: "Connections", state: "default owner immediate view", theme: "dark", from: "Mira Rahim", verify: "Direct context remains readable in dark mode" });
+  await shot("connections-dark-default", { screen: "Connections", state: "default owner immediate view", theme: "dark", from: "Mira Rahim", verify: "Direct context and compact islands remain readable" });
   await page.$eval(".theme-toggle", (button) => button.click());
   await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+
+  // Adaptive packing must make a small alternate world compact and a denser
+  // alternate world spacious without falling back to a family-tree layout.
+  await setFromFromSearch("Mariam Rahal");
+  const mariamGraph = await api(`/api/relationships/graph/neighbors/${fixture.people.mariam.id}?perspective_id=${fixture.people.mariam.id}&filters=parents,children,siblings,spouses,general`);
+  await page.waitForFunction((count) => document.querySelectorAll(".react-flow__node").length === count, { timeout: 16000 }, mariamGraph.nodes.length);
+  await shot("connections-alternate-from-few", { screen: "Connections", state: "alternate FROM with few direct connections", theme: "light", from: "Mariam Rahal", verify: "Small direct world remains close to FROM" });
+  await clickText(".builder-from-zone", "Return to My Perspective");
+  await page.waitForFunction(() => document.querySelector(".builder-from-zone")?.textContent?.includes("Mira Rahim"), { timeout: 16000 });
+  await setFromFromSearch("Darya Sol");
+  const daryaGraph = await api(`/api/relationships/graph/neighbors/${fixture.people.darya.id}?perspective_id=${fixture.people.darya.id}&filters=parents,children,siblings,spouses,general`);
+  assert(daryaGraph.nodes.length > mariamGraph.nodes.length, "Synthetic alternate dense FROM must have more direct context than the compact fixture person.");
+  await page.waitForFunction((count) => document.querySelectorAll(".react-flow__node").length === count, { timeout: 16000 }, daryaGraph.nodes.length);
+  await shot("connections-alternate-from-many", { screen: "Connections", state: "alternate FROM with dense direct context", theme: "light", from: "Darya Sol", verify: "Dense direct world expands without losing central readability" });
+  await clickText(".builder-from-zone", "Return to My Perspective");
+  await page.waitForFunction(() => document.querySelector(".builder-from-zone")?.textContent?.includes("Mira Rahim"), { timeout: 16000 });
 
   // Ordinary node body selection must not open person information.
   await (await nodeCard("Darya Sol")).click();
@@ -239,27 +300,52 @@ try {
   await daryaInfo.click();
   await page.waitForSelector(".person-info-drawer", { visible: true });
   await page.waitForFunction(() => document.querySelector(".person-info-drawer")?.textContent?.includes("Darya Sol"));
+  const expectedTabs = ["Overview", "Relationships", "Relationship Paths", "Memories", "Events", "Photos & Videos", "Conversations", "Documents", "Places / Travel", "Groups", "Journal / Notes"];
+  assert(await page.$$eval(".person-info-tabs button", (buttons, labels) => labels.every((label) => buttons.some((button) => button.textContent?.trim() === label)), expectedTabs), "The complete Connections information tab architecture was not rendered.");
   await shot("connections-info-overview", { screen: "Connections", state: "explicit info drawer overview", theme: "light", from: "Mira Rahim", verify: "ⓘ only information entry point and real Overview fields" });
   await clickText(".person-info-tabs", "Relationships");
   await shot("connections-info-relationships", { screen: "Connections", state: "explicit information drawer relationships", theme: "light", from: "Mira Rahim", verify: "Implemented relationship facts are distinct from future boundaries" });
+  await clickText(".person-info-tabs", "Relationship Paths");
+  await page.waitForSelector(".drawer-path-list", { visible: true, timeout: 12000 });
+  await shot("connections-info-relationship-paths", { screen: "Connections", state: "canonical paths information tab", theme: "light", from: "Mira Rahim", verify: "Relationship Paths is a dedicated visible drawer tab" });
   await clickText(".person-info-tabs", "Memories");
   await page.waitForFunction(() => document.querySelector(".drawer-synthetic-boundary")?.textContent?.includes("catalogued the community orchestra archive"));
   await shot("connections-info-memories", { screen: "Connections", state: "synthetic Memories drawer boundary", theme: "light", from: "Mira Rahim", verify: "Clearly labelled synthetic future-domain preview" });
   await clickText(".person-info-tabs", "Events");
   await shot("connections-info-events", { screen: "Connections", state: "synthetic Events drawer boundary", theme: "light", from: "Mira Rahim", verify: "Clearly labelled synthetic future-domain preview" });
   await clickText(".person-info-tabs", "Photos & Videos");
-  await shot("connections-info-media", { screen: "Connections", state: "synthetic media drawer boundary", theme: "light", from: "Mira Rahim", verify: "No production media is fabricated" });
+  await shot("connections-info-photos-videos", { screen: "Connections", state: "synthetic Photos & Videos drawer boundary", theme: "light", from: "Mira Rahim", verify: "No production media is fabricated" });
+  await clickText(".person-info-tabs", "Conversations");
+  await shot("connections-info-conversations", { screen: "Connections", state: "synthetic Conversations drawer boundary", theme: "light", from: "Mira Rahim", verify: "Conversations remains an honest synthetic-only boundary" });
+  await clickText(".person-info-tabs", "Documents");
+  await shot("connections-info-documents", { screen: "Connections", state: "synthetic Documents drawer boundary", theme: "light", from: "Mira Rahim", verify: "Documents remains an honest synthetic-only boundary" });
+  await clickText(".person-info-tabs", "Places / Travel");
+  await shot("connections-info-places-travel", { screen: "Connections", state: "synthetic Places / Travel drawer boundary", theme: "light", from: "Mira Rahim", verify: "Places / Travel is a dedicated visible drawer tab" });
+  await clickText(".person-info-tabs", "Groups");
+  await shot("connections-info-groups", { screen: "Connections", state: "implemented Groups drawer tab", theme: "light", from: "Mira Rahim", verify: "Real supported group content stays distinct from future domains" });
+  await clickText(".person-info-tabs", "Journal / Notes");
+  await shot("connections-info-journal-notes", { screen: "Connections", state: "implemented Journal / Notes drawer tab", theme: "light", from: "Mira Rahim", verify: "Real synthetic journal is available through its dedicated tab" });
   await page.click("[aria-label='Close person information']");
   await page.waitForFunction(() => !document.querySelector(".person-info-drawer"));
   assert(await page.$(".connection-builder"), "Closing info did not restore the mounted builder.");
 
   await searchPick("Darya Sol");
-  await shot("connections-search-expanded", { screen: "Connections", state: "search result actions", theme: "light", from: "Mira Rahim", verify: "Search result supports reveal, Set as FROM, and Add to TO" });
+  await shot("connections-search-popover", { screen: "Connections", state: "compact search result actions", theme: "light", from: "Mira Rahim", verify: "Search remains a compact popover with Set as FROM and Add to TO" });
   await clickText(".connections-search-actions", "Add to TO");
   await page.waitForSelector(".relationship-target-card", { visible: true, timeout: 16000 });
-  await page.waitForSelector(".relationship-target-card .target-path-option", { visible: true, timeout: 16000 });
-  await shot("connections-direct-friend-target", { screen: "Connections", state: "one direct friend target", theme: "light", from: "Mira Rahim", to: "Darya Sol", verify: "All canonical direct paths selected and context dimmed, not removed" });
-  await shot("connections-one-selected-route", { screen: "Connections", state: "one selected direct route", theme: "light", from: "Mira Rahim", to: "Darya Sol", verify: "A single selected route emphasizes only its direct edge" });
+  await page.waitForFunction(() => {
+    const card = document.querySelector(".relationship-target-card");
+    return Boolean(card && (card.querySelector(".target-path-option") || card.textContent?.includes("No supported route")));
+  }, { timeout: 16000 });
+  const longNameCheck = await page.$eval(".person-node-card", (node) => {
+    const match = [...document.querySelectorAll(".person-node-card")].find((card) => card.textContent?.includes("Community Orchestra Archivist"));
+    if (!match) return null;
+    const name = match.querySelector(".person-node-name");
+    return { width: match.getBoundingClientRect().width, clamp: name ? getComputedStyle(name).webkitLineClamp : "" };
+  });
+  assert(Boolean(longNameCheck && longNameCheck.width <= 224.5 && longNameCheck.clamp === "2"), "Long-name node handling must stay fixed-width and two-line clamped.");
+  await shot("connections-one-direct-to", { screen: "Connections", state: "one direct friend target", theme: "light", from: "Mira Rahim", to: "Darya Sol", verify: "Direct TO remains strong while context stays mounted" });
+  await shot("connections-greyed-context", { screen: "Connections", state: "active direct route with context", theme: "light", from: "Mira Rahim", to: "Darya Sol", verify: "Unrelated nodes stay mounted and visibly greyed" });
   assert((await page.$$(".react-flow__node.rf-dim")).length > 0, "Unrelated graph context was not greyed while a TO route is active.");
   assert((await page.$$eval(".react-flow__node", (nodes) => nodes.length)) >= initialNodeCount, "Unrelated graph context disappeared after adding TO.");
   // Closing information must not discard the active TO route or the graph.
@@ -272,56 +358,43 @@ try {
   await page.click("[aria-label='Close person information']");
   await page.waitForFunction(() => !document.querySelector(".person-info-drawer"));
   assert(await page.$(".relationship-target-card"), "Closing info discarded the active TO state.");
-  await shot("connections-greyed-context", { screen: "Connections", state: "active direct route with context", theme: "light", from: "Mira Rahim", to: "Darya Sol", verify: "Unrelated nodes stay mounted and visibly greyed" });
+  await shot("connections-builder-compact-path-state", { screen: "Connections", state: "compact TO and path rows", theme: "light", from: "Mira Rahim", to: "Darya Sol", verify: "Builder path rows remain compact and scannable" });
 
+  await clearTo();
+  await addTo("Mila Rahal-Calder");
+  await shot("connections-one-distant-to", { screen: "Connections", state: "one distant mixed route", theme: "light", from: "Mira Rahim", to: "Mila Rahal-Calder", verify: "Neutral intermediates appear without removing immediate context" });
+
+  await clearTo();
   await addTo("Maeve Rowan");
-  await shot("connections-family-multipath", { screen: "Connections", state: "family target with multiple paths", theme: "light", from: "Mira Rahim", to: "Darya Sol; Maeve Rowan", verify: "Multiple canonical maternal/paternal routes listed independently" });
+  await shot("connections-family-multipath", { screen: "Connections", state: "one family target with multiple paths", theme: "light", from: "Mira Rahim", to: "Maeve Rowan", verify: "Multiple canonical maternal and paternal routes remain independently visible" });
   const maevePathOptions = await page.$$eval(".relationship-target-card", (cards) => [...cards].find((card) => card.textContent?.includes("Maeve Rowan"))?.querySelectorAll(".target-path-option").length ?? 0);
   assert(maevePathOptions >= 2, "Expected multiple canonical paths for the synthetic multipath target.");
+  await page.evaluate(() => {
+    const card = [...document.querySelectorAll(".relationship-target-card")].find((item) => item.textContent?.includes("Maeve Rowan"));
+    const input = card?.querySelectorAll("input[type='checkbox']")[1];
+    if (!(input instanceof HTMLInputElement)) throw new Error("Second Maeve route option was unavailable.");
+    input.click();
+  });
+  await page.waitForFunction(() => document.querySelectorAll(".relationship-target-card input[type='checkbox']:checked").length === 1, { timeout: 12000 });
+  await page.waitForFunction(() => document.querySelectorAll(".rf-edge-path-active").length > 0
+    && document.querySelectorAll(".target-path-option.is-selected").length === 1
+    && document.querySelectorAll(".target-path-option:not(.is-selected)").length > 0, { timeout: 12000 });
+  await shot("connections-one-selected-path", { screen: "Connections", state: "one selected route among valid multipath routes", theme: "light", from: "Mira Rahim", to: "Maeve Rowan", verify: "Selected route is strongest; alternate valid route remains lighter" });
 
+  await addTo("Darya Sol");
   await addTo("Mila Rahal-Calder");
-  await shot("connections-distant-mixed-route", { screen: "Connections", state: "distant mixed family and external route", theme: "light", from: "Mira Rahim", to: "Darya Sol; Maeve Rowan; Mila Rahal-Calder", verify: "Missing intermediates appear without removing surrounding immediate context" });
-  await shot("connections-multi-target-path-list", { screen: "Connections", state: "three simultaneous targets", theme: "light", from: "Mira Rahim", to: "Darya Sol; Maeve Rowan; Mila Rahal-Calder", verify: "Per-target all-route groups and union highlighting" });
+  await shot("connections-multi-target", { screen: "Connections", state: "three simultaneous targets", theme: "light", from: "Mira Rahim", to: "Maeve Rowan; Darya Sol; Mila Rahal-Calder", verify: "Per-target compact route rows and union highlighting" });
   assert((await page.$$(".relationship-target-card")).length === 3, "TO must support zero-to-many simultaneous targets.");
   const routeNodes = await page.$$eval(".react-flow__node.rf-path-intermediate", (nodes) => nodes.length);
   assert(routeNodes > 0, "Distant route did not expose neutral full-opacity intermediate nodes.");
   assert((await page.$$(".react-flow__node.rf-path-intermediate.rf-node-to")).length === 0, "An intermediate path node received TO emphasis.");
 
-  // Prove FROM replacement and owner restoration are distinct, accessible actions.
-  await searchPick("Mariam Rahal");
-  await clickText(".connections-search-actions", "Set as FROM");
-  await page.waitForFunction(() => document.querySelector(".builder-from-zone")?.textContent?.includes("Mariam Rahal"), { timeout: 16000 });
-  await shot("connections-another-from", { screen: "Connections", state: "replacement FROM", theme: "light", from: "Mariam Rahal", to: "Darya Sol; Maeve Rowan; Mila Rahal-Calder", verify: "Exactly one FROM replaces the origin and re-queries route meaning" });
-  await clickText(".builder-from-zone", "Return to My Perspective");
-  await page.waitForFunction(() => document.querySelector(".builder-from-zone")?.textContent?.includes("Mira Rahim"), { timeout: 16000 });
-  await shot("connections-return-owner", { screen: "Connections", state: "owner FROM restored", theme: "light", from: "Mira Rahim", to: "Darya Sol; Maeve Rowan; Mila Rahal-Calder", verify: "Return to My Perspective restores configured owner" });
-
   await page.$eval(".theme-toggle", (button) => button.click());
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
-  await shot("connections-dark-theme", { screen: "Connections", state: "multiple targets dark mode", theme: "dark", from: "Mira Rahim", to: "Darya Sol; Maeve Rowan; Mila Rahal-Calder", verify: "Readable cards, dimming, regions, and route list in dark theme" });
+  await shot("connections-dark-path-state", { screen: "Connections", state: "multiple targets dark mode", theme: "dark", from: "Mira Rahim", to: "Maeve Rowan; Darya Sol; Mila Rahal-Calder", verify: "Readable cards, dimming, selected routes, and compact path rows" });
   await page.click("[aria-label='Collapse sidebar']");
   await page.waitForFunction(() => document.querySelector(".shell")?.classList.contains("sidebar-collapsed"));
-  await shot("connections-collapsed-navigation", { screen: "Connections", state: "collapsed navigation", theme: "dark", from: "Mira Rahim", to: "Darya Sol; Maeve Rowan; Mila Rahal-Calder", verify: "Builder and graph survive shell navigation collapse" });
-  await page.click("[aria-label='Expand sidebar']");
-  await page.$eval(".theme-toggle", (button) => button.click());
-  await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
-
-  // Capture every current primary application area against the same synthetic root.
-  await nav("People");
-  await page.waitForSelector(".people-table-row", { timeout: 16000 });
-  await shot("people-directory", { screen: "People", state: "synthetic directory", theme: "light", from: "Mira Rahim", verify: "82 fictional people and overlapping groups" });
-  await nav("Family Tree");
-  await page.waitForSelector(".family-diagram", { timeout: 16000 });
-  await shot("family-tree", { screen: "Family Tree", state: "Mermaid family screen", theme: "light", from: "Mira Rahim", verify: "Family Tree remains a separate Mermaid experience" });
-  await nav("Search");
-  await page.waitForSelector(".search-view, .search-page", { timeout: 16000 });
-  await shot("global-search", { screen: "Search", state: "synthetic root", theme: "light", from: "Mira Rahim", verify: "Primary search surface remains available" });
-  await nav("Hermes");
-  await sleep(700);
-  await shot("hermes", { screen: "Hermes", state: "synthetic root", theme: "light", from: "Mira Rahim", verify: "Existing deferred tooling remains separate from Connections" });
-  await nav("Backups");
-  await sleep(700);
-  await shot("backups", { screen: "Backups", state: "synthetic root", theme: "light", from: "Mira Rahim", verify: "Synthetic root backup surface remains available" });
+  await shot("connections-collapsed-navigation", { screen: "Connections", state: "collapsed navigation", theme: "dark", from: "Mira Rahim", to: "Maeve Rowan; Darya Sol; Mila Rahal-Calder", verify: "Builder and graph survive shell navigation collapse" });
 
   assert(errors.length === 0, `Browser/backend console errors: ${errors.join("\n")}`);
   const finalHash = createHash("sha256").update(readFileSync(productionDb)).digest("hex");

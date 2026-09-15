@@ -44,7 +44,7 @@ def _start_parent_watchdog(parent_pid: int) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="People Relationships FastAPI Backend")
+    parser = argparse.ArgumentParser(description="Mosaic FastAPI Backend")
     parser.add_argument(
         "--host",
         default=config.DEFAULT_HOST,

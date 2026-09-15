@@ -66,9 +66,9 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="People Relationships",
+    title=config.APP_NAME,
     version=config.APP_VERSION,
-    description="Local-first personal relationship brain.",
+    description="Your private people, memories & connections archive.",
     lifespan=lifespan,
 )
 

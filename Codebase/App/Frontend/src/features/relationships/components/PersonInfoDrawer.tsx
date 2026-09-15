@@ -72,7 +72,7 @@ function FutureBoundary({ tab, values }: { tab: string; values?: string[] }) {
   }
   return (
     <section className="drawer-empty-boundary">
-      <strong>{tab}</strong>
+      <strong>{tab} · Not implemented yet</strong>
       <p>This approved information boundary is ready for a future canonical source. No production data is connected yet.</p>
     </section>
   );

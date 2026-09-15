@@ -32,6 +32,7 @@ export function RelationshipTargetCard({
   onRemove,
   onOpenInfo,
   onHighlightedPathsChange,
+  onAvailablePathsChange,
 }: {
   person: Person;
   perspectiveId: string;
@@ -43,6 +44,7 @@ export function RelationshipTargetCard({
   onRemove: () => void;
   onOpenInfo: () => void;
   onHighlightedPathsChange: (personId: string, paths: RelationshipPath[]) => void;
+  onAvailablePathsChange: (personId: string, paths: RelationshipPath[]) => void;
 }) {
   const [result, setResult] = useState<RelationshipResultDto | null>(null);
   const [paths, setPaths] = useState<RelationshipPath[]>([]);
@@ -92,6 +94,10 @@ export function RelationshipTargetCard({
     onHighlightedPathsChange(person.id, highlightedPaths);
   }, [highlightedPaths, onHighlightedPathsChange, person.id]);
 
+  useEffect(() => {
+    onAvailablePathsChange(person.id, paths);
+  }, [onAvailablePathsChange, paths, person.id]);
+
   const entries = result ? [...result.primary, ...result.additional] : [];
   const primary = entries[0] ?? null;
 
@@ -122,13 +128,13 @@ export function RelationshipTargetCard({
       <div className="target-card-body">
         <ErrorNote error={error} />
         <div className="target-path-summary">
-          <strong>All valid paths</strong>
-          <span>{paths.length} route{paths.length === 1 ? "" : "s"} from {perspectiveName}</span>
+          <strong>{paths.length} valid path{paths.length === 1 ? "" : "s"}</strong>
+          <span>from {perspectiveName}</span>
         </div>
         {pathsTruncated && <p className="target-path-truncated">The safe 50-route response limit was reached; no route was silently stored or inferred.</p>}
         {!loading && !error && paths.length === 0 && <p className="empty-inline">No supported route was returned.</p>}
         <div className="target-path-list" aria-label={`Canonical paths between ${perspectiveName} and ${person.name}`}>
-          {paths.map((path, index) => {
+          {paths.map((path) => {
             const checked = selectedPathIds.includes(path.id);
             const tone = pathTone(path);
             return (
@@ -145,8 +151,7 @@ export function RelationshipTargetCard({
                 />
                 <span className="path-check" aria-hidden="true">✓</span>
                 <span className="target-path-copy">
-                  <strong>{index + 1}. {path.label_en}</strong>
-                  {path.label_ur && <span dir="rtl" lang="ur">{path.label_ur}</span>}
+                  <strong>{path.label_en}</strong>
                   <small>{path.distance} step{path.distance === 1 ? "" : "s"}{path.side ? ` · ${path.side}` : path.domain === "connection" ? " · recorded route only" : ""}</small>
                 </span>
               </label>

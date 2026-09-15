@@ -1,6 +1,6 @@
 # Platform Compatibility Matrix
 
-This document tracks the verification and packaging status of **People Relationships** across the target desktop operating systems and architectures.
+This document tracks the verification and packaging status of **Mosaic** across the target desktop operating systems and architectures. Historical artifact names below retain the product name used when those packages were built.
 
 ---
 

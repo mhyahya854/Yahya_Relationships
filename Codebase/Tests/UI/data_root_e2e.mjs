@@ -165,7 +165,7 @@ try {
   });
   await page.goto("http://localhost:1420", { waitUntil: "networkidle0", timeout: 40_000 });
   const firstText = await page.$eval("main", (node) => node.textContent);
-  if (!firstText.includes("Welcome to People Relationships") || firstText.includes("Data Service Unavailable")) throw new Error("Wrong first-run state");
+  if (!firstText.includes("Welcome to Mosaic") || firstText.includes("Data Service Unavailable")) throw new Error("Wrong first-run state");
   step("First-run onboarding is distinct from StartupFailure");
   for (const route of ["Use Existing Data Root", "Restore From Backup", "Create New Data Root"]) if (!firstText.includes(route)) throw new Error(`Missing route: ${route}`);
   step("All three calm first-run routes are visible");
@@ -252,7 +252,7 @@ try {
   const missingText = await page.$eval("main", (node) => node.textContent);
   if (!missingText.includes("Data location unavailable") || !missingText.includes(missing)) throw new Error("Missing recovery screen incomplete");
   step("Missing configured root shows its last known location");
-  if (missingText.includes("Welcome to People Relationships") || missingText.includes("Data Service Unavailable")) throw new Error("Missing root conflated with first-run/service failure");
+  if (missingText.includes("Welcome to Mosaic") || missingText.includes("Data Service Unavailable")) throw new Error("Missing root conflated with first-run/service failure");
   step("Missing root is distinct from first-run and backend failure");
   await screenshot("data-root-missing-recovery.png");
   step("Missing-root recovery has visual evidence");
@@ -276,7 +276,7 @@ try {
   const malformedText = await page.$eval("main", (node) => node.textContent);
   if (!malformedText.includes("Data-location setting needs attention") || !malformedText.includes("could not be read")) throw new Error("Malformed bootstrap UX missing");
   step("Malformed bootstrap has a specific settings-recovery state");
-  if (malformedText.includes("Welcome to People Relationships") || malformedText.includes("Alice Root A")) throw new Error("Malformed bootstrap silently fell back");
+  if (malformedText.includes("Welcome to Mosaic") || malformedText.includes("Alice Root A")) throw new Error("Malformed bootstrap silently fell back");
   step("Malformed bootstrap does not become first-run or source fallback");
   await clickText("main", "Use Existing Data Root");
   await setValue("#existing-root-path", rootA);

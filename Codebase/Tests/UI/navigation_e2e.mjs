@@ -207,7 +207,7 @@ try {
     window.prompt = window.alert = window.confirm = () => { window.__forbiddenDialogs += 1; return false; };
   });
   await page.goto("http://localhost:1420", { waitUntil: "networkidle0", timeout: 40_000 });
-  await page.waitForFunction(() => document.body.textContent?.includes("Welcome to People Relationships"));
+  await page.waitForFunction(() => document.body.textContent?.includes("Welcome to Mosaic"));
   step("Unconfigured onboarding remains distinct from backend failure");
 
   await clickText("main", "Create New Data Root");
@@ -355,7 +355,7 @@ try {
   writeFileSync(bootstrap, JSON.stringify({ active_root: missingRoot, updated_at: "2026-09-10T00:00:00Z" }), "utf8");
   await page.reload({ waitUntil: "networkidle0", timeout: 40_000 });
   await page.waitForFunction(() => document.body.textContent?.includes("Data location unavailable"));
-  if ((await page.$eval("body", (node) => node.textContent)).includes("Welcome to People Relationships")) throw new Error("Missing root collapsed into onboarding");
+  if ((await page.$eval("body", (node) => node.textContent)).includes("Welcome to Mosaic")) throw new Error("Missing root collapsed into onboarding");
   step("Missing-root recovery remains distinct from onboarding");
   await clickText("main", "Use Existing Data Root");
   await setValue("#existing-root-path", rootB);

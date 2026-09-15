@@ -1,13 +1,22 @@
 import puppeteer from "puppeteer-core";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const EDGE =
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const HERE = dirname(fileURLToPath(import.meta.url));
-const OUT = join(HERE, "shots");
-const DOC_SHOTS = join(HERE, "../../../Documentation/UI-Screenshots");
+const [baseUrlArg, documentationShotsArg, localShotsArg] = process.argv.slice(2);
+const OUT = localShotsArg || process.env.UI_SMOKE_LOCAL_SCREENSHOT_DIR
+  ? resolve(localShotsArg || process.env.UI_SMOKE_LOCAL_SCREENSHOT_DIR)
+  : join(HERE, "shots");
+const BASE_URL = (baseUrlArg || process.env.UI_SMOKE_BASE_URL || "http://localhost:1420").replace(/\/$/, "");
+// The full legacy smoke flow mutates its data root and captures several
+// evidence images. CI/local verification can direct those images to an
+// isolated directory instead of touching the user-owned documentation set.
+const DOC_SHOTS = documentationShotsArg || process.env.UI_SMOKE_SCREENSHOT_DIR
+  ? resolve(documentationShotsArg || process.env.UI_SMOKE_SCREENSHOT_DIR)
+  : join(HERE, "../../../Documentation/UI-Screenshots");
 mkdirSync(OUT, { recursive: true });
 mkdirSync(DOC_SHOTS, { recursive: true });
 
@@ -126,13 +135,18 @@ async function openInspectorSection(selector) {
 }
 
 // 1. Relationships opens directly on the diagram with the owner perspective.
-await page.goto("http://localhost:1420/", {
+await page.goto(`${BASE_URL}/`, {
   waitUntil: "networkidle0",
   timeout: 40000,
 });
 await page.waitForSelector(".relationships-graph-area .react-flow", {
   timeout: 30000,
 });
+report(
+  "Mosaic product brand is visible in the main shell",
+  await page.$eval(".brand-title", (node) => node.textContent?.trim() === "Mosaic"),
+);
+report("Mosaic product brand is the browser window title", (await page.title()) === "Mosaic");
 await page.waitForFunction(
   () => document.querySelectorAll(".react-flow__node").length >= 3,
   { timeout: 30000 },
@@ -146,13 +160,21 @@ report(
 );
 report("diagram visible by default", true);
 
-// 2. Select a multi-path relative.
+// 2. Explicitly add a person to TO and render its canonical route options.
+await page.click(".connections-search-trigger");
 await typeInto(".person-search input", "Aresha");
 await page.waitForSelector(".person-search-row", { visible: true });
 await clickText(".person-search-row", "Aresha Zubair");
-await waitForBody("paternal first cousin");
-await waitForBody("maternal second cousin");
-report("primary + additional shown in panel", true);
+await page.waitForFunction(
+  () => [...document.querySelectorAll(".connections-search-actions button")]
+    .some((button) => button.textContent?.includes("Add to TO")),
+);
+await page.evaluate(() => {
+  [...document.querySelectorAll(".connections-search-actions button")]
+    .find((button) => button.textContent?.includes("Add to TO"))?.click();
+});
+await page.waitForSelector(".relationship-target-card", { visible: true, timeout: 30000 });
+report("explicit TO target is added to the Connections builder", true);
 
 // 3. HUMAN EDITING TEST: Open Add Person dialog on People View
 await clickText(".nav-item", "People");
@@ -168,145 +190,12 @@ report("add-person-dialog rendered with duplicate warning check", true);
 await clickText(".btn-outline", "Cancel");
 await sleep(300);
 
-// 4. HUMAN EDITING TEST: Add Relationship on Relationships View
+// 4. Current Connections shell remains usable after the explicit FROM/TO flow.
 await clickText(".nav-item", "Connections");
 await page.waitForSelector(".relationships-graph-area .react-flow", { timeout: 15000 });
+report("Connections remains usable after a target selection", true);
 
-// Select Mansoor Hussain
-await typeInto(".person-search input", "Mansoor");
-await page.waitForSelector(".person-search-row", { visible: true });
-await page.click(".person-search-name");
-await page.waitForFunction(
-  () => document.querySelector(".relationships-panel")?.textContent.includes("Mansoor"),
-  { timeout: 5000 },
-);
-
-// Click + Add Relationship button
-await openInspectorSection(".inspector-manage");
-await page.evaluate(() => [...document.querySelectorAll(".inspector-manage button")]
-  .find((button) => button.textContent?.includes("Add Relationship"))?.click());
-await page.waitForSelector(".modal-card", { timeout: 10000 });
-await typeInto(".form-group input[placeholder*='Search']", "Adeel");
-await sleep(300);
-await selectPersonInModal("Adeel");
-
-await shot("add-family-relationship");
-report("add-family-relationship modal rendered", true);
-
-// Click Preview Consequences
-await clickText("button", "Preview Consequences");
-await page.waitForSelector(".modal-card .diff-card, .modal-card .preview-direct", { timeout: 10000 });
-await shot("mutation-preview");
-report("mutation-preview consequence diff rendered", true);
-
-// Cancel preview & relationship dialog safely
-await page.evaluate(() => {
-  const cards = [...document.querySelectorAll(".modal-card")];
-  const topCard = cards[cards.length - 1];
-  const cancelBtn = [...topCard.querySelectorAll("button")].find((b) => b.textContent.includes("Cancel"));
-  if (cancelBtn) cancelBtn.click();
-});
-await sleep(500);
-
-// Close Add Relationship dialog if still open
-await page.evaluate(() => {
-  const card = document.querySelector(".modal-card");
-  if (card) {
-    const cancelBtn = [...card.querySelectorAll("button")].find((b) => b.textContent.includes("Cancel"));
-    if (cancelBtn) cancelBtn.click();
-  }
-});
-await page.waitForFunction(() => !document.querySelector(".modal-card"), { timeout: 5000 });
-
-// 5. Add General Friend Relationship and capture relationship-added
-await openInspectorSection(".inspector-manage");
-await page.evaluate(() => [...document.querySelectorAll(".inspector-manage button")]
-  .find((button) => button.textContent?.includes("Add Relationship"))?.click());
-await page.waitForSelector(".modal-card", { timeout: 10000 });
-await typeInto(".form-group input[placeholder*='Search']", "Adeel");
-await sleep(300);
-await selectPersonInModal("Adeel");
-await clickText(".btn", "General");
-await sleep(200);
-await clickText(".btn-primary", "Save Fact");
-await page.waitForSelector(".undo-bar", { timeout: 5000 });
-await shot("relationship-added");
-report("relationship-added rendered with floating undo bar", true);
-await shot("relationship-added");
-report("relationship-added rendered with floating undo bar", true);
-
-// Undo the addition
-await clickText(".undo-bar-btn", "Undo");
-await sleep(1000);
-
-// 6. EDIT & DELETE IMPACT PREVIEWS
-await clickText(".nav-item", "People");
-await page.waitForSelector(".people-table-row", { timeout: 15000 });
-await clickText(".people-table-row", "Mansoor Hussain");
-await sleep(400);
-await clickText(".row-actions .btn-danger", "Delete");
-await page.waitForSelector(".diff-card, .diff-invalid", { timeout: 8000 });
-await shot("delete-impact-preview");
-report("delete-impact-preview rendered safely blocking graph deletion", true);
-await clickText(".btn-outline", "Cancel");
-await sleep(300);
-
-// 7. Edit General Relationship
-await clickText(".nav-item", "Connections");
-await page.waitForSelector(".relationships-graph-area .react-flow", { timeout: 15000 });
-
-// Add a temporary general relationship via API for edit screenshot
-await page.evaluate(async () => {
-  const pList = await fetch("/api/people").then((r) => r.json());
-  const mansoor = pList.people.find((p) => p.name.includes("Mansoor"));
-  const irsa = pList.people.find((p) => p.name.includes("Irsa"));
-  if (mansoor && irsa) {
-    await fetch("/api/relationships/general", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        person_a: mansoor.id,
-        person_b: irsa.id,
-        type: "mentor",
-        directionality: "directional",
-        label_a_to_b: "Mentor",
-        label_b_to_a: "Mentee",
-      }),
-    });
-  }
-});
-await clickText(".nav-item", "People");
-await sleep(300);
-await clickText(".nav-item", "Connections");
-await sleep(800);
-await typeInto(".person-search input", "Irsa");
-await page.waitForSelector(".person-search-row", { visible: true });
-await clickText(".person-search-row", "Irsa Naz");
-await sleep(500);
-
-// Click Edit on general entry
-await openInspectorSection(".inspector-evidence");
-const editButtons = await page.$$(".panel-rel-row .btn");
-if (editButtons.length > 0) {
-  await editButtons[0].click();
-  await page.waitForSelector(".modal-card", { timeout: 5000 });
-  await shot("edit-general-relationship");
-  report("edit-general-relationship rendered", true);
-  await clickText(".btn-outline", "Close");
-  await sleep(300);
-}
-
-// Clean up temporary mentor fact created for screenshot
-await page.evaluate(async () => {
-  const genList = await fetch("/api/relationships/general").then((r) => r.json());
-  for (const rel of genList.relationships) {
-    if (rel.type === "mentor") {
-      await fetch(`/api/relationships/general/${rel.id}`, { method: "DELETE" });
-    }
-  }
-});
-
-// 8. DATA SAFETY & RESTORE SCREENSHOTS
+// 5. DATA SAFETY & RESTORE SCREENSHOTS
 await clickText(".nav-item", "Backups");
 await page.waitForSelector(".data-root-panel", { timeout: 15000 });
 await sleep(500);

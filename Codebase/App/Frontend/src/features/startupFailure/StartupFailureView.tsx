@@ -58,7 +58,7 @@ export function StartupFailureView({
           <div>
             <h2>Data Service Unavailable</h2>
             <p className="subtitle">
-              People Relationships could not start its local data service.
+              Mosaic could not start its local data service.
             </p>
           </div>
           <Button kind="ghost" className="icon-button startup-failure-close" ariaLabel="Close startup failure" onClick={() => void handleExit()}><Icon name="close" /></Button>

@@ -51,7 +51,7 @@ if not SCHEMA_PATH.exists() and IS_FROZEN:
     if _alt_schema.exists():
         SCHEMA_PATH = _alt_schema
 
-APP_NAME = "People Relationships"
+APP_NAME = "Mosaic"
 APP_VERSION = "0.5.0"
 APP_SCHEMA_VERSION = 2
 

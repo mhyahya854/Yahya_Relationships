@@ -1,4 +1,4 @@
-/* Setup script for Family Relationships developer environment.
+/* Setup script for the Mosaic developer environment.
    Sets up Python virtualenv with editable package install and installs npm dependencies. */
 import { execSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -9,7 +9,7 @@ const venvPython = process.platform === "win32"
   ? resolve(root, ".venv/Scripts/python.exe")
   : resolve(root, ".venv/bin/python");
 
-console.log("=== Setting up People Relationships environment ===");
+console.log("=== Setting up Mosaic environment ===");
 
 // 1. Python virtualenv
 if (!existsSync(venvPython)) {

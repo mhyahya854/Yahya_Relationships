@@ -62,8 +62,8 @@ async function main() {
   );
 
   const exeCandidates = [
+    join(installDir, "Mosaic.exe"),
     join(installDir, "people-relationships.exe"),
-    join(installDir, "People Relationships.exe"),
   ];
   const installedExe = exeCandidates.find((c) => existsSync(c));
   if (!installedExe) {

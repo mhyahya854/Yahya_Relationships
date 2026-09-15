@@ -9,6 +9,7 @@ import type {
 import { allFilters, mergeNeighbors, removeExpansion } from "../graph/graphState";
 
 interface ModelState {
+  perspectiveId: string | null;
   nodes: GraphNodeDto[];
   edges: GraphEdgeDto[];
   expansions: Record<string, { nodes: string[]; edges: string[] }>;
@@ -18,6 +19,7 @@ interface ModelState {
 }
 
 const EMPTY: ModelState = {
+  perspectiveId: null,
   nodes: [],
   edges: [],
   expansions: {},
@@ -78,6 +80,7 @@ export function useRelationshipGraph() {
     setLoading(true);
     setError(null);
     let next: ModelState = {
+      perspectiveId: personId,
       nodes: [],
       edges: [],
       expansions: {},
@@ -257,6 +260,7 @@ export function useRelationshipGraph() {
   }, []);
 
   return {
+    perspectiveId: state.perspectiveId,
     nodes: state.nodes,
     edges: state.edges,
     overlayNodes: state.overlayNodes,

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "People Relationships",
+  "productName": "Mosaic",
   "version": "0.5.0",
   "identifier": "local.people-relationships",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "People Relationships",
+        "title": "Mosaic",
         "width": 1440,
         "height": 900,
         "minWidth": 980,

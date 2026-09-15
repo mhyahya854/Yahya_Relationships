@@ -200,7 +200,7 @@ export function RootUnavailableView({
 
   const isFirstRun = state === "UNCONFIGURED";
   const malformed = issues.some((issue) => issue.code === "BOOTSTRAP_INVALID");
-  const title = isFirstRun ? "Welcome to People Relationships" : malformed ? "Data-location setting needs attention" : state === "MISSING" ? "Data location unavailable" : "Data Root needs attention";
+  const title = isFirstRun ? "Welcome to Mosaic" : malformed ? "Data-location setting needs attention" : state === "MISSING" ? "Data location unavailable" : "Data Root needs attention";
   const subtitle = isFirstRun
     ? "Choose an existing Data Root, restore a directory snapshot, or create a fresh Data Root."
     : malformed

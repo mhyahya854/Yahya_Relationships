@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -56,12 +56,13 @@ function pathEdgeDetails(paths: RelationshipPath[]): Map<string, ActivePathEdge>
 
 function buildFlowEdges(
   edgeDtos: GraphEdgeDto[],
-  highlightedPaths: RelationshipPath[],
-  highlightedEdges: Map<string, ActivePathEdge>,
+  activePaths: RelationshipPath[],
+  activeEdges: Map<string, ActivePathEdge>,
+  availableEdges: Map<string, ActivePathEdge>,
   positions: ReadonlyMap<string, { x: number; y: number }>,
   hasTargets: boolean,
 ): Edge[] {
-  const hasHighlights = highlightedPaths.length > 0;
+  const hasActivePaths = activePaths.length > 0;
   const handleFor = (from: { x: number; y: number }, to: { x: number; y: number }, prefix: "source" | "target") => {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
@@ -77,8 +78,11 @@ function buildFlowEdges(
   };
   return edgeDtos.map((dto) => {
     const visual = edgeVisual(dto);
-    const pathDetail = highlightedEdges.get(pathPairKey(dto.source, dto.target));
-    const isPath = Boolean(pathDetail);
+    const activeDetail = activeEdges.get(pathPairKey(dto.source, dto.target));
+    const availableDetail = availableEdges.get(pathPairKey(dto.source, dto.target));
+    const pathDetail = activeDetail ?? availableDetail;
+    const isActivePath = Boolean(activeDetail);
+    const isAvailablePath = Boolean(availableDetail);
     const pathStroke = pathDetail?.sides.size === 1 && pathDetail.sides.has("maternal")
       ? "var(--maternal)"
       : pathDetail?.sides.size === 1 && pathDetail.sides.has("paternal")
@@ -90,23 +94,32 @@ function buildFlowEdges(
     const target = positions.get(dto.target);
     const sourceCenter = source && { x: source.x + 112, y: source.y + 41 };
     const targetCenter = target && { x: target.x + 112, y: target.y + 41 };
+    const sourceHandle = sourceCenter && targetCenter ? handleFor(sourceCenter, targetCenter, "source") : undefined;
+    const targetHandle = sourceCenter && targetCenter ? handleFor(targetCenter, sourceCenter, "target") : undefined;
     return {
       id: dto.id,
       source: dto.source,
       target: dto.target,
-      // Deliberate sector placement keeps direct route strokes radial without
-      // Dagre-like rails or Bezier backtracking. Four cardinal handles ensure
-      // every route exits the nearest card edge.
+      // Direct chords avoid the hard backtracking that makes long family
+      // routes read like a circuit diagram. Cards layer above the route, so a
+      // connector cannot compete with a person's information.
       type: "straight",
-      sourceHandle: sourceCenter && targetCenter ? handleFor(sourceCenter, targetCenter, "source") : undefined,
-      targetHandle: sourceCenter && targetCenter ? handleFor(targetCenter, sourceCenter, "target") : undefined,
+      sourceHandle,
+      targetHandle,
       style: {
-        stroke: isPath ? pathStroke : visual.stroke,
-        strokeWidth: isPath ? 1.7 : Math.min(visual.strokeWidth, 1.45),
-        strokeDasharray: visual.strokeDasharray,
-        opacity: isPath ? 0.9 : hasTargets ? 0.42 : 0.88,
+        stroke: isAvailablePath
+          ? (isActivePath ? `color-mix(in srgb, ${pathStroke} 78%, white)` : pathStroke)
+          : visual.stroke,
+        strokeWidth: isActivePath ? 1.4 : isAvailablePath ? 0.95 : Math.min(visual.strokeWidth, 0.95),
+        strokeDasharray: isActivePath ? visual.strokeDasharray : isAvailablePath ? "3 4" : visual.strokeDasharray,
+        opacity: isActivePath ? 0.88 : isAvailablePath ? 0.34 : hasTargets ? 0.06 : 0.52,
       },
-      className: [visual.className, isPath ? "rf-edge-path" : "", hasHighlights && !isPath ? "rf-edge-dim" : ""].filter(Boolean).join(" "),
+      className: [
+        visual.className,
+        isActivePath ? "rf-edge-path rf-edge-path-active" : "",
+        isAvailablePath && !isActivePath ? "rf-edge-path rf-edge-path-available" : "",
+        hasActivePaths && !isAvailablePath ? "rf-edge-dim" : "",
+      ].filter(Boolean).join(" "),
     };
   });
 }
@@ -154,6 +167,14 @@ function RelationshipsContent({
 }: NavigationProps) {
   const { perspectiveId, perspectivePerson, defaultId, setPerspective, returnToDefault } = usePerspective();
   const graph = useRelationshipGraph();
+  // A new FROM is allowed to render only its own graph snapshot. Otherwise a
+  // stale frame can reserve owner positions before reset completes and make a
+  // small alternate perspective inherit a sprawling composition.
+  const graphMatchesPerspective = graph.perspectiveId === perspectiveId;
+  const graphNodes = graphMatchesPerspective ? graph.nodes : [];
+  const graphEdges = graphMatchesPerspective ? graph.edges : [];
+  const graphOverlayNodes = graphMatchesPerspective ? graph.overlayNodes : [];
+  const graphOverlayEdges = graphMatchesPerspective ? graph.overlayEdges : [];
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const [people, setPeople] = useState<Person[]>([]);
   const [peopleLoaded, setPeopleLoaded] = useState(false);
@@ -161,6 +182,7 @@ function RelationshipsContent({
   const [selectedTargets, setSelectedTargets] = useState<Person[]>([]);
   const [immediateContext, setImmediateContext] = useState<ImmediateContextSnapshot | null>(null);
   const [highlightedPathsByTarget, setHighlightedPathsByTarget] = useState<Record<string, RelationshipPath[]>>({});
+  const [availablePathsByTarget, setAvailablePathsByTarget] = useState<Record<string, RelationshipPath[]>>({});
   const [relationshipError, setRelationshipError] = useState<unknown>(null);
   const [infoPerson, setInfoPerson] = useState<Person | null>(null);
   const [journalFor, setJournalFor] = useState<Person | null>(null);
@@ -194,6 +216,7 @@ function RelationshipsContent({
   useEffect(() => {
     if (!perspectiveId) return;
     setHighlightedPathsByTarget({});
+    setAvailablePathsByTarget({});
     setSelectedTargets((current) => current.filter((person) => person.id !== perspectiveId));
     setSelected((current) => current?.id === perspectiveId ? null : current);
     setImmediateContext(null);
@@ -209,13 +232,13 @@ function RelationshipsContent({
   // or replace their overlay nodes, so an asynchronous route response can
   // never make surrounding context disappear from the canvas.
   useEffect(() => {
-    if (!perspectiveId || graph.loading || selectedTargets.length || !graph.nodes.length) return;
+    if (!perspectiveId || !graphMatchesPerspective || graph.loading || selectedTargets.length || !graphNodes.length) return;
     setImmediateContext({
       perspectiveId,
-      nodes: graph.nodes,
-      edges: graph.edges,
+      nodes: graphNodes,
+      edges: graphEdges,
     });
-  }, [graph.edges, graph.loading, graph.nodes, perspectiveId, selectedTargets.length]);
+  }, [graphEdges, graphMatchesPerspective, graph.loading, graphNodes, perspectiveId, selectedTargets.length]);
 
   const personOfNode = useCallback(
     (personId: string) => people.find((person) => person.id === personId),
@@ -238,7 +261,7 @@ function RelationshipsContent({
     // Search may have revealed a distant person as a temporary neutral card.
     // Once it becomes TO, give that new target its deliberate route-sector
     // slot; immediate neighbours retain their stable context coordinates.
-    const isImmediate = graph.edges.some(
+    const isImmediate = graphEdges.some(
       (edge) => (edge.source === perspectiveId && edge.target === person.id)
         || (edge.target === perspectiveId && edge.source === person.id),
     );
@@ -247,7 +270,7 @@ function RelationshipsContent({
       ? current
       : [...current, person]);
     onTargetChange?.(person.id);
-  }, [graph.edges, onTargetChange, perspectiveId, selectPerson]);
+  }, [graphEdges, onTargetChange, perspectiveId, selectPerson]);
 
   const setFrom = useCallback((person: Person) => {
     if (person.id === perspectiveId) return;
@@ -269,11 +292,18 @@ function RelationshipsContent({
       delete next[personId];
       return next;
     });
+    setAvailablePathsByTarget((current) => {
+      if (!(personId in current)) return current;
+      const next = { ...current };
+      delete next[personId];
+      return next;
+    });
   }, [onTargetChange]);
 
   const clearTargets = useCallback(() => {
     setSelectedTargets([]);
     setHighlightedPathsByTarget({});
+    setAvailablePathsByTarget({});
     onTargetChange?.(null);
   }, [onTargetChange]);
 
@@ -304,32 +334,38 @@ function RelationshipsContent({
     () => Object.values(highlightedPathsByTarget).flat(),
     [highlightedPathsByTarget],
   );
+  const availablePaths = useMemo(
+    () => Object.values(availablePathsByTarget).flat(),
+    [availablePathsByTarget],
+  );
 
   useEffect(() => {
-    if (highlightedPaths.length) graph.focusPaths(highlightedPaths);
+    if (!graphMatchesPerspective) return;
+    if (availablePaths.length) graph.focusPaths(availablePaths);
     else graph.exitPath();
-  }, [graph.exitPath, graph.focusPaths, highlightedPaths]);
+  }, [availablePaths, graph.exitPath, graph.focusPaths, graphMatchesPerspective]);
 
   const visibleNodeDtos = useMemo(() => {
     const nodes = new Map<string, GraphNodeDto>();
     const immediateNodes = immediateContext?.perspectiveId === perspectiveId
       ? immediateContext.nodes
       : [];
-    for (const node of [...immediateNodes, ...graph.nodes, ...graph.overlayNodes]) nodes.set(node.id, node);
+    for (const node of [...immediateNodes, ...graphNodes, ...graphOverlayNodes]) nodes.set(node.id, node);
     return [...nodes.values()];
-  }, [graph.nodes, graph.overlayNodes, immediateContext, perspectiveId]);
-  const highlightedNodeIds = useMemo(
-    () => new Set(highlightedPaths.flatMap((path) => path.nodes.map((node) => node.id))),
-    [highlightedPaths],
+  }, [graphNodes, graphOverlayNodes, immediateContext, perspectiveId]);
+  const availableNodeIds = useMemo(
+    () => new Set(availablePaths.flatMap((path) => path.nodes.map((node) => node.id))),
+    [availablePaths],
   );
   const highlightedEdges = useMemo(() => pathEdgeDetails(highlightedPaths), [highlightedPaths]);
+  const availableEdges = useMemo(() => pathEdgeDetails(availablePaths), [availablePaths]);
   const targetIds = useMemo(() => new Set(selectedTargets.map((person) => person.id)), [selectedTargets]);
   const visibleEdgeDtos = useMemo(() => {
     const edges = new Map<string, GraphEdgeDto>();
     const immediateEdges = immediateContext?.perspectiveId === perspectiveId
       ? immediateContext.edges
       : [];
-    for (const edge of [...immediateEdges, ...graph.edges, ...graph.overlayEdges]) edges.set(edge.id, edge);
+    for (const edge of [...immediateEdges, ...graphEdges, ...graphOverlayEdges]) edges.set(edge.id, edge);
     // The base canvas deliberately shows the direct immediate-star only.
     // Relationships between two neighbours are canonical facts, but making
     // them visible here turns a connection explorer back into a family tree.
@@ -337,9 +373,9 @@ function RelationshipsContent({
     // them, so no path truth is discarded.
     return [...edges.values()].filter((edge) => {
       const directFrom = edge.source === perspectiveId || edge.target === perspectiveId;
-      return directFrom || highlightedEdges.has(pathPairKey(edge.source, edge.target));
+      return directFrom || availableEdges.has(pathPairKey(edge.source, edge.target));
     });
-  }, [graph.edges, graph.overlayEdges, highlightedEdges, immediateContext, perspectiveId]);
+  }, [availableEdges, graphEdges, graphOverlayEdges, immediateContext, perspectiveId]);
 
   const routePlacementById = useMemo(() => {
     type RouteCandidate = {
@@ -348,25 +384,26 @@ function RelationshipsContent({
       proposed: Array<{ x: number; y: number }>;
     };
     const baseNodeIds = new Set<string>(perspectiveId ? [perspectiveId] : []);
-    for (const edge of graph.edges) {
+    for (const edge of graphEdges) {
       if (edge.source === perspectiveId) baseNodeIds.add(edge.target);
       if (edge.target === perspectiveId) baseNodeIds.add(edge.source);
     }
     const candidates = new Map<string, RouteCandidate>();
     const targetSlots = [
-      { x: -520, y: 650 }, { x: 520, y: 650 }, { x: 0, y: 780 },
-      { x: 0, y: -470 },
+      { x: 0, y: 590 }, { x: -440, y: 500 }, { x: 440, y: 500 },
+      { x: 0, y: -340 },
     ];
     const remoteTargets = selectedTargets.filter((person) => !baseNodeIds.has(person.id));
     const targetPosition = new Map(
       remoteTargets.map((person, index) => [person.id, targetSlots[index % targetSlots.length]]),
     );
-    for (const path of highlightedPaths) {
+    for (const [pathIndex, path] of highlightedPaths.entries()) {
       const pathTarget = path.nodes[path.nodes.length - 1]?.id;
       if (!pathTarget || !targetPosition.has(pathTarget)) continue;
       const target = targetPosition.get(pathTarget)!;
       let anchor = { x: 0, y: 0 };
       let anchorIndex = 0;
+      const laneSign = path.side === "maternal" ? 1 : path.side === "paternal" ? -1 : pathIndex % 2 === 0 ? 1 : -1;
       path.nodes.forEach((node, index) => {
         if (index === 0) return;
         if (baseNodeIds.has(node.id)) {
@@ -376,6 +413,12 @@ function RelationshipsContent({
         }
         const span = Math.max(1, path.nodes.length - 1 - anchorIndex);
         const ratio = (index - anchorIndex) / span;
+        const dx = target.x - anchor.x;
+        const dy = target.y - anchor.y;
+        const distance = Math.max(1, Math.hypot(dx, dy));
+        // A shallow contextual arc keeps long route-only chains beside the
+        // immediate world rather than running diagonally through its cards.
+        const laneOffset = Math.sin(Math.PI * ratio) * 112 * laneSign;
         const current = candidates.get(node.id) ?? {
           id: node.id,
           targetIds: new Set<string>(),
@@ -383,8 +426,8 @@ function RelationshipsContent({
         };
         current.targetIds.add(pathTarget);
         current.proposed.push({
-          x: anchor.x + (target.x - anchor.x) * ratio,
-          y: anchor.y + (target.y - anchor.y) * ratio,
+          x: anchor.x + dx * ratio + (-dy / distance) * laneOffset,
+          y: anchor.y + dy * ratio + (dx / distance) * laneOffset,
         });
         candidates.set(node.id, current);
       });
@@ -406,7 +449,7 @@ function RelationshipsContent({
       });
     }
     return preferred;
-  }, [graph.edges, highlightedPaths, perspectiveId, selectedTargets]);
+  }, [graphEdges, highlightedPaths, perspectiveId, selectedTargets]);
 
   const openInfo = useCallback((person: Person) => {
     setInfoPerson(person);
@@ -421,10 +464,10 @@ function RelationshipsContent({
     const nodes: Node[] = visibleNodeDtos.map((dto) => {
       const isFrom = dto.id === perspectiveId;
       const isTo = targetIds.has(dto.id);
-      const isPath = highlightedNodeIds.has(dto.id);
+      const isPath = availableNodeIds.has(dto.id);
       const isPathIntermediate = isPath && !isFrom && !isTo;
       const className = [
-        highlightedPaths.length && !isPath && !isFrom && !isTo ? "rf-dim" : "",
+        selectedTargets.length && !isPath && !isFrom && !isTo ? "rf-dim" : "",
         isFrom ? "rf-node-from" : "",
         isTo ? "rf-node-to" : "",
         isPathIntermediate ? "rf-path-intermediate" : "",
@@ -453,6 +496,7 @@ function RelationshipsContent({
           isPathIntermediate,
           region: connectionRegion(dto, visibleEdgeDtos, perspectiveId, isPathIntermediate, isTo),
           preferredPosition: routePlacementById.get(dto.id),
+          forcePreferredPosition: routePlacementById.has(dto.id),
           onInfo: person ? () => openInfo(person) : undefined,
           onDragStart: onNodeDragStart,
         },
@@ -461,7 +505,7 @@ function RelationshipsContent({
     const positioned = layoutConnectionGraph(nodes, perspectiveId ?? undefined, positionStoreRef.current);
     for (const node of positioned) positionStoreRef.current.set(node.id, node.position);
     return positioned;
-  }, [highlightedNodeIds, highlightedPaths.length, onNodeDragStart, openInfo, perspectiveId, personOfNode, routePlacementById, targetIds, visibleEdgeDtos, visibleNodeDtos]);
+  }, [availableNodeIds, onNodeDragStart, openInfo, perspectiveId, personOfNode, routePlacementById, selectedTargets.length, targetIds, visibleEdgeDtos, visibleNodeDtos]);
 
   const flowEdges = useMemo(() => {
     const positions = new Map(flowNodes.map((node) => [node.id, node.position]));
@@ -469,16 +513,17 @@ function RelationshipsContent({
       visibleEdgeDtos,
       highlightedPaths,
       highlightedEdges,
+      availableEdges,
       positions,
       selectedTargets.length > 0,
     );
-  }, [flowNodes, highlightedEdges, highlightedPaths, selectedTargets.length, visibleEdgeDtos]);
+  }, [availableEdges, flowNodes, highlightedEdges, highlightedPaths, selectedTargets.length, visibleEdgeDtos]);
 
   useEffect(() => {
     if (!perspectiveId || graph.loading || !visibleNodeDtos.length || fittedPerspectiveRef.current === perspectiveId) return;
     fittedPerspectiveRef.current = perspectiveId;
     const frame = window.setTimeout(() => {
-      void fitView({ padding: 0.15, duration: 320, maxZoom: 1 });
+      void fitView({ padding: 0.07, duration: 320, maxZoom: 1.05 });
     }, 60);
     return () => window.clearTimeout(frame);
   }, [fitView, graph.loading, perspectiveId, visibleNodeDtos.length]);
@@ -486,21 +531,35 @@ function RelationshipsContent({
   const immediateConnections = useMemo<ImmediateConnection[]>(() => {
     if (!perspectiveId) return [];
     const directIds = new Set(
-      graph.edges
+      graphEdges
         .filter((edge) => edge.source === perspectiveId || edge.target === perspectiveId)
         .map((edge) => edge.source === perspectiveId ? edge.target : edge.source),
     );
-    return graph.nodes
+    return graphNodes
       .filter((node) => directIds.has(node.id))
       .flatMap((node): ImmediateConnection[] => {
         const person = personOfNode(node.id);
         return person ? [{ person, label: node.relation_label_en ?? undefined }] : [];
       })
       .sort((first, second) => first.person.name.localeCompare(second.person.name));
-  }, [graph.edges, graph.nodes, perspectiveId, personOfNode]);
+  }, [graphEdges, graphNodes, perspectiveId, personOfNode]);
 
   const handleHighlightedPathsChange = useCallback((personId: string, paths: RelationshipPath[]) => {
     setHighlightedPathsByTarget((current) => {
+      const existing = current[personId] ?? [];
+      if (existing.length === paths.length && existing.every((path, index) => path.id === paths[index]?.id)) return current;
+      if (!paths.length) {
+        if (!(personId in current)) return current;
+        const next = { ...current };
+        delete next[personId];
+        return next;
+      }
+      return { ...current, [personId]: paths };
+    });
+  }, []);
+
+  const handleAvailablePathsChange = useCallback((personId: string, paths: RelationshipPath[]) => {
+    setAvailablePathsByTarget((current) => {
       const existing = current[personId] ?? [];
       if (existing.length === paths.length && existing.every((path, index) => path.id === paths[index]?.id)) return current;
       if (!paths.length) {
@@ -554,10 +613,15 @@ function RelationshipsContent({
   const onEscape = useCallback(() => {
     if (infoPerson) { setInfoPerson(null); return; }
     if (immersive || nativeFullscreen) { void exitImmersive(); return; }
+    if (searchOpen || searchSelection) {
+      setSearchOpen(false);
+      setSearchSelection(null);
+      return;
+    }
     if (highlightedPaths.length) { exitPathMode(); return; }
     if (comparePicker) setComparePicker(false);
     if (compareTarget) setCompareTarget(null);
-  }, [comparePicker, compareTarget, exitImmersive, exitPathMode, highlightedPaths.length, immersive, infoPerson, nativeFullscreen]);
+  }, [comparePicker, compareTarget, exitImmersive, exitPathMode, highlightedPaths.length, immersive, infoPerson, nativeFullscreen, searchOpen, searchSelection]);
 
   useKeyboardNavigation({
     onSearch: focusSearch,
@@ -570,6 +634,32 @@ function RelationshipsContent({
   });
 
   const perspectiveName = perspectivePerson?.name ?? perspectiveId ?? "";
+  const contextIslandStyle = useMemo(() => {
+    const snapshot = immediateContext?.perspectiveId === perspectiveId
+      ? immediateContext
+      : { nodes: graphNodes, edges: graphEdges };
+    const counts = { maternal: 0, paternal: 0, external: 0 };
+    for (const node of snapshot.nodes) {
+      if (node.id === perspectiveId) continue;
+      const region = connectionRegion(node, snapshot.edges, perspectiveId, false, false);
+      if (region === "maternal" || region === "paternal" || region === "external") counts[region] += 1;
+    }
+    const sizeFor = (count: number, baseWidth: number, baseHeight: number) => ({
+      width: count ? `${Math.min(baseWidth + count * 38, baseWidth + 148)}px` : "0px",
+      height: count ? `${Math.min(baseHeight + Math.ceil(count / 2) * 42, baseHeight + 112)}px` : "0px",
+    });
+    const maternal = sizeFor(counts.maternal, 166, 112);
+    const paternal = sizeFor(counts.paternal, 166, 112);
+    const external = sizeFor(counts.external, 238, 82);
+    return {
+      "--maternal-island-width": maternal.width,
+      "--maternal-island-height": maternal.height,
+      "--paternal-island-width": paternal.width,
+      "--paternal-island-height": paternal.height,
+      "--external-island-width": external.width,
+      "--external-island-height": external.height,
+    } as CSSProperties;
+  }, [graphEdges, graphNodes, immediateContext, perspectiveId]);
   const pathContent = perspectiveId ? (
     <div className="relationship-target-stack">
       {selectedTargets.map((person) => (
@@ -585,6 +675,7 @@ function RelationshipsContent({
           onRemove={() => removeTarget(person.id)}
           onOpenInfo={() => openInfo(person)}
           onHighlightedPathsChange={handleHighlightedPathsChange}
+          onAvailablePathsChange={handleAvailablePathsChange}
         />
       ))}
     </div>
@@ -603,7 +694,7 @@ function RelationshipsContent({
           className={`relationships-graph-area ${immersive ? "is-immersive" : ""}`}
           data-immersive={immersive ? "true" : "false"}
         >
-          <div className="relationship-side-context" aria-hidden="true">
+          <div className="relationship-side-context" aria-hidden="true" style={contextIslandStyle}>
             <div className="relationship-context-region maternal">Maternal context</div>
             <div className="relationship-context-region paternal">Paternal context</div>
             <div className="relationship-context-region external">External connections</div>
@@ -613,7 +704,7 @@ function RelationshipsContent({
               nodes={flowNodes}
               edges={flowEdges}
               nodeTypes={nodeTypes}
-              minZoom={0.3}
+              minZoom={0.42}
               maxZoom={2.5}
               nodesDraggable={false}
               nodesConnectable={false}
@@ -630,7 +721,7 @@ function RelationshipsContent({
                 const person = personOfNode(node.id);
                 if (person) setFrom(person);
               }}
-              onPaneClick={() => { setSearchOpen(false); }}
+              onPaneClick={() => { setSearchOpen(false); setSearchSelection(null); }}
               proOptions={{ hideAttribution: true }}
             >
               <Background variant={BackgroundVariant.Dots} gap={24} size={1.3} color="var(--graph-dot)" bgColor="transparent" />
@@ -638,35 +729,40 @@ function RelationshipsContent({
           </div>
 
           <div className="connections-search-dock">
-            <div className={`relationships-search-wrap glass-panel ${searchOpen ? "open" : "collapsed"}`} onFocusCapture={() => setSearchOpen(true)}>
-              <span className="connections-search-icon" aria-hidden="true"><Icon name="search" size={20} /></span>
-              <PersonSearch
-                people={people}
-                onSelect={(person) => {
-                  selectPerson(person);
-                  setSearchSelection(person);
-                  setSearchOpen(false);
-                }}
-                placeholder="Search people… (Ctrl+K)"
-                inputRef={(node) => { searchInputRef.current = node; }}
-                onOpenChange={setSearchOpen}
-              />
-              {searchOpen && <Button kind="ghost" className="icon-button connections-search-close" onClick={() => { setSearchOpen(false); searchInputRef.current?.blur(); }} ariaLabel="Close Connections search" title="Close search"><Icon name="close" /></Button>}
-            </div>
-            {searchSelection && (
-              <div className="connections-search-actions glass-panel" aria-label={`Actions for ${searchSelection.name}`}>
-                <Avatar person={searchSelection} size={27} />
-                <strong>{searchSelection.name}</strong>
-                <Button kind="ghost" onClick={() => setFrom(searchSelection)}>Set as FROM</Button>
-                <Button kind="primary" onClick={() => addTo(searchSelection)}>Add to TO</Button>
-                <Button kind="ghost" className="icon-button" onClick={() => setSearchSelection(null)} ariaLabel="Close search result actions" title="Close"><Icon name="close" /></Button>
+            {!searchOpen ? (
+              <Button kind="ghost" className="connections-search-trigger" onClick={focusSearch} ariaLabel="Open Connections search" title="Search people"><Icon name="search" size={20} /></Button>
+            ) : (
+              <div className="relationships-search-wrap glass-panel" role="dialog" aria-label="Connections search">
+                <div className="connections-search-input-row">
+                  <span className="connections-search-icon" aria-hidden="true"><Icon name="search" size={18} /></span>
+                  <PersonSearch
+                    people={people}
+                    onSelect={(person) => {
+                      selectPerson(person);
+                      setSearchSelection(person);
+                      window.requestAnimationFrame(() => setSearchOpen(true));
+                    }}
+                    placeholder="Search people… (Ctrl+K)"
+                    inputRef={(node) => { searchInputRef.current = node; }}
+                    onOpenChange={setSearchOpen}
+                  />
+                  <Button kind="ghost" className="icon-button connections-search-close" onClick={() => { setSearchOpen(false); setSearchSelection(null); searchInputRef.current?.blur(); }} ariaLabel="Close Connections search" title="Close search"><Icon name="close" /></Button>
+                </div>
+                {searchSelection && (
+                  <div className="connections-search-actions" aria-label={`Actions for ${searchSelection.name}`}>
+                    <Avatar person={searchSelection} size={27} />
+                    <strong>{searchSelection.name}</strong>
+                    <Button kind="ghost" onClick={() => { setFrom(searchSelection); setSearchOpen(false); setSearchSelection(null); }}>Set as FROM</Button>
+                    <Button kind="primary" onClick={() => { addTo(searchSelection); setSearchOpen(false); setSearchSelection(null); }}>Add to TO</Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {highlightedPaths.length > 0 && (
             <div className="graph-focus-badge">
-              {highlightedPaths.length} selected route{highlightedPaths.length === 1 ? "" : "s"} · surrounding context remains visible · Esc clears route selection
+              {highlightedPaths.length} route{highlightedPaths.length === 1 ? "" : "s"} focused · Esc clears
             </div>
           )}
 
@@ -703,7 +799,7 @@ function RelationshipsContent({
             immersive={immersive}
             onZoomOut={() => void zoomOut({ duration: 220 })}
             onZoomIn={() => void zoomIn({ duration: 220 })}
-            onFit={() => void fitView({ padding: 0.14, duration: 320, maxZoom: 1 })}
+            onFit={() => void fitView({ padding: 0.07, duration: 320, maxZoom: 1.05 })}
             onToggleFullscreen={() => void toggleImmersive()}
           />
         </div>

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "people-relationships-backend"
 version = "1.0.0"
-description = "People Relationships FastAPI backend (app.backend package)"
+description = "Mosaic FastAPI backend (app.backend package)"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110",

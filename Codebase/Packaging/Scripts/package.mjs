@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* Cross-platform packaging orchestrator for People Relationships desktop application. */
+/* Cross-platform packaging orchestrator for the Mosaic desktop application. */
 
 import { execSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -63,7 +63,7 @@ async function main() {
   const { target, release, skipSidecar } = parseArgs();
   const host = getHostPlatform();
 
-  console.log(`=== People Relationships Desktop Packaging Pipeline ===`);
+  console.log(`=== Mosaic Desktop Packaging Pipeline ===`);
   console.log(`Host Platform: ${host} (${process.arch})`);
   console.log(`Requested Target: ${target}`);
 
@@ -193,7 +193,7 @@ async function main() {
   } catch {}
 
   const manifest = {
-    app_name: "People Relationships",
+    app_name: "Mosaic",
     version: appVersion,
     git_sha: getGitSha(),
     target_os: host,

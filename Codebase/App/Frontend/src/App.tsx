@@ -237,8 +237,8 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
             </svg>
           </div>
           <div>
-            <div className="brand-title">People</div>
-            <div className="brand-sub">Relationships</div>
+            <div className="brand-title">Mosaic</div>
+            <div className="brand-sub">Private archive</div>
           </div>
         </div>
         <nav className="nav">

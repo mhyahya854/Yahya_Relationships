@@ -4,8 +4,8 @@ Verifies that HTTP readiness checks accurately distinguish between:
 1. Closed ports
 2. Unrelated raw TCP listeners
 3. Non-200 HTTP responses
-4. Foreign HTTP services (missing People Relationships identity)
-5. Genuine People Relationships healthy backend
+4. Foreign HTTP services (missing Mosaic identity)
+5. Genuine Mosaic healthy backend
 Also verifies deterministic missing-sidecar handling.
 """
 
@@ -43,8 +43,8 @@ def probe_http_health(port: int, timeout: float = 1.0) -> tuple[bool, str]:
 
         if "200" not in first_line:
             return False, f"Non-200 status: {first_line}"
-        if "People Relationships" not in text:
-            return False, "Missing People Relationships application identity"
+        if "Mosaic" not in text:
+            return False, "Missing Mosaic application identity"
         return True, "Healthy"
     except Exception as e:
         return False, f"Connection error: {e}"
@@ -134,19 +134,19 @@ def test_readiness_distinguishes_foreign_http_service():
     try:
         ok, reason = probe_http_health(port, timeout=1.0)
         assert ok is False
-        assert "Missing People Relationships application identity" in reason
+        assert "Missing Mosaic application identity" in reason
     finally:
         server.server_close()
 
 
 def test_readiness_accepts_genuine_healthy_backend():
-    """Verify that a response with HTTP 200 and People Relationships identity passes."""
+    """Verify that a response with HTTP 200 and Mosaic identity passes."""
     class HealthyHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(b'{"ok": true, "app": "People Relationships", "version": "0.5.0"}')
+            self.wfile.write(b'{"ok": true, "app": "Mosaic", "version": "0.5.0"}')
 
         def log_message(self, *args):
             pass

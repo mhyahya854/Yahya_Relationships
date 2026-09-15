@@ -1,6 +1,6 @@
-# People Relationships
+# Mosaic
 
-> A private, single-user, local-first relationship brain.
+> Your private people, memories & connections archive.
 
 ## Master architecture authority
 
@@ -22,16 +22,49 @@ such; they do not override the locked forward architecture in this Master
 Plan. In particular, no database, file, or source material is moved by this
 documentation update.
 
-**People Relationships** answers one question from **any selected person's
+**Mosaic** answers one question from **any selected person's
 perspective**: *who is connected to whom, how are they related, and what does
 that relationship look like from this person's side?*
 
-The application is built around the pre-existing **Family Relationships**
-SQLite + Python kinship engine (35 people, 44 parent-child facts, 12
+Mosaic is a private, single-user, local-first system for people,
+relationships, memories, conversations, media, events, and places. The
+application is built around the pre-existing SQLite + Python kinship engine (35 people, 44 parent-child facts, 12
 marriages in the current data). That engine is preserved and remains the only
 place where genealogy is calculated. React only displays; FastAPI + Python
 understand relationships; SQLite stores structured facts; Markdown stores
 journal prose; Hermes calls tiny deterministic tools.
+
+## Phase roadmap and current UI freeze
+
+### Phase 10 — Visual Design
+
+**STATUS: FROZEN FOR LATER REVIEW.** The visual system and current screens are
+technically stable enough to serve as the development baseline for subsequent
+phases. This freeze does not constitute permanent final visual approval.
+Non-blocking visual refinements are deliberately deferred until the dedicated
+whole-app UI review after the major remaining feature phases. Later phases must
+not casually redesign existing screens; visual changes should be limited to
+what their new feature requires.
+
+- Phase 11 — Canonical Data Foundation & Migration
+- Phase 12 — Raw Intake, Provenance & Organization
+- Phase 13 — Media, Documents & Gallery
+- Phase 14 — Events, Memories & Flashbacks
+- Phase 15 — Conversations & Social Media Archive
+- Phase 16 — Places, Location History & Travel
+- Phase 17 — Face Recognition & Identity Review
+- Phase 18 — Accessibility & QoL
+- Phase 19 — Edge Cases, Data Integrity & Expanded Backups
+- Phase 20 — Full Cross-Feature QA
+- Phase 21 — Final Whole-App UI Review & Polish — explicitly unfreezes the UI
+  for final holistic review.
+- Phase 22 — Release Hardening & Packaging
+- Phase 23 — V1 Release
+
+The deferred, non-binding review prompts are tracked in
+[final-ui-review-backlog.md](Documentation/Planning/final-ui-review-backlog.md).
+Expanded Hermes remains deferred unless separately approved; it is not a
+required V1 phase.
 
 ---
 
@@ -89,7 +122,7 @@ FastAPI local backend (Codebase/App/app/backend)
 Repository layout (the repo root is also the personal-data root):
 
 ```text
-Family Relationships/
+<Existing Data Root>/    # e.g. an existing Family Relationships/ folder; no rename required
   Codebase/              application source, tests, scripts and packaging
     App/app/backend/     FastAPI + services + Hermes tools
       domain/family/     canonical engine + engine-aligned path extraction
@@ -647,7 +680,7 @@ Verified screenshots live in `Documentation/UI-Screenshots/`.
 
 ## Supported Platforms
 
-People Relationships is distributed as a self-contained desktop application with no requirement for end users to install Python, Node.js, or Rust:
+Mosaic is distributed as a self-contained desktop application with no requirement for end users to install Python, Node.js, or Rust:
 
 | Platform | Architecture | Distribution Package | Status |
 |---|---|---|---|
@@ -661,22 +694,22 @@ People Relationships is distributed as a self-contained desktop application with
 ## Installation & Launch
 
 ### Windows Installation
-1. Download the latest installer: `People-Relationships-<version>-windows-x64-setup.exe` (or from `Codebase/Packaging/release/`).
-2. Run the installer. It installs the application to your user profile (`%LOCALAPPDATA%\Programs\People Relationships`) without requiring administrator permissions.
-3. Launch **People Relationships** from the Start Menu or desktop shortcut.
+1. Download the current **Mosaic** installer from `Codebase/Packaging/release/`.
+2. Run the installer. It installs the application for the current user without requiring administrator permissions.
+3. Launch **Mosaic** from the Start Menu or desktop shortcut.
 4. *SmartScreen note*: Development builds are unsigned. If Windows SmartScreen appears, click **More info** -> **Run anyway**.
 5. *Uninstall*: Removing the application via Windows Settings / Control Panel completely removes application binaries but **preserves** your relationship data root and database.
 
 ### macOS Installation
-1. Download `People-Relationships-<version>-macos-arm64.dmg` (for M1/M2/M3/M4 Macs) or `People-Relationships-<version>-macos-x64.dmg` (for Intel Macs).
-2. Open the `.dmg` and drag **People Relationships** to your `/Applications` folder.
-3. Launch **People Relationships**.
+1. Download the current Mosaic `.dmg` for your Mac architecture.
+2. Open the `.dmg` and drag **Mosaic** to your `/Applications` folder.
+3. Launch **Mosaic**.
 4. *Gatekeeper note*: As open-source development builds are not notarized by Apple, on first launch right-click the app in Finder and choose **Open**, or visit **System Settings -> Privacy & Security** and click **Open Anyway**.
 
 ### Linux Installation
-1. Download `People-Relationships-<version>-linux-x64.AppImage` (or the `.deb` package).
-2. Make the AppImage executable: `chmod +x People-Relationships-*-linux-x64.AppImage`.
-3. Run the AppImage: `./People-Relationships-*-linux-x64.AppImage`.
+1. Download the current Mosaic AppImage (or `.deb` package).
+2. Make the AppImage executable.
+3. Run the AppImage.
 4. *Runtime libraries*: Standard Tauri Linux dependencies apply (`webkit2gtk-4.1` or `webkit2gtk-4.0`, `gtk3`). On Ubuntu/Debian: `sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0`.
 
 ---
@@ -686,7 +719,7 @@ People Relationships is distributed as a self-contained desktop application with
 Your family relationship brain is completely decoupled from application binaries. A Data Root created on one operating system can be transferred directly to another without modification:
 
 ```text
-Family Relationships/
+<Existing Data Root>/
 ├── Database/
 │   └── relationships.db      # one standard SQLite 3 source of structured truth
 ├── People/
@@ -699,7 +732,7 @@ Family Relationships/
 
 ### Moving Data Between OSes
 1. **Copy the directory**: Copy your relationship data folder (e.g. via flash drive, local network, or archive) to the destination machine.
-2. **Open People Relationships**:
+2. **Open Mosaic**:
    - If this is a first run, select **[Use Existing Data Folder]** and choose the directory.
    - If the app is already configured, switch the active data root via the UI settings or relocate dialog.
 3. **Paths and encoding**: All internal references use relative paths (`/`) and filesystem-safe person IDs. Markdown journals are strictly UTF-8 and tolerate CRLF/LF line endings interchangeably.
@@ -709,6 +742,10 @@ The pointer to the active relationship data root is stored in standard OS config
 - **Windows**: `%APPDATA%\people-relationships\config.json`
 - **macOS**: `~/Library/Application Support/people-relationships/config.json`
 - **Linux**: `~/.config/people-relationships/config.json` (or `$XDG_CONFIG_HOME/people-relationships/config.json`)
+
+The `people-relationships` configuration path is a deliberately retained
+technical compatibility identifier. Existing Data Root folders (including one
+named `Family Relationships`) remain valid and are never renamed by Mosaic.
 
 ---
 

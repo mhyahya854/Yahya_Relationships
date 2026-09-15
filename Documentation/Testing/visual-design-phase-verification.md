@@ -2,7 +2,10 @@
 
 ## Status
 
-**TECHNICALLY COMPLETE; HUMAN VISUAL APPROVAL REQUIRED.** Phase 11 has not started. Automated verification is evidence for review, not human approval.
+**FROZEN FOR LATER REVIEW — technically stable; further whole-app visual review
+and refinement is intentionally deferred to the final UI review phase.** Phase
+11 has not started. Automated verification is evidence for regression safety,
+not permanent final visual approval.
 
 ## Scope and authority
 
@@ -93,4 +96,6 @@ Final exact-SHA remote CI, artifact availability, platform privacy conclusions, 
 
 - Web research used: **No**. External sources or copied implementation proposals: **None**.
 - Gallery/media architecture, profile-picture storage, and every Phase 11 item remain unstarted.
-- Human visual approval is the remaining Phase 10 gate.
+- Phase 10 is frozen for later review, not permanently visually approved. The
+  dedicated whole-app UI review in Phase 21 explicitly unfreezes the UI after
+  the major remaining feature phases.

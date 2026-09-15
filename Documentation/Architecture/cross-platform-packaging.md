@@ -1,12 +1,12 @@
 # Cross-Platform Packaging Architecture
 
-This document describes the production packaging architecture for **People Relationships**, ensuring self-contained distribution across Windows, macOS, and Linux without sacrificing data portability, local security, or the single canonical relationship engine.
+This document describes the production packaging architecture for **Mosaic**, ensuring self-contained distribution across Windows, macOS, and Linux without sacrificing data portability, local security, or the single canonical relationship engine.
 
 ---
 
 ## 1. Architectural Philosophy
 
-People Relationships follows a strict separation of concerns across its stack:
+Mosaic follows a strict separation of concerns across its stack:
 
 ```text
 +-------------------------------------------------------------+

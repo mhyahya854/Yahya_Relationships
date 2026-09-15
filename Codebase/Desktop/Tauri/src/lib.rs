@@ -224,7 +224,7 @@ fn check_backend_http_health(port: u16) -> Result<(), String> {
         return Err(format!("Backend returned non-200 status: {first_line}"));
     }
 
-    if !response_str.contains("People Relationships") {
+    if !response_str.contains("Mosaic") {
         return Err("Backend response missing expected application identity".to_string());
     }
 
@@ -352,7 +352,7 @@ pub fn run() {
             pick_folder,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building People Relationships");
+        .expect("error while building Mosaic");
 
     app.run(|app_handle, event| match event {
         RunEvent::Exit | RunEvent::ExitRequested { .. } => {

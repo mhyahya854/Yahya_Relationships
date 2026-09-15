@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build script for packaging the People Relationships Python backend sidecar.
+"""Build script for packaging the Mosaic Python backend sidecar.
 
 Uses PyInstaller and backend.spec to produce a platform-specific standalone executable,
 naming it according to Tauri's target-triple external binary conventions in
@@ -48,7 +48,7 @@ def file_sha256(path: Path) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build People Relationships Python Backend Sidecar")
+    parser = argparse.ArgumentParser(description="Build Mosaic Python Backend Sidecar")
     parser.add_argument("--triple", default=None, help="Target triple (e.g. x86_64-pc-windows-msvc)")
     parser.add_argument("--clean", action="store_true", help="Clean build directories before building")
     args = parser.parse_args()

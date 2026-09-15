@@ -4,7 +4,10 @@
 
 The strict frontend correction is implemented and locally verified. Connections and Family Tree now follow the latest graph-first reference architecture. Canonical relationship ranking, multi-target/multipath selection, maternal/paternal coexistence, marriage-union routing, portal dialogs, responsive sidebar behavior, and restrained motion are covered by automated and screenshot evidence.
 
-Phase 11 has not started. Human visual approval remains mandatory.
+Phase 10 is **FROZEN FOR LATER REVIEW**: technically stable enough to be the
+baseline for subsequent development, with non-blocking visual refinement
+intentionally deferred to Phase 21's final whole-app UI review. This is not
+permanent final visual approval. Phase 11 has not started.
 
 ## Local evidence
 
@@ -36,4 +39,6 @@ The final commit SHA, `HEAD == origin/main` proof, exact-SHA GitHub Actions run 
 
 ## Boundary
 
-Web research was not used. Hermes is documented only and was not expanded. Phase 11 remains unstarted.
+Web research was not used. Hermes is documented only and was not expanded.
+Phase 11 remains unstarted; Phase 21 is the explicit whole-app UI unfreeze and
+review phase.

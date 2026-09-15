@@ -6827,3 +6827,181 @@ button.icon-button {
   .connections-search-actions { grid-template-columns: 27px minmax(0, 1fr) auto; }
   .connections-search-actions .btn:not(.icon-button) { grid-row: 2; }
 }
+
+/* Final Connections polish: compact, readable, and intentionally arranged. */
+.relationships-panel.connection-builder {
+  width: 326px;
+  padding: 12px;
+}
+
+.relationship-graph-stage.has-inspector { right: 362px; }
+
+.relationship-context-region {
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 11px 14px;
+  border-radius: 42% 58% 47% 53% / 51% 44% 56% 49%;
+  font-size: 9px;
+  opacity: .72;
+  transition: width var(--duration-standard) var(--ease-emphasized), height var(--duration-standard) var(--ease-emphasized), opacity var(--duration-standard) ease;
+}
+
+.relationship-context-region.maternal {
+  width: var(--maternal-island-width, 244px);
+  height: var(--maternal-island-height, 154px);
+  top: 118px;
+  left: 84px;
+}
+
+.relationship-context-region.paternal {
+  width: var(--paternal-island-width, 244px);
+  height: var(--paternal-island-height, 154px);
+  top: 118px;
+  left: min(53%, 620px);
+}
+
+.relationship-context-region.external {
+  width: var(--external-island-width, 310px);
+  height: var(--external-island-height, 124px);
+  left: 48%;
+  bottom: 58px;
+  transform: translateX(-50%);
+}
+
+.connection-builder-head,
+.person-info-drawer-head {
+  gap: 8px;
+  padding-bottom: 9px;
+}
+
+.connection-builder-head strong,
+.person-info-drawer-head strong { font-size: 14px; }
+.connection-builder-head span,
+.person-info-drawer-head span { font-size: 10.5px; }
+
+.builder-zone,
+.builder-paths,
+.builder-immediate-list,
+.builder-selection-actions { padding: 9px 0; }
+
+.builder-zone-label { margin-bottom: 5px; }
+.builder-drop-zone { min-height: 42px; gap: 4px; padding: 5px; border-radius: 11px; }
+.builder-from-zone .relationship-builder-person { min-height: 38px; }
+.builder-to-drop-zone .relationship-builder-person { min-height: 34px; }
+.relationship-builder-person { min-height: 38px; gap: 6px; padding: 4px 6px; }
+.relationship-builder-person-copy small,
+.builder-help,
+.builder-zone-label small,
+.builder-immediate-list > p { font-size: 10px; }
+.builder-help { display: block; margin-top: 4px; }
+.builder-drop-hint { padding-top: 2px; font-size: 10px; }
+.builder-selection-actions { gap: 5px; }
+.builder-selection-actions .btn { min-height: 27px; padding: 3px 7px; font-size: 10px; }
+.builder-connection-list,
+.relationship-target-stack { gap: 4px; }
+.builder-connection-row { padding: 2px; }
+
+.relationship-target-card { padding: 6px; border-radius: 11px; box-shadow: none; }
+.target-card-heading { grid-template-columns: 28px minmax(0, 1fr) auto auto; gap: 5px; }
+.relationship-target-card .avatar { width: 28px !important; height: 28px !important; }
+.target-card-title { gap: 0; }
+.target-card-title strong { font-size: 12px; }
+.target-card-title span { font-size: 10px; }
+.target-card-remove { min-width: 22px; min-height: 22px; font-size: 15px; }
+.target-card-body { gap: 5px; padding-top: 5px; }
+.target-path-summary { display: flex; align-items: baseline; gap: 4px; }
+.target-path-summary strong,
+.target-path-summary span { font-size: 10px; }
+.target-path-option {
+  min-height: 34px;
+  grid-template-columns: 17px minmax(0, 1fr);
+  gap: 5px;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+.path-check { width: 17px; height: 17px; font-size: 10px; }
+.target-path-copy { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 6px; }
+.target-path-copy > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; }
+.target-path-copy > small { flex: 0 0 auto; color: var(--muted); font-size: 9.5px; }
+.target-path-option:not(.is-selected) { opacity: .62; background: transparent; }
+.target-path-option.is-selected { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 48%, transparent); }
+.target-card-evidence { font-size: 10px; }
+
+.person-node-name { font-size: 14px; }
+.person-node-subtitle { font-size: 11.2px; }
+.person-node-card.is-from { transform: scale(1.05); }
+.react-flow__node.rf-dim { opacity: .7; filter: grayscale(.46) saturate(.56); }
+.react-flow__edge.rf-edge-path { filter: none; }
+.react-flow__edge.rf-edge-path-active .react-flow__edge-path { filter: none; }
+.react-flow__edge.rf-edge-path-available .react-flow__edge-path { filter: saturate(.72); }
+.react-flow__edge-path { stroke-linecap: round; stroke-linejoin: round; }
+
+.graph-focus-badge {
+  left: 14px;
+  bottom: 16px;
+  padding: 4px 8px;
+  font-size: 10px;
+  opacity: .9;
+}
+
+.connections-search-dock {
+  top: 20px;
+  right: 362px;
+  z-index: 45;
+  min-width: 0;
+  min-height: 0;
+}
+
+.connections-search-trigger {
+  display: inline-grid;
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
+  min-height: 48px;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.connections-search-dock .relationships-search-wrap {
+  width: min(380px, calc(100vw - 420px));
+  min-height: 0;
+  padding: 7px;
+  border-radius: 14px;
+}
+
+.connections-search-input-row { display: flex; align-items: center; gap: 5px; }
+.connections-search-input-row .person-search { flex: 1; min-width: 0; width: auto; }
+.connections-search-input-row .person-search input { min-height: 38px; padding: 7px 9px; font-size: 12px; }
+.connections-search-icon { position: static; display: inline-grid; place-items: center; width: 24px; color: var(--muted); }
+.connections-search-close { width: 28px; min-width: 28px; height: 28px; min-height: 28px; }
+.connections-search-actions {
+  width: auto;
+  margin-top: 6px;
+  padding: 6px 2px 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  grid-template-columns: 27px minmax(0, 1fr) auto auto;
+}
+
+.person-info-tabs {
+  flex-wrap: wrap;
+  overflow: visible;
+  gap: 3px;
+  padding: 8px 0;
+}
+.person-info-tabs button { padding: 5px 6px; font-size: 9.5px; }
+.person-info-drawer-body { padding-top: 9px; }
+
+@media (max-width: 1320px) {
+  .relationship-graph-stage.has-inspector { right: 350px; }
+  .relationships-panel.connection-builder { width: 318px; }
+  .connections-search-dock { right: 350px; }
+}
+
+@media (max-width: 1040px) {
+  .connections-search-dock { right: 22px; }
+  .connections-search-dock .relationships-search-wrap { width: min(380px, calc(100vw - 44px)); }
+}

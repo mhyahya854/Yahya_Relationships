@@ -937,7 +937,7 @@ try {
       else if (element.closest(".profile-modal")) screen = "Profile";
       else if (element.closest(".root-unavailable-modal")) screen = "Recovery";
       else if (element.closest(".root-unavailable-card")) {
-        screen = document.body.textContent?.includes("Welcome to People Relationships") ? "First Run" : "Recovery";
+        screen = document.body.textContent?.includes("Welcome to Mosaic") ? "First Run" : "Recovery";
       } else {
         const dialog = element.closest("[role='dialog'], .modal-card, .modal");
         if (dialog) {
@@ -979,7 +979,7 @@ try {
   });
 
   await page.goto("http://localhost:1420", { waitUntil: "networkidle0", timeout: 40_000 });
-  await page.waitForFunction(() => document.body.textContent?.includes("Welcome to People Relationships"));
+  await page.waitForFunction(() => document.body.textContent?.includes("Welcome to Mosaic"));
   check(Boolean(await page.$(".root-unavailable-view > div")), "first-run route renders in the recovery boundary");
   if (!BASELINE_ONLY) {
     await shot("09-first-run/welcome-default.png", "First-run recovery boundary with three safe setup routes.", "Use Existing Data Root; Restore From Backup; Create New Data Root");
@@ -994,12 +994,12 @@ try {
     await clickText(".root-unavailable-card", "Back");
     await page.evaluate((key) => localStorage.setItem(key, "dark"), THEME_KEY);
     await page.reload({ waitUntil: "networkidle0", timeout: 40_000 });
-    await page.waitForFunction(() => document.body.textContent?.includes("Welcome to People Relationships"));
+    await page.waitForFunction(() => document.body.textContent?.includes("Welcome to Mosaic"));
     check(await page.$eval("html", (element) => element.dataset.theme === "dark"), "Dark theme also applies at the first-run boundary");
     await shot("15-dark-mode/first-run.png", "First-run onboarding rendered with the persisted Dark theme before any DataRoot exists.", "Use Existing Data Root; Restore From Backup; Create New Data Root");
     await page.evaluate((key) => localStorage.setItem(key, "light"), THEME_KEY);
     await page.reload({ waitUntil: "networkidle0", timeout: 40_000 });
-    await page.waitForFunction(() => document.body.textContent?.includes("Welcome to People Relationships"));
+    await page.waitForFunction(() => document.body.textContent?.includes("Welcome to Mosaic"));
   }
 
   const fixture = await seedFixture();
