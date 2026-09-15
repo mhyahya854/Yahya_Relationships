@@ -6361,38 +6361,41 @@ button.icon-button {
 
 .relationship-context-region {
   position: absolute;
-  width: min(38vw, 550px);
-  height: min(44vh, 420px);
-  border: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent);
-  border-radius: 38px;
+  width: min(23vw, 340px);
+  height: min(27vh, 235px);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 48%, transparent);
+  border-radius: 46% 54% 48% 52% / 50% 42% 58% 50%;
   color: color-mix(in srgb, var(--muted) 72%, transparent);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: .12em;
   text-transform: uppercase;
-  padding: 18px 22px;
+  padding: 16px 20px;
+  opacity: .88;
 }
 
 .relationship-context-region.maternal {
-  top: 76px;
-  left: 38px;
-  background: color-mix(in srgb, var(--maternal-bg) 72%, transparent);
+  top: 106px;
+  left: 76px;
+  background: radial-gradient(ellipse at 48% 46%, color-mix(in srgb, var(--maternal-bg) 78%, transparent), color-mix(in srgb, var(--maternal-bg) 28%, transparent) 67%, transparent 100%);
 }
 
 .relationship-context-region.paternal {
-  top: 76px;
-  right: 404px;
-  background: color-mix(in srgb, var(--paternal-bg) 70%, transparent);
+  top: 106px;
+  left: min(52%, 660px);
+  right: auto;
+  background: radial-gradient(ellipse at 52% 46%, color-mix(in srgb, var(--paternal-bg) 78%, transparent), color-mix(in srgb, var(--paternal-bg) 28%, transparent) 67%, transparent 100%);
   text-align: right;
 }
 
 .relationship-context-region.external {
-  width: min(42vw, 640px);
-  height: 36vh;
-  left: 50%;
-  bottom: 26px;
+  width: min(34vw, 485px);
+  height: 150px;
+  left: 15%;
+  bottom: 42px;
   transform: translateX(-50%);
-  background: color-mix(in srgb, var(--surface-secondary) 68%, transparent);
+  border-color: transparent;
+  background: radial-gradient(ellipse at 50% 60%, color-mix(in srgb, var(--surface-secondary) 72%, transparent), transparent 72%);
   text-align: center;
 }
 
@@ -6665,8 +6668,10 @@ button.icon-button {
   position: relative;
   width: 224px;
   min-height: 82px;
+  max-height: 82px;
   padding: 11px 37px 11px 12px;
   border-radius: 14px;
+  overflow: hidden;
   transition: opacity var(--duration-standard) ease, filter var(--duration-standard) ease, border-color var(--duration-standard) ease, box-shadow var(--duration-standard) ease;
 }
 
@@ -6675,6 +6680,8 @@ button.icon-button {
   border-width: 2px;
   background: linear-gradient(135deg, var(--accent-selected), var(--surface-primary));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-selected) 78%, transparent), 0 12px 28px var(--shadow-strong);
+  transform: scale(1.09);
+  transform-origin: center;
 }
 
 .person-node-card.is-to {
@@ -6686,7 +6693,7 @@ button.icon-button {
 .person-node-card.is-path-intermediate {
   border-color: var(--border-strong);
   background: var(--surface-primary);
-  box-shadow: 0 7px 20px var(--shadow-subtle);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-primary) 22%, transparent), 0 7px 20px var(--shadow-subtle);
 }
 
 .person-node-info { position: absolute; top: 8px; right: 8px; font-size: 17px; }
@@ -6697,9 +6704,39 @@ button.icon-button {
 .react-flow__node.rf-node-from,
 .react-flow__node.rf-node-to,
 .react-flow__node.rf-path-intermediate { opacity: 1; filter: none; }
-.react-flow__node.rf-dim { opacity: .35; filter: grayscale(.58) saturate(.44); }
-.react-flow__edge.rf-edge-dim .react-flow__edge-path { filter: grayscale(.72); }
-.react-flow__edge.rf-edge-path .react-flow__edge-path { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent-primary) 38%, transparent)); }
+.react-flow__node.rf-dim { opacity: .66; filter: grayscale(.52) saturate(.52); }
+.react-flow__edge.rf-edge-dim .react-flow__edge-path { filter: grayscale(.64); }
+.react-flow__edge.rf-edge-path .react-flow__edge-path { filter: none; }
+
+.person-node-card .react-flow__handle {
+  width: 2px;
+  height: 2px;
+  min-width: 2px;
+  min-height: 2px;
+  opacity: 0;
+  border: 0;
+  background: transparent;
+}
+
+.person-node-name {
+  display: -webkit-box;
+  overflow: hidden;
+  max-height: 34px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.22;
+}
+
+.person-node-subtitle {
+  display: -webkit-box;
+  overflow: hidden;
+  max-height: 15px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  white-space: normal;
+}
+
+.person-node-subtitle .node-sub-ur { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .connections-search-actions {
   display: grid;
@@ -6713,6 +6750,14 @@ button.icon-button {
 }
 .connections-search-actions strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .connections-search-actions .btn { min-height: 30px; padding: 4px 8px; font-size: 11px; }
+
+.connections-search-dock {
+  top: 20px;
+  right: 386px;
+}
+
+.relationships-search-wrap,
+.connections-search-dock .person-search { width: 340px; }
 
 .graph-focus-badge { z-index: 20; }
 .relationships-view .relationships-footer { z-index: 24; min-height: 42px; padding: 5px 7px; border-radius: 15px; }

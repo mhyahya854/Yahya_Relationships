@@ -11,6 +11,7 @@
     "backend": "node Scripts/run-py.mjs -m app.backend.main",
     "build": "npm --prefix App/Frontend run build",
     "typecheck": "npm --prefix App/Frontend run typecheck",
+    "test": "node Scripts/run-py.mjs -m pytest Tests/Backend",
     "test:ui": "node Tests/UI/people_e2e.mjs",
     "test:ui:smoke": "node Tests/UI/smoke.mjs",
     "test:relationships": "node Tests/UI/relationships_e2e.mjs",

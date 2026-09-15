@@ -127,7 +127,8 @@ export interface PersonNodeData {
   isFrom?: boolean;
   isTo?: boolean;
   isPathIntermediate?: boolean;
-  region?: "origin" | "maternal" | "paternal" | "external" | "family" | "path";
+  region?: "origin" | "maternal" | "paternal" | "siblings" | "partner" | "children" | "external" | "family" | "path" | "target";
+  preferredPosition?: { x: number; y: number };
   onInfo?: (personId: string) => void;
   onDragStart?: (event: DragEvent<HTMLElement>, personId: string) => void;
 }

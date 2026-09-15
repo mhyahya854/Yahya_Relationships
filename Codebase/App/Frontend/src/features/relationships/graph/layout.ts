@@ -8,33 +8,79 @@ export type ConnectionRegion =
   | "origin"
   | "maternal"
   | "paternal"
+  | "siblings"
+  | "partner"
+  | "children"
   | "external"
   | "family"
-  | "path";
+  | "path"
+  | "target";
 
 type PositionedNode = Node & {
-  data: { region?: ConnectionRegion };
+  data: {
+    region?: ConnectionRegion;
+    /** A route-only node can request a deliberately stable lane. */
+    preferredPosition?: { x: number; y: number };
+  };
+};
+
+const SECTOR_SLOTS: Record<Exclude<ConnectionRegion, "origin">, Array<{ x: number; y: number }>> = {
+  // These are card top-left coordinates around the stable FROM card at 0,0.
+  // Their placement is deliberately radial/contextual, not a generational rank.
+  maternal: [
+    { x: -500, y: -300 }, { x: -745, y: -190 }, { x: -455, y: -95 },
+    { x: -730, y: 5 }, { x: -470, y: 105 },
+  ],
+  paternal: [
+    { x: 500, y: -300 }, { x: 745, y: -190 }, { x: 455, y: -95 },
+    { x: 730, y: 5 }, { x: 470, y: 105 },
+  ],
+  siblings: [
+    { x: -410, y: 30 }, { x: -525, y: 175 }, { x: -355, y: 220 },
+    { x: -600, y: 315 }, { x: -340, y: 365 },
+  ],
+  partner: [
+    { x: 345, y: 30 }, { x: 475, y: 175 }, { x: 305, y: 220 },
+  ],
+  children: [
+    { x: -155, y: 295 }, { x: 120, y: 295 }, { x: -285, y: 430 },
+    { x: -10, y: 445 }, { x: 265, y: 430 },
+  ],
+  // External links sit below and around FROM; they do not form a boxed branch.
+  external: [
+    { x: -650, y: 350 }, { x: -405, y: 475 }, { x: -135, y: 555 },
+    { x: 145, y: 555 }, { x: 415, y: 475 }, { x: 660, y: 350 },
+    { x: -670, y: 585 }, { x: 665, y: 585 }, { x: -395, y: 680 },
+    { x: 390, y: 680 },
+  ],
+  family: [
+    { x: -240, y: -165 }, { x: 240, y: -165 }, { x: -620, y: 225 },
+    { x: 620, y: 225 }, { x: -115, y: 565 }, { x: 150, y: 565 },
+  ],
+  // A small neutral path lane is only used for route-only intermediates. The
+  // normal direct-context positions are retained while TO changes.
+  path: [
+    { x: -165, y: -405 }, { x: 150, y: -405 }, { x: -190, y: 620 },
+    { x: 175, y: 620 }, { x: -475, y: 575 }, { x: 455, y: 575 },
+  ],
+  target: [
+    { x: -520, y: 650 }, { x: 520, y: 650 }, { x: 0, y: 780 },
+    { x: 0, y: -470 }, { x: -650, y: 260 }, { x: 650, y: 260 },
+  ],
 };
 
 function slotFor(region: ConnectionRegion, index: number): { x: number; y: number } {
-  const column = index % 3;
-  const row = Math.floor(index / 3);
-  const centeredColumn = column - 1;
-  switch (region) {
-    case "maternal":
-      return { x: -610 + centeredColumn * 236, y: -250 + row * 156 };
-    case "paternal":
-      return { x: 386 + centeredColumn * 236, y: -250 + row * 156 };
-    case "external":
-      return { x: -250 + column * 260, y: 280 + row * 152 };
-    case "family":
-      return { x: -250 + column * 250, y: 130 + row * 148 };
-    case "path":
-      return { x: -120 + column * 248, y: -70 + row * 148 };
-    case "origin":
-    default:
-      return { x: 0, y: 0 };
-  }
+  if (region === "origin") return { x: 0, y: 0 };
+  const slots = SECTOR_SLOTS[region];
+  if (index < slots.length) return slots[index];
+  // Overflow stays in the same contextual sector rather than turning into a
+  // graph-wide generation row. The modest offset keeps its edges readable.
+  const base = slots[index % slots.length];
+  const ring = Math.floor(index / slots.length);
+  return {
+    x: base.x + (base.x < 0 ? -1 : 1) * ring * 130,
+    y: base.y + ring * 115,
+  };
 }
 
 function overlaps(
@@ -70,13 +116,14 @@ export function layoutConnectionGraph(
       ? "origin"
       : typed.data.region ?? "family";
     const existing = previousPositions?.get(node.id);
+    const preferred = typed.data.preferredPosition;
     if (existing) {
       occupied.push(existing);
       return { ...node, position: existing };
     }
 
     let index = regionCounts.get(region) ?? 0;
-    let position = slotFor(region, index);
+    let position = preferred ?? slotFor(region, index);
     while (overlaps(position, occupied)) {
       index += 1;
       position = slotFor(region, index);

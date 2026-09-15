@@ -86,8 +86,45 @@ async function post(path, body) {
 }
 async function shot(name, metadata) {
   const file = `${titleCaseFile(name)}.png`;
-  await sleep(450);
+  // React Flow receives the route overlay one render after a target card
+  // resolves its path request. Wait through the transition so a screenshot
+  // records the composed graph rather than an intermediate frame.
+  await sleep(1100);
+  await page.evaluate(() => new Promise((resolveStable) => {
+    const root = document.querySelector(".relationship-graph-stage");
+    if (!root) { resolveStable(); return; }
+    let settleTimer;
+    const settle = () => {
+      observer.disconnect();
+      resolveStable();
+    };
+    const schedule = () => {
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(settle, 700);
+    };
+    const observer = new MutationObserver(schedule);
+    observer.observe(root, { subtree: true, childList: true, attributes: true, characterData: true });
+    schedule();
+  }));
+  await page.evaluate(() => new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame))));
+  // Chromium can return from a first compositor capture immediately before
+  // React Flow flushes a path-overlay paint. Prime that compositor pass, then
+  // write the actual evidence image on the next frame.
+  const staging = join(OUT, `.${file}.staging.png`);
+  await page.screenshot({ path: staging });
+  await page.evaluate(() => new Promise((resolveFrame) => requestAnimationFrame(resolveFrame)));
+  await sleep(250);
   await page.screenshot({ path: join(OUT, file) });
+  rmSync(staging, { force: true });
+  if (process.env.CONNECTIONS_REDESIGN_DEBUG === "1") {
+    const nodes = await page.$$eval(".react-flow__node", (elements) => elements.map((element) => ({
+      text: element.textContent?.replace(/\s+/g, " ").trim(),
+      className: element.className,
+      style: (() => { const style = getComputedStyle(element); return { opacity: style.opacity, display: style.display, visibility: style.visibility, transform: style.transform }; })(),
+      rect: (() => { const rect = element.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }; })(),
+    })));
+    writeFileSync(join(OUT, `${titleCaseFile(name)}.nodes.json`), JSON.stringify(nodes, null, 2), "utf8");
+  }
   shots.push({ file, ...metadata });
 }
 async function nav(label) {
@@ -116,6 +153,13 @@ async function addTo(name) {
   await searchPick(name);
   await clickText(".connections-search-actions", "Add to TO");
   await page.waitForFunction((expected) => [...document.querySelectorAll(".relationship-target-card")].some((card) => card.textContent?.includes(expected)), { timeout: 16000 }, name);
+  // A TO card mounts before its canonical paths arrive. Capturing in that
+  // transient state can race React Flow's path-overlay render and produce a
+  // misleading half-composed canvas.
+  await page.waitForFunction((expected) => {
+    const card = [...document.querySelectorAll(".relationship-target-card")].find((item) => item.textContent?.includes(expected));
+    return Boolean(card && (card.querySelector(".target-path-option") || card.textContent?.includes("No supported route")));
+  }, { timeout: 16000 }, name);
 }
 async function nodeCard(name) {
   const handle = await page.evaluateHandle((expected) => [...document.querySelectorAll(".person-node-card")].find((card) => card.textContent?.includes(expected)) ?? null, name);
@@ -180,6 +224,11 @@ try {
   assert(initialNodeCount === defaultGraph.nodes.length, `Default graph must show only immediate neighbours (${initialNodeCount} != ${defaultGraph.nodes.length}).`);
   await shot("connections-default-owner-immediate", { screen: "Connections", state: "default owner immediate view", theme: "light", from: "Mira Rahim", verify: "Central FROM, direct family/general neighbours only, builder visible" });
   await shot("connections-maternal-paternal-spacing", { screen: "Connections", state: "default spatial regions", theme: "light", from: "Mira Rahim", verify: "Separate pale maternal and paternal contextual regions" });
+  await page.$eval(".theme-toggle", (button) => button.click());
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+  await shot("connections-dark-default-immediate", { screen: "Connections", state: "default owner immediate view", theme: "dark", from: "Mira Rahim", verify: "Direct context remains readable in dark mode" });
+  await page.$eval(".theme-toggle", (button) => button.click());
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
 
   // Ordinary node body selection must not open person information.
   await (await nodeCard("Darya Sol")).click();
@@ -191,6 +240,8 @@ try {
   await page.waitForSelector(".person-info-drawer", { visible: true });
   await page.waitForFunction(() => document.querySelector(".person-info-drawer")?.textContent?.includes("Darya Sol"));
   await shot("connections-info-overview", { screen: "Connections", state: "explicit info drawer overview", theme: "light", from: "Mira Rahim", verify: "ⓘ only information entry point and real Overview fields" });
+  await clickText(".person-info-tabs", "Relationships");
+  await shot("connections-info-relationships", { screen: "Connections", state: "explicit information drawer relationships", theme: "light", from: "Mira Rahim", verify: "Implemented relationship facts are distinct from future boundaries" });
   await clickText(".person-info-tabs", "Memories");
   await page.waitForFunction(() => document.querySelector(".drawer-synthetic-boundary")?.textContent?.includes("catalogued the community orchestra archive"));
   await shot("connections-info-memories", { screen: "Connections", state: "synthetic Memories drawer boundary", theme: "light", from: "Mira Rahim", verify: "Clearly labelled synthetic future-domain preview" });
@@ -206,9 +257,21 @@ try {
   await shot("connections-search-expanded", { screen: "Connections", state: "search result actions", theme: "light", from: "Mira Rahim", verify: "Search result supports reveal, Set as FROM, and Add to TO" });
   await clickText(".connections-search-actions", "Add to TO");
   await page.waitForSelector(".relationship-target-card", { visible: true, timeout: 16000 });
+  await page.waitForSelector(".relationship-target-card .target-path-option", { visible: true, timeout: 16000 });
   await shot("connections-direct-friend-target", { screen: "Connections", state: "one direct friend target", theme: "light", from: "Mira Rahim", to: "Darya Sol", verify: "All canonical direct paths selected and context dimmed, not removed" });
+  await shot("connections-one-selected-route", { screen: "Connections", state: "one selected direct route", theme: "light", from: "Mira Rahim", to: "Darya Sol", verify: "A single selected route emphasizes only its direct edge" });
   assert((await page.$$(".react-flow__node.rf-dim")).length > 0, "Unrelated graph context was not greyed while a TO route is active.");
   assert((await page.$$eval(".react-flow__node", (nodes) => nodes.length)) >= initialNodeCount, "Unrelated graph context disappeared after adding TO.");
+  // Closing information must not discard the active TO route or the graph.
+  const targetCardHandle = await page.evaluateHandle(() => [...document.querySelectorAll(".relationship-target-card")].find((card) => card.textContent?.includes("Darya Sol")) ?? null);
+  const targetCard = targetCardHandle.asElement();
+  const routeInfo = await targetCard?.$(".builder-info-button");
+  if (!routeInfo) throw new Error("Darya's explicit information button was not rendered during path mode.");
+  await routeInfo.click();
+  await page.waitForSelector(".person-info-drawer", { visible: true });
+  await page.click("[aria-label='Close person information']");
+  await page.waitForFunction(() => !document.querySelector(".person-info-drawer"));
+  assert(await page.$(".relationship-target-card"), "Closing info discarded the active TO state.");
   await shot("connections-greyed-context", { screen: "Connections", state: "active direct route with context", theme: "light", from: "Mira Rahim", to: "Darya Sol", verify: "Unrelated nodes stay mounted and visibly greyed" });
 
   await addTo("Maeve Rowan");
@@ -222,6 +285,7 @@ try {
   assert((await page.$$(".relationship-target-card")).length === 3, "TO must support zero-to-many simultaneous targets.");
   const routeNodes = await page.$$eval(".react-flow__node.rf-path-intermediate", (nodes) => nodes.length);
   assert(routeNodes > 0, "Distant route did not expose neutral full-opacity intermediate nodes.");
+  assert((await page.$$(".react-flow__node.rf-path-intermediate.rf-node-to")).length === 0, "An intermediate path node received TO emphasis.");
 
   // Prove FROM replacement and owner restoration are distinct, accessible actions.
   await searchPick("Mariam Rahal");

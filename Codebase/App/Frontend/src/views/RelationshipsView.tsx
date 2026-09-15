@@ -24,7 +24,7 @@ import {
 } from "../features/relationships/components/RelationshipBuilder";
 import { RelationshipTargetCard } from "../features/relationships/components/RelationshipTargetCard";
 import { edgeVisual } from "../features/relationships/graph/edgeStyles";
-import { layoutConnectionGraph } from "../features/relationships/graph/layout";
+import { layoutConnectionGraph, NODE_HEIGHT, NODE_WIDTH } from "../features/relationships/graph/layout";
 import { useKeyboardNavigation } from "../features/relationships/hooks/useKeyboardNavigation";
 import { useRelationshipGraph } from "../features/relationships/hooks/useRelationshipGraph";
 import type { GraphEdgeDto, GraphNodeDto, RelationshipPath } from "../features/relationships/types";
@@ -35,14 +35,20 @@ function pathPairKey(first: string, second: string): string {
   return [first, second].sort().join("::");
 }
 
-function pathEdgeDetails(paths: RelationshipPath[]): Map<string, Set<string>> {
-  const details = new Map<string, Set<string>>();
+interface ActivePathEdge {
+  sides: Set<string>;
+  domains: Set<RelationshipPath["domain"]>;
+}
+
+function pathEdgeDetails(paths: RelationshipPath[]): Map<string, ActivePathEdge> {
+  const details = new Map<string, ActivePathEdge>();
   for (const path of paths) {
     for (const edge of path.edges) {
       const key = pathPairKey(edge.from, edge.to);
-      const labels = details.get(key) ?? new Set<string>();
-      if (edge.role) labels.add(edge.role);
-      details.set(key, labels);
+      const visual = details.get(key) ?? { sides: new Set<string>(), domains: new Set<RelationshipPath["domain"]>() };
+      if (path.side) visual.sides.add(path.side);
+      visual.domains.add(path.domain);
+      details.set(key, visual);
     }
   }
   return details;
@@ -51,29 +57,56 @@ function pathEdgeDetails(paths: RelationshipPath[]): Map<string, Set<string>> {
 function buildFlowEdges(
   edgeDtos: GraphEdgeDto[],
   highlightedPaths: RelationshipPath[],
-  highlightedEdges: Map<string, Set<string>>,
+  highlightedEdges: Map<string, ActivePathEdge>,
+  positions: ReadonlyMap<string, { x: number; y: number }>,
+  hasTargets: boolean,
 ): Edge[] {
   const hasHighlights = highlightedPaths.length > 0;
+  const handleFor = (from: { x: number; y: number }, to: { x: number; y: number }, prefix: "source" | "target") => {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    let direction: "top" | "right" | "bottom" | "left";
+    if (Math.abs(dx) > Math.abs(dy)) direction = dx >= 0 ? "right" : "left";
+    else direction = dy >= 0 ? "bottom" : "top";
+    if (prefix === "target") {
+      direction = direction === "top" ? "bottom"
+        : direction === "bottom" ? "top"
+          : direction === "left" ? "right" : "left";
+    }
+    return `${prefix}-${direction}`;
+  };
   return edgeDtos.map((dto) => {
     const visual = edgeVisual(dto);
-    const labels = highlightedEdges.get(pathPairKey(dto.source, dto.target));
-    const isPath = Boolean(labels);
+    const pathDetail = highlightedEdges.get(pathPairKey(dto.source, dto.target));
+    const isPath = Boolean(pathDetail);
+    const pathStroke = pathDetail?.sides.size === 1 && pathDetail.sides.has("maternal")
+      ? "var(--maternal)"
+      : pathDetail?.sides.size === 1 && pathDetail.sides.has("paternal")
+        ? "var(--paternal)"
+        : pathDetail?.domains.has("general")
+          ? "var(--general-line)"
+          : "var(--accent-primary)";
+    const source = positions.get(dto.source);
+    const target = positions.get(dto.target);
+    const sourceCenter = source && { x: source.x + 112, y: source.y + 41 };
+    const targetCenter = target && { x: target.x + 112, y: target.y + 41 };
     return {
       id: dto.id,
       source: dto.source,
       target: dto.target,
-      type: "smoothstep",
+      // Deliberate sector placement keeps direct route strokes radial without
+      // Dagre-like rails or Bezier backtracking. Four cardinal handles ensure
+      // every route exits the nearest card edge.
+      type: "straight",
+      sourceHandle: sourceCenter && targetCenter ? handleFor(sourceCenter, targetCenter, "source") : undefined,
+      targetHandle: sourceCenter && targetCenter ? handleFor(targetCenter, sourceCenter, "target") : undefined,
       style: {
-        stroke: isPath ? "var(--accent-primary)" : visual.stroke,
-        strokeWidth: isPath ? 3 : visual.strokeWidth,
+        stroke: isPath ? pathStroke : visual.stroke,
+        strokeWidth: isPath ? 1.7 : Math.min(visual.strokeWidth, 1.45),
         strokeDasharray: visual.strokeDasharray,
-        opacity: hasHighlights && !isPath ? 0.28 : 1,
+        opacity: isPath ? 0.9 : hasTargets ? 0.42 : 0.88,
       },
       className: [visual.className, isPath ? "rf-edge-path" : "", hasHighlights && !isPath ? "rf-edge-dim" : ""].filter(Boolean).join(" "),
-      label: labels?.size ? [...labels].join(" · ") : undefined,
-      labelStyle: { fontSize: 11, fill: "var(--text-secondary)", fontWeight: 600 },
-      labelBgStyle: { fill: "var(--surface-elevated)", fillOpacity: 0.94 },
-      labelBgPadding: [6, 3] as [number, number],
     };
   });
 }
@@ -83,15 +116,20 @@ function connectionRegion(
   edges: GraphEdgeDto[],
   fromId: string | null,
   isPathIntermediate: boolean,
-): "origin" | "maternal" | "paternal" | "external" | "family" | "path" {
+  isTo: boolean,
+): "origin" | "maternal" | "paternal" | "siblings" | "partner" | "children" | "external" | "family" | "path" | "target" {
   if (node.id === fromId) return "origin";
   if (isPathIntermediate) return "path";
+  if (isTo) return "target";
   const label = (node.relation_label_en ?? "").toLowerCase();
   if (/maternal|mother|mami|mama/.test(label)) return "maternal";
   if (/paternal|father|chachi|chacha/.test(label)) return "paternal";
   if (edges.some((edge) => (edge.source === node.id || edge.target === node.id) && edge.domain === "general")) {
     return "external";
   }
+  if (/husband|wife|spouse|partner/.test(label)) return "partner";
+  if (/son|daughter|child/.test(label)) return "children";
+  if (/brother|sister|sibling/.test(label)) return "siblings";
   return "family";
 }
 
@@ -101,6 +139,12 @@ interface NavigationProps {
   onTargetUnavailable?: (personId: string) => void;
   onNavigateToProfile?: (personId: string) => void;
   onNavigateToFamily?: (personId: string) => void;
+}
+
+interface ImmediateContextSnapshot {
+  perspectiveId: string;
+  nodes: GraphNodeDto[];
+  edges: GraphEdgeDto[];
 }
 
 function RelationshipsContent({
@@ -115,6 +159,7 @@ function RelationshipsContent({
   const [peopleLoaded, setPeopleLoaded] = useState(false);
   const [selected, setSelected] = useState<Person | null>(null);
   const [selectedTargets, setSelectedTargets] = useState<Person[]>([]);
+  const [immediateContext, setImmediateContext] = useState<ImmediateContextSnapshot | null>(null);
   const [highlightedPathsByTarget, setHighlightedPathsByTarget] = useState<Record<string, RelationshipPath[]>>({});
   const [relationshipError, setRelationshipError] = useState<unknown>(null);
   const [infoPerson, setInfoPerson] = useState<Person | null>(null);
@@ -151,12 +196,26 @@ function RelationshipsContent({
     setHighlightedPathsByTarget({});
     setSelectedTargets((current) => current.filter((person) => person.id !== perspectiveId));
     setSelected((current) => current?.id === perspectiveId ? null : current);
+    setImmediateContext(null);
     positionStoreRef.current.clear();
     fittedPerspectiveRef.current = null;
     void graph.reset(perspectiveId);
     // The perspective is FROM; it is the only operation that resets the base graph.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perspectiveId]);
+
+  // The immediate graph is the visual context contract for a Connections
+  // session. Preserve that direct-neighbour snapshot while path requests add
+  // or replace their overlay nodes, so an asynchronous route response can
+  // never make surrounding context disappear from the canvas.
+  useEffect(() => {
+    if (!perspectiveId || graph.loading || selectedTargets.length || !graph.nodes.length) return;
+    setImmediateContext({
+      perspectiveId,
+      nodes: graph.nodes,
+      edges: graph.edges,
+    });
+  }, [graph.edges, graph.loading, graph.nodes, perspectiveId, selectedTargets.length]);
 
   const personOfNode = useCallback(
     (personId: string) => people.find((person) => person.id === personId),
@@ -176,11 +235,19 @@ function RelationshipsContent({
   const addTo = useCallback((person: Person) => {
     if (person.id === perspectiveId) return;
     selectPerson(person);
+    // Search may have revealed a distant person as a temporary neutral card.
+    // Once it becomes TO, give that new target its deliberate route-sector
+    // slot; immediate neighbours retain their stable context coordinates.
+    const isImmediate = graph.edges.some(
+      (edge) => (edge.source === perspectiveId && edge.target === person.id)
+        || (edge.target === perspectiveId && edge.source === person.id),
+    );
+    if (!isImmediate) positionStoreRef.current.delete(person.id);
     setSelectedTargets((current) => current.some((target) => target.id === person.id)
       ? current
       : [...current, person]);
     onTargetChange?.(person.id);
-  }, [onTargetChange, perspectiveId, selectPerson]);
+  }, [graph.edges, onTargetChange, perspectiveId, selectPerson]);
 
   const setFrom = useCallback((person: Person) => {
     if (person.id === perspectiveId) return;
@@ -245,24 +312,101 @@ function RelationshipsContent({
 
   const visibleNodeDtos = useMemo(() => {
     const nodes = new Map<string, GraphNodeDto>();
-    for (const node of [...graph.nodes, ...graph.overlayNodes]) nodes.set(node.id, node);
+    const immediateNodes = immediateContext?.perspectiveId === perspectiveId
+      ? immediateContext.nodes
+      : [];
+    for (const node of [...immediateNodes, ...graph.nodes, ...graph.overlayNodes]) nodes.set(node.id, node);
     return [...nodes.values()];
-  }, [graph.nodes, graph.overlayNodes]);
-  const visibleEdgeDtos = useMemo(() => {
-    const edges = new Map<string, GraphEdgeDto>();
-    for (const edge of [...graph.edges, ...graph.overlayEdges]) edges.set(edge.id, edge);
-    return [...edges.values()];
-  }, [graph.edges, graph.overlayEdges]);
+  }, [graph.nodes, graph.overlayNodes, immediateContext, perspectiveId]);
   const highlightedNodeIds = useMemo(
     () => new Set(highlightedPaths.flatMap((path) => path.nodes.map((node) => node.id))),
     [highlightedPaths],
   );
   const highlightedEdges = useMemo(() => pathEdgeDetails(highlightedPaths), [highlightedPaths]);
-  const flowEdges = useMemo(
-    () => buildFlowEdges(visibleEdgeDtos, highlightedPaths, highlightedEdges),
-    [highlightedEdges, highlightedPaths, visibleEdgeDtos],
-  );
   const targetIds = useMemo(() => new Set(selectedTargets.map((person) => person.id)), [selectedTargets]);
+  const visibleEdgeDtos = useMemo(() => {
+    const edges = new Map<string, GraphEdgeDto>();
+    const immediateEdges = immediateContext?.perspectiveId === perspectiveId
+      ? immediateContext.edges
+      : [];
+    for (const edge of [...immediateEdges, ...graph.edges, ...graph.overlayEdges]) edges.set(edge.id, edge);
+    // The base canvas deliberately shows the direct immediate-star only.
+    // Relationships between two neighbours are canonical facts, but making
+    // them visible here turns a connection explorer back into a family tree.
+    // Route segments reappear only when a selected canonical path requires
+    // them, so no path truth is discarded.
+    return [...edges.values()].filter((edge) => {
+      const directFrom = edge.source === perspectiveId || edge.target === perspectiveId;
+      return directFrom || highlightedEdges.has(pathPairKey(edge.source, edge.target));
+    });
+  }, [graph.edges, graph.overlayEdges, highlightedEdges, immediateContext, perspectiveId]);
+
+  const routePlacementById = useMemo(() => {
+    type RouteCandidate = {
+      id: string;
+      targetIds: Set<string>;
+      proposed: Array<{ x: number; y: number }>;
+    };
+    const baseNodeIds = new Set<string>(perspectiveId ? [perspectiveId] : []);
+    for (const edge of graph.edges) {
+      if (edge.source === perspectiveId) baseNodeIds.add(edge.target);
+      if (edge.target === perspectiveId) baseNodeIds.add(edge.source);
+    }
+    const candidates = new Map<string, RouteCandidate>();
+    const targetSlots = [
+      { x: -520, y: 650 }, { x: 520, y: 650 }, { x: 0, y: 780 },
+      { x: 0, y: -470 },
+    ];
+    const remoteTargets = selectedTargets.filter((person) => !baseNodeIds.has(person.id));
+    const targetPosition = new Map(
+      remoteTargets.map((person, index) => [person.id, targetSlots[index % targetSlots.length]]),
+    );
+    for (const path of highlightedPaths) {
+      const pathTarget = path.nodes[path.nodes.length - 1]?.id;
+      if (!pathTarget || !targetPosition.has(pathTarget)) continue;
+      const target = targetPosition.get(pathTarget)!;
+      let anchor = { x: 0, y: 0 };
+      let anchorIndex = 0;
+      path.nodes.forEach((node, index) => {
+        if (index === 0) return;
+        if (baseNodeIds.has(node.id)) {
+          anchor = positionStoreRef.current.get(node.id) ?? anchor;
+          anchorIndex = index;
+          return;
+        }
+        const span = Math.max(1, path.nodes.length - 1 - anchorIndex);
+        const ratio = (index - anchorIndex) / span;
+        const current = candidates.get(node.id) ?? {
+          id: node.id,
+          targetIds: new Set<string>(),
+          proposed: [],
+        };
+        current.targetIds.add(pathTarget);
+        current.proposed.push({
+          x: anchor.x + (target.x - anchor.x) * ratio,
+          y: anchor.y + (target.y - anchor.y) * ratio,
+        });
+        candidates.set(node.id, current);
+      });
+    }
+
+    const preferred = new Map<string, { x: number; y: number }>();
+    for (const [id, candidate] of candidates) {
+      if (targetPosition.has(id)) {
+        preferred.set(id, targetPosition.get(id)!);
+        continue;
+      }
+      const sum = candidate.proposed.reduce(
+        (total, point) => ({ x: total.x + point.x, y: total.y + point.y }),
+        { x: 0, y: 0 },
+      );
+      preferred.set(id, {
+        x: sum.x / candidate.proposed.length,
+        y: sum.y / candidate.proposed.length,
+      });
+    }
+    return preferred;
+  }, [graph.edges, highlightedPaths, perspectiveId, selectedTargets]);
 
   const openInfo = useCallback((person: Person) => {
     setInfoPerson(person);
@@ -290,6 +434,12 @@ function RelationshipsContent({
         id: dto.id,
         type: "person",
         position: { x: 0, y: 0 },
+        // Explicit dimensions keep React Flow's controlled-node measurement
+        // stable while an asynchronous route overlay updates its classes.
+        // Without them, unchanged context cards can briefly be treated as
+        // unmeasured and rendered with visibility:hidden.
+        width: NODE_WIDTH,
+        height: NODE_HEIGHT,
         className: className || undefined,
         data: {
           id: dto.id,
@@ -301,7 +451,8 @@ function RelationshipsContent({
           isFrom,
           isTo,
           isPathIntermediate,
-          region: connectionRegion(dto, visibleEdgeDtos, perspectiveId, isPathIntermediate),
+          region: connectionRegion(dto, visibleEdgeDtos, perspectiveId, isPathIntermediate, isTo),
+          preferredPosition: routePlacementById.get(dto.id),
           onInfo: person ? () => openInfo(person) : undefined,
           onDragStart: onNodeDragStart,
         },
@@ -310,7 +461,18 @@ function RelationshipsContent({
     const positioned = layoutConnectionGraph(nodes, perspectiveId ?? undefined, positionStoreRef.current);
     for (const node of positioned) positionStoreRef.current.set(node.id, node.position);
     return positioned;
-  }, [highlightedNodeIds, highlightedPaths.length, onNodeDragStart, openInfo, perspectiveId, personOfNode, targetIds, visibleEdgeDtos, visibleNodeDtos]);
+  }, [highlightedNodeIds, highlightedPaths.length, onNodeDragStart, openInfo, perspectiveId, personOfNode, routePlacementById, targetIds, visibleEdgeDtos, visibleNodeDtos]);
+
+  const flowEdges = useMemo(() => {
+    const positions = new Map(flowNodes.map((node) => [node.id, node.position]));
+    return buildFlowEdges(
+      visibleEdgeDtos,
+      highlightedPaths,
+      highlightedEdges,
+      positions,
+      selectedTargets.length > 0,
+    );
+  }, [flowNodes, highlightedEdges, highlightedPaths, selectedTargets.length, visibleEdgeDtos]);
 
   useEffect(() => {
     if (!perspectiveId || graph.loading || !visibleNodeDtos.length || fittedPerspectiveRef.current === perspectiveId) return;
@@ -456,6 +618,7 @@ function RelationshipsContent({
               nodesDraggable={false}
               nodesConnectable={false}
               elementsSelectable={false}
+              onlyRenderVisibleElements={false}
               deleteKeyCode={null}
               zoomOnDoubleClick={false}
               onMove={(_, viewport) => setZoomPercent(Math.round(viewport.zoom * 100))}

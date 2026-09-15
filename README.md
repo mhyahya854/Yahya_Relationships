@@ -406,11 +406,12 @@ filled by inference.
 ## Connections is a relationship explorer (React Flow + Dagre)
 
 **Connections** is an exploratory, connection-oriented React Flow view, not a
-second family tree. It uses deterministic Dagre-assisted placement with
-generous whitespace: the one **FROM** person is prominent and central, maternal
-context has a pale-pink region, paternal context has a clearly separated
-pale-blue region, and external relationships have neutral space. The separate
-**Family Tree** screen remains the Mermaid genealogy renderer.
+second family tree. Its deterministic sector placement keeps one **FROM**
+person prominent and central; Dagre never dictates a generational layout here.
+Maternal context is a compact pale-pink island, paternal context is a clearly
+separated pale-blue island, and direct external relationships use neutral space
+around/below the origin rather than a boxed branch. The separate **Family Tree**
+screen remains the Mermaid genealogy renderer.
 
 The persistent **Relationship Builder** has two session-only zones:
 
