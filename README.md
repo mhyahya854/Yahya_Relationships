@@ -46,7 +46,15 @@ whole-app UI review after the major remaining feature phases. Later phases must
 not casually redesign existing screens; visual changes should be limited to
 what their new feature requires.
 
-- Phase 11 — Canonical Data Foundation & Migration
+### Phase 11 — Canonical Data Foundation & Migration
+
+**STATUS: PROVISIONALLY IMPLEMENTED — SOL AUDIT REQUIRED BEFORE FREEZE.**
+The single forward-architecture database (`Database/relationships.db` at Schema Version 3), canonical human-readable identifiers (`normalized_name--INITIALS##`), deterministic folder hierarchy under `People/` (`Me/`, `Family/`, `Friends/`), full migration engine with atomic staging, bidirectional alias resolution (`identifier_aliases`), and automated safety backups have been provisionally implemented and verified against all 512 backend tests. The legacy `Database/Main/family.db` database is preserved 100% untouched for historical provenance and safety audits.
+
+Full handoff and verification reports:
+- [Phase 11 Sol Audit Handoff](Documentation/Planning/phase11-sol-audit-handoff.md)
+- [Phase 11 Canonical Data Verification](Documentation/Testing/phase11-canonical-data-verification.md)
+
 - Phase 12 — Raw Intake, Provenance & Organization
 - Phase 13 — Media, Documents & Gallery
 - Phase 14 — Events, Memories & Flashbacks
@@ -813,6 +821,8 @@ npm run legacy:check  # legacy builder audit for the current compatibility datas
 ## Architecture & Detailed Documentation
 
 For in-depth architectural and testing documentation, see:
+- [Phase 11 Sol Audit Handoff](Documentation/Planning/phase11-sol-audit-handoff.md)
+- [Phase 11 Canonical Data Verification](Documentation/Testing/phase11-canonical-data-verification.md)
 - [Cross-Platform Packaging Architecture](Documentation/Architecture/cross-platform-packaging.md)
 - [Platform Compatibility Matrix](Documentation/Testing/platform-compatibility.md)
 - [Data Root Architecture & Safety](Documentation/Architecture/data-root.md)

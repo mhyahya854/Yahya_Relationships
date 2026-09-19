@@ -20,200 +20,208 @@ flowchart TB
   %% Current master layout: maternal left, bridge center, paternal right.
   %% Couple clusters are colored visual units only. Junctions (j_*) are
   %% layout-only helpers: not people and never written back to family.db.
-  classDef person fill:#ffffff,stroke:#6b7280,color:#111111;
-  classDef matperson fill:#FFE9EF,stroke:#DBA3B4,color:#111111;
-  classDef patperson fill:#E1EEFF,stroke:#97B6DE,color:#111111;
-  classDef focus stroke:#c62828,stroke-width:3px,color:#111111;
+  classDef person fill:#fffefa,stroke:#7b817c,color:#202823;
+  classDef matperson fill:#f8e9ed,stroke:#c99ead,color:#202823;
+  classDef patperson fill:#e9f0f2,stroke:#96afb5,color:#202823;
+  classDef focus stroke:#35695e,stroke-width:3px,color:#202823;
   classDef junc fill:none,stroke:none,color:none;
   classDef route fill:none,stroke:none,color:none;
     x_abrar_israr[" "]
-  subgraph u_israr_hussain__shahnaz_israr[" "]
+  subgraph u_israr_hussain--IH01__shahnaz_israr--SI01[" "]
     direction LR
-    p_israr_hussain["Israr Hussain<br/>Maternal grandfather / نانا"]
-    p_shahnaz_israr["Shahnaz Israr<br/>Maternal grandmother / نانی"]
-    p_israr_hussain ---|"married / شادی شدہ"| p_shahnaz_israr
+    p_israr_hussain__IH01["Israr Hussain<br/>Maternal grandfather / نانا"]
+    p_shahnaz_israr__SI01["Shahnaz Israr<br/>Maternal grandmother / نانی"]
+    p_israr_hussain__IH01 ---|"married / شادی شدہ"| p_shahnaz_israr__SI01
   end
-  subgraph u_abrar_hussain__shaheen_abrar[" "]
+  subgraph u_abrar_hussain--AH01__shaheen_abrar--SA01[" "]
     direction LR
-    p_abrar_hussain["Abrar Hussain<br/>Paternal grandfather / دادا"]
-    p_shaheen_abrar["Shaheen Abrar<br/>Paternal grandmother / دادی"]
-    p_abrar_hussain ---|"married / شادی شدہ"| p_shaheen_abrar
+    p_abrar_hussain__AH01["Abrar Hussain<br/>Paternal grandfather / دادا"]
+    p_shaheen_abrar__SA01["Shaheen Abrar<br/>Paternal grandmother / دادی"]
+    p_abrar_hussain__AH01 ---|"married / شادی شدہ"| p_shaheen_abrar__SA01
   end
-  subgraph u_rubinna__sohaib_hussain[" "]
+  subgraph u_rubinna--R01__sohaib_hussain--SH01[" "]
     direction LR
-    p_rubinna["Rubinna<br/>Maternal uncle's wife / ممانی"]
-    p_sohaib_hussain["[1] Sohaib Hussain<br/>Maternal uncle / ماموں"]
-    p_rubinna ---|"married / شادی شدہ<br/>no children / کوئی اولاد نہیں"| p_sohaib_hussain
+    p_rubinna__R01["Rubinna<br/>Maternal uncle's wife / ممانی"]
+    p_sohaib_hussain__SH01["[1] Sohaib Hussain<br/>Maternal uncle / ماموں"]
+    p_rubinna__R01 ---|"married / شادی شدہ<br/>no children / کوئی اولاد نہیں"| p_sohaib_hussain__SH01
   end
-  subgraph u_asif_qamar__sadia_asif[" "]
+  subgraph u_asif_qamar--AQ01__sadia_asif--SA01[" "]
     direction LR
-    p_asif_qamar["Asif Qamar<br/>Maternal aunt's husband / خالو"]
-    p_sadia_asif["[2] Sadia Asif<br/>Maternal aunt / خالہ"]
-    p_asif_qamar ---|"married / شادی شدہ"| p_sadia_asif
+    p_asif_qamar__AQ01["Asif Qamar<br/>Maternal aunt's husband / خالو"]
+    p_sadia_asif__SA01["[2] Sadia Asif<br/>Maternal aunt / خالہ"]
+    p_asif_qamar__AQ01 ---|"married / شادی شدہ"| p_sadia_asif__SA01
   end
-  subgraph u_arsalan_israr__falak_naz[" "]
+  subgraph u_arsalan_israr--AI01__falak_naz--FN01[" "]
     direction LR
-    p_arsalan_israr["[4] Arsalan Israr<br/>Maternal uncle / ماموں"]
-    p_falak_naz["Falak Naz<br/>Maternal uncle's wife / ممانی"]
-    p_arsalan_israr ---|"married / شادی شدہ<br/>no children / کوئی اولاد نہیں"| p_falak_naz
+    p_arsalan_israr__AI01["[4] Arsalan Israr<br/>Maternal uncle / ماموں"]
+    p_falak_naz__FN01["Falak Naz<br/>Maternal uncle's wife / ممانی"]
+    p_arsalan_israr__AI01 ---|"married / شادی شدہ<br/>no children / کوئی اولاد نہیں"| p_falak_naz__FN01
   end
-  subgraph u_ayesha_naeem__wahaj[" "]
+  subgraph u_ayesha_naeem--AN01__wahaj--W01[" "]
     direction LR
-    p_ayesha_naeem["[5] Ayesha Naeem<br/>Maternal aunt / خالہ<br/>Given to another family after birth (exact arrangement not yet specified)<br/>پیدائش کے بعد دوسری فیملی کو دی گئیں (تفصیل ابھی غیر واضح ہے)"]
-    p_wahaj["Wahaj<br/>Maternal aunt's husband / خالو"]
-    p_ayesha_naeem ---|"married / شادی شدہ<br/>no children / کوئی اولاد نہیں"| p_wahaj
+    p_ayesha_naeem__AN01["[5] Ayesha Naeem<br/>Maternal aunt / خالہ<br/>Given to another family after birth (exact arrangement not yet specified)<br/>پیدائش کے بعد دوسری فیملی کو دی گئیں (تفصیل ابھی غیر واضح ہے)"]
+    p_wahaj__W01["Wahaj<br/>Maternal aunt's husband / خالو"]
+    p_ayesha_naeem__AN01 ---|"married / شادی شدہ<br/>no children / کوئی اولاد نہیں"| p_wahaj__W01
   end
-  subgraph u_irsa_naz__mansoor_hussain[" "]
+  subgraph u_irsa_naz--IN01__mansoor_hussain--MH01[" "]
     direction LR
-    p_irsa_naz["[3] Irsa Naz<br/>Mother / والدہ"]
-    p_mansoor_hussain["[1] Mansoor Hussain<br/>Father / والد"]
-    p_irsa_naz ---|"married 2003 / شادی 2003<br/>first cousins / پہلے کزن"| p_mansoor_hussain
+    p_irsa_naz__IN01["[3] Irsa Naz<br/>Mother / والدہ"]
+    p_mansoor_hussain__MH01["[1] Mansoor Hussain<br/>Father / والد"]
+    p_irsa_naz__IN01 ---|"married 2003 / شادی 2003<br/>first cousins / پہلے کزن"| p_mansoor_hussain__MH01
   end
-  subgraph u_hina__zubair[" "]
+  subgraph u_hina--H01__zubair--Z01[" "]
     direction LR
-    p_hina["[2] Hina<br/>Paternal aunt / پھوپھی"]
-    p_zubair["Zubair<br/>Paternal aunt's husband / پھوپھا"]
-    p_hina ---|"married / شادی شدہ"| p_zubair
+    p_hina__H01["[2] Hina<br/>Paternal aunt / پھوپھی"]
+    p_zubair__Z01["Zubair<br/>Paternal aunt's husband / پھوپھا"]
+    p_hina__H01 ---|"married / شادی شدہ"| p_zubair__Z01
   end
-  subgraph u_sajjad__sana[" "]
+  subgraph u_sajjad--S01__sana--S01[" "]
     direction LR
-    p_sajjad["Sajjad<br/>Paternal aunt's husband / پھوپھا"]
-    p_sana["[3] Sana<br/>Paternal aunt / پھوپھی"]
-    p_sajjad ---|"married / شادی شدہ"| p_sana
+    p_sajjad__S01["Sajjad<br/>Paternal aunt's husband / پھوپھا"]
+    p_sana__S01["[3] Sana<br/>Paternal aunt / پھوپھی"]
+    p_sajjad__S01 ---|"married / شادی شدہ"| p_sana__S01
   end
-  subgraph u_adeel_ahmad__afshan[" "]
+  subgraph u_adeel_ahmad--AA01__afshan--A01[" "]
     direction LR
-    p_adeel_ahmad["Adeel Ahmad<br/>Paternal aunt's husband / پھوپھا"]
-    p_afshan["[4] Afshan<br/>Paternal aunt / پھوپھی"]
-    p_adeel_ahmad ---|"married / شادی شدہ"| p_afshan
+    p_adeel_ahmad__AA01["Adeel Ahmad<br/>Paternal aunt's husband / پھوپھا"]
+    p_afshan__A01["[4] Afshan<br/>Paternal aunt / پھوپھی"]
+    p_adeel_ahmad__AA01 ---|"married / شادی شدہ"| p_afshan__A01
   end
-  subgraph u_aresha_zubair__owais[" "]
+  subgraph u_aresha_zubair--AZ01__owais--O01[" "]
     direction LR
-    p_aresha_zubair["[1] Aresha Zubair<br/>Paternal cousin / پھوپھی زاد"]
-    p_owais["Owais<br/>Paternal cousin's husband / پھوپھی زاد کے شوہر"]
-    p_aresha_zubair ---|"married / شادی شدہ"| p_owais
+    p_aresha_zubair__AZ01["[1] Aresha Zubair<br/>Paternal cousin / پھوپھی زاد"]
+    p_owais__O01["Owais<br/>Paternal cousin's husband / پھوپھی زاد کے شوہر"]
+    p_aresha_zubair__AZ01 ---|"married / شادی شدہ"| p_owais__O01
   end
-  subgraph u_fizza_zubair__moiz[" "]
+  subgraph u_fizza_zubair--FZ01__moiz--M01[" "]
     direction LR
-    p_fizza_zubair["[2] Fizza Zubair<br/>Paternal cousin / پھوپھی زاد"]
-    p_moiz["Moiz<br/>Paternal cousin's husband / پھوپھی زاد کے شوہر"]
-    p_fizza_zubair ---|"married / شادی شدہ<br/>no children / کوئی اولاد نہیں"| p_moiz
+    p_fizza_zubair__FZ01["[2] Fizza Zubair<br/>Paternal cousin / پھوپھی زاد"]
+    p_moiz__M01["Moiz<br/>Paternal cousin's husband / پھوپھی زاد کے شوہر"]
+    p_fizza_zubair__FZ01 ---|"married / شادی شدہ<br/>no children / کوئی اولاد نہیں"| p_moiz__M01
   end
-    j_israr_hussain__shahnaz_israr[" "]
-    j_abrar_hussain__shaheen_abrar[" "]
-    j_asif_qamar__sadia_asif[" "]
-    j_irsa_naz__mansoor_hussain[" "]
-    j_hina__zubair[" "]
-    j_sajjad__sana[" "]
-    j_adeel_ahmad__afshan[" "]
-    j_aresha_zubair__owais[" "]
+    j_israr_hussain__IH01__shahnaz_israr__SI01[" "]
+    j_abrar_hussain__AH01__shaheen_abrar__SA01[" "]
+    j_asif_qamar__AQ01__sadia_asif__SA01[" "]
+    j_irsa_naz__IN01__mansoor_hussain__MH01[" "]
+    j_hina__H01__zubair__Z01[" "]
+    j_sajjad__S01__sana__S01[" "]
+    j_adeel_ahmad__AA01__afshan__A01[" "]
+    j_aresha_zubair__AZ01__owais__O01[" "]
     x_rubinna_falak[" "]
     x_aresha_children[" "]
-    p_ezan_asif["[1] Ezan Asif (2003)<br/>Maternal cousin / خالہ زاد بھائی"]
-    p_fakhir_asif["[2] Fakhir Asif (2007)<br/>Maternal cousin / خالہ زاد بھائی"]
-    p_mohammad_yahya_hussain["[1] Mohammad Yahya Hussain (2004)<br/>Self / خود"]
-    p_maham_mansoor["[2] Maham Mansoor (2006)<br/>Sister / بہن"]
-    p_abdul_rafey["[3] Abdul Rafey (2003)<br/>Paternal cousin / پھوپھی زاد بھائی<br/>Single / غیر شادی شدہ"]
-    p_muaaz["[1] Muaaz / Maaz (2010)<br/>Paternal cousin / پھوپھی زاد بھائی"]
-    p_barirah["[2] Barirah (2015)<br/>Paternal cousin / پھوپھی زاد بہن"]
-    p_musabiha["[1] Musabiha<br/>Paternal cousin / پھوپھی زاد بہن"]
-    p_musa["[2] Musa<br/>Paternal cousin / پھوپھی زاد بھائی"]
-    p_aresha_owais_daughter_a["Unnamed daughter A<br/>Cousin's daughter / کزن کی بیٹی<br/>A is an identifier, not a birth-order claim<br/>A صرف شناخت ہے، پیدائشی ترتیب نہیں"]
-    p_aresha_owais_daughter_b["Unnamed daughter B<br/>Cousin's daughter / کزن کی بیٹی<br/>B is an identifier, not a birth-order claim<br/>B صرف شناخت ہے، پیدائشی ترتیب نہیں"]
+    p_ezan_asif__EA01["[1] Ezan Asif (2003)<br/>Maternal cousin / خالہ زاد بھائی"]
+    p_fakhir_asif__FA01["[2] Fakhir Asif (2007)<br/>Maternal cousin / خالہ زاد بھائی"]
+    p_mohammad_yahya_hussain__MYH01["[1] Mohammad Yahya Hussain (2004)<br/>Self / خود"]
+    p_maham_mansoor__MM01["[2] Maham Mansoor (2006)<br/>Sister / بہن"]
+    p_abdul_rafey__AR01["[3] Abdul Rafey (2003)<br/>Paternal cousin / پھوپھی زاد بھائی<br/>Single / غیر شادی شدہ"]
+    p_muaaz__M01["[1] Muaaz / Maaz (2010)<br/>Paternal cousin / پھوپھی زاد بھائی"]
+    p_barirah__B01["[2] Barirah (2015)<br/>Paternal cousin / پھوپھی زاد بہن"]
+    p_musabiha__M01["[1] Musabiha<br/>Paternal cousin / پھوپھی زاد بہن"]
+    p_musa__M01["[2] Musa<br/>Paternal cousin / پھوپھی زاد بھائی"]
+    p_unnamed_daughter_a__UDA01["Unnamed daughter A<br/>Cousin's daughter / کزن کی بیٹی<br/>A is an identifier, not a birth-order claim<br/>A صرف شناخت ہے، پیدائشی ترتیب نہیں"]
+    p_unnamed_daughter_b__UDB01["Unnamed daughter B<br/>Cousin's daughter / کزن کی بیٹی<br/>B is an identifier, not a birth-order claim<br/>B صرف شناخت ہے، پیدائشی ترتیب نہیں"]
 
-    u_israr_hussain__shahnaz_israr -->|"biological parents / حقیقی والدین"| j_israr_hussain__shahnaz_israr
-    j_israr_hussain__shahnaz_israr --> u_rubinna__sohaib_hussain
-    j_israr_hussain__shahnaz_israr --> u_arsalan_israr__falak_naz
-    j_israr_hussain__shahnaz_israr --> u_asif_qamar__sadia_asif
-    j_israr_hussain__shahnaz_israr --> u_ayesha_naeem__wahaj
-    j_israr_hussain__shahnaz_israr --> u_irsa_naz__mansoor_hussain
-    u_abrar_hussain__shaheen_abrar -->|"biological parents / حقیقی والدین"| j_abrar_hussain__shaheen_abrar
-    j_abrar_hussain__shaheen_abrar --> u_irsa_naz__mansoor_hussain
-    j_abrar_hussain__shaheen_abrar --> u_hina__zubair
-    j_abrar_hussain__shaheen_abrar --> u_sajjad__sana
-    j_abrar_hussain__shaheen_abrar --> u_adeel_ahmad__afshan
-    u_asif_qamar__sadia_asif -->|"biological parents / حقیقی والدین"| j_asif_qamar__sadia_asif
-    j_asif_qamar__sadia_asif --> p_ezan_asif
-    j_asif_qamar__sadia_asif --> p_fakhir_asif
-    u_irsa_naz__mansoor_hussain -->|"biological parents / حقیقی والدین"| j_irsa_naz__mansoor_hussain
-    j_irsa_naz__mansoor_hussain --> p_mohammad_yahya_hussain
-    j_irsa_naz__mansoor_hussain --> p_maham_mansoor
-    u_hina__zubair -->|"biological parents / حقیقی والدین"| j_hina__zubair
-    j_hina__zubair --> u_aresha_zubair__owais
-    j_hina__zubair --> u_fizza_zubair__moiz
-    j_hina__zubair --> p_abdul_rafey
-    u_sajjad__sana -->|"biological parents / حقیقی والدین"| j_sajjad__sana
-    j_sajjad__sana --> p_muaaz
-    j_sajjad__sana --> p_barirah
-    u_adeel_ahmad__afshan -->|"biological parents / حقیقی والدین"| j_adeel_ahmad__afshan
-    j_adeel_ahmad__afshan --> p_musabiha
-    j_adeel_ahmad__afshan --> p_musa
-    u_aresha_zubair__owais -->|"biological parents / حقیقی والدین"| j_aresha_zubair__owais
-    j_aresha_zubair__owais --> p_aresha_owais_daughter_a
-    j_aresha_zubair__owais --> p_aresha_owais_daughter_b
-    x_abrar_israr -. "full brothers / سگے بھائی" .- u_israr_hussain__shahnaz_israr
-    x_abrar_israr -.- u_abrar_hussain__shaheen_abrar
-    u_rubinna__sohaib_hussain -. "full sisters / سگی بہنیں" .- x_rubinna_falak
-    u_arsalan_israr__falak_naz -.- x_rubinna_falak
-    p_aresha_owais_daughter_a -. "sisters; order not stated / بہنیں؛ ترتیب نامعلوم" .- x_aresha_children
-    p_aresha_owais_daughter_b -.- x_aresha_children
+    p_israr_hussain__IH01 -->|"biological parents / حقیقی والدین"| j_israr_hussain__IH01__shahnaz_israr__SI01
+    p_shahnaz_israr__SI01 --> j_israr_hussain__IH01__shahnaz_israr__SI01
+    j_israr_hussain__IH01__shahnaz_israr__SI01 --> p_sohaib_hussain__SH01
+    j_israr_hussain__IH01__shahnaz_israr__SI01 --> p_arsalan_israr__AI01
+    j_israr_hussain__IH01__shahnaz_israr__SI01 --> p_sadia_asif__SA01
+    j_israr_hussain__IH01__shahnaz_israr__SI01 --> p_ayesha_naeem__AN01
+    j_israr_hussain__IH01__shahnaz_israr__SI01 --> p_irsa_naz__IN01
+    p_abrar_hussain__AH01 -->|"biological parents / حقیقی والدین"| j_abrar_hussain__AH01__shaheen_abrar__SA01
+    p_shaheen_abrar__SA01 --> j_abrar_hussain__AH01__shaheen_abrar__SA01
+    j_abrar_hussain__AH01__shaheen_abrar__SA01 --> p_mansoor_hussain__MH01
+    j_abrar_hussain__AH01__shaheen_abrar__SA01 --> p_hina__H01
+    j_abrar_hussain__AH01__shaheen_abrar__SA01 --> p_sana__S01
+    j_abrar_hussain__AH01__shaheen_abrar__SA01 --> p_afshan__A01
+    p_asif_qamar__AQ01 -->|"biological parents / حقیقی والدین"| j_asif_qamar__AQ01__sadia_asif__SA01
+    p_sadia_asif__SA01 --> j_asif_qamar__AQ01__sadia_asif__SA01
+    j_asif_qamar__AQ01__sadia_asif__SA01 --> p_ezan_asif__EA01
+    j_asif_qamar__AQ01__sadia_asif__SA01 --> p_fakhir_asif__FA01
+    p_irsa_naz__IN01 -->|"biological parents / حقیقی والدین"| j_irsa_naz__IN01__mansoor_hussain__MH01
+    p_mansoor_hussain__MH01 --> j_irsa_naz__IN01__mansoor_hussain__MH01
+    j_irsa_naz__IN01__mansoor_hussain__MH01 --> p_mohammad_yahya_hussain__MYH01
+    j_irsa_naz__IN01__mansoor_hussain__MH01 --> p_maham_mansoor__MM01
+    p_hina__H01 -->|"biological parents / حقیقی والدین"| j_hina__H01__zubair__Z01
+    p_zubair__Z01 --> j_hina__H01__zubair__Z01
+    j_hina__H01__zubair__Z01 --> p_aresha_zubair__AZ01
+    j_hina__H01__zubair__Z01 --> p_fizza_zubair__FZ01
+    j_hina__H01__zubair__Z01 --> p_abdul_rafey__AR01
+    p_sajjad__S01 -->|"biological parents / حقیقی والدین"| j_sajjad__S01__sana__S01
+    p_sana__S01 --> j_sajjad__S01__sana__S01
+    j_sajjad__S01__sana__S01 --> p_muaaz__M01
+    j_sajjad__S01__sana__S01 --> p_barirah__B01
+    p_adeel_ahmad__AA01 -->|"biological parents / حقیقی والدین"| j_adeel_ahmad__AA01__afshan__A01
+    p_afshan__A01 --> j_adeel_ahmad__AA01__afshan__A01
+    j_adeel_ahmad__AA01__afshan__A01 --> p_musabiha__M01
+    j_adeel_ahmad__AA01__afshan__A01 --> p_musa__M01
+    p_aresha_zubair__AZ01 -->|"biological parents / حقیقی والدین"| j_aresha_zubair__AZ01__owais__O01
+    p_owais__O01 --> j_aresha_zubair__AZ01__owais__O01
+    j_aresha_zubair__AZ01__owais__O01 --> p_unnamed_daughter_a__UDA01
+    j_aresha_zubair__AZ01__owais__O01 --> p_unnamed_daughter_b__UDB01
+    x_abrar_israr -. "full brothers / سگے بھائی" .- p_israr_hussain__IH01
+    x_abrar_israr -.- p_abrar_hussain__AH01
+    p_rubinna__R01 -. "full sisters / سگی بہنیں" .- x_rubinna_falak
+    p_falak_naz__FN01 -.- x_rubinna_falak
+    p_unnamed_daughter_a__UDA01 -. "sisters; order not stated / بہنیں؛ ترتیب نامعلوم" .- x_aresha_children
+    p_unnamed_daughter_b__UDB01 -.- x_aresha_children
 
-    class p_mohammad_yahya_hussain person;
-    class p_mohammad_yahya_hussain focus;
-    class p_maham_mansoor person;
-    class p_shahnaz_israr person;
-    class p_israr_hussain person;
-    class p_sohaib_hussain person;
-    class p_rubinna person;
-    class p_sadia_asif person;
-    class p_asif_qamar person;
-    class p_ezan_asif person;
-    class p_fakhir_asif person;
-    class p_arsalan_israr person;
-    class p_falak_naz person;
-    class p_ayesha_naeem person;
-    class p_wahaj person;
-    class p_abrar_hussain person;
-    class p_shaheen_abrar person;
-    class p_hina person;
-    class p_zubair person;
-    class p_aresha_zubair person;
-    class p_owais person;
-    class p_aresha_owais_daughter_a person;
-    class p_aresha_owais_daughter_b person;
-    class p_fizza_zubair person;
-    class p_moiz person;
-    class p_abdul_rafey person;
-    class p_sana person;
-    class p_sajjad person;
-    class p_muaaz person;
-    class p_barirah person;
-    class p_afshan person;
-    class p_adeel_ahmad person;
-    class p_musabiha person;
-    class p_musa person;
-    style u_israr_hussain__shahnaz_israr fill:#FFF5F7,stroke:#E0B0BD,color:#111111;
-    style u_abrar_hussain__shaheen_abrar fill:#EEF4FF,stroke:#A8C3E6,color:#111111;
-    style u_rubinna__sohaib_hussain fill:#FFE9EF,stroke:#DBA3B4,color:#111111;
-    style u_asif_qamar__sadia_asif fill:#FFE1EA,stroke:#D88BA5,color:#111111;
-    style u_arsalan_israr__falak_naz fill:#F7E3E8,stroke:#C992A3,color:#111111;
-    style u_ayesha_naeem__wahaj fill:#FFF0EA,stroke:#DCA18E,color:#111111;
-    class p_irsa_naz matperson;
-    class p_mansoor_hussain patperson;
-    style u_irsa_naz__mansoor_hussain fill:#F7F7FA,stroke:#B4B4CC,color:#111111;
-    style u_hina__zubair fill:#E1EEFF,stroke:#97B6DE,color:#111111;
-    style u_sajjad__sana fill:#ECF0F7,stroke:#A5B2C7,color:#111111;
-    style u_adeel_ahmad__afshan fill:#E0F2F5,stroke:#8EBECB,color:#111111;
-    style u_aresha_zubair__owais fill:#E3F1F8,stroke:#8FBBD5,color:#111111;
-    style u_fizza_zubair__moiz fill:#E7EDF6,stroke:#9FB3CD,color:#111111;
-    class j_israr_hussain__shahnaz_israr junc;
-    class j_abrar_hussain__shaheen_abrar junc;
-    class j_asif_qamar__sadia_asif junc;
-    class j_irsa_naz__mansoor_hussain junc;
-    class j_hina__zubair junc;
-    class j_sajjad__sana junc;
-    class j_adeel_ahmad__afshan junc;
-    class j_aresha_zubair__owais junc;
+    class p_mohammad_yahya_hussain__MYH01 person;
+    class p_mohammad_yahya_hussain__MYH01 focus;
+    class p_maham_mansoor__MM01 person;
+    class p_shahnaz_israr__SI01 person;
+    class p_israr_hussain__IH01 person;
+    class p_sohaib_hussain__SH01 person;
+    class p_rubinna__R01 person;
+    class p_sadia_asif__SA01 person;
+    class p_asif_qamar__AQ01 person;
+    class p_ezan_asif__EA01 person;
+    class p_fakhir_asif__FA01 person;
+    class p_arsalan_israr__AI01 person;
+    class p_falak_naz__FN01 person;
+    class p_ayesha_naeem__AN01 person;
+    class p_wahaj__W01 person;
+    class p_abrar_hussain__AH01 person;
+    class p_shaheen_abrar__SA01 person;
+    class p_hina__H01 person;
+    class p_zubair__Z01 person;
+    class p_aresha_zubair__AZ01 person;
+    class p_owais__O01 person;
+    class p_unnamed_daughter_a__UDA01 person;
+    class p_unnamed_daughter_b__UDB01 person;
+    class p_fizza_zubair__FZ01 person;
+    class p_moiz__M01 person;
+    class p_abdul_rafey__AR01 person;
+    class p_sana__S01 person;
+    class p_sajjad__S01 person;
+    class p_muaaz__M01 person;
+    class p_barirah__B01 person;
+    class p_afshan__A01 person;
+    class p_adeel_ahmad__AA01 person;
+    class p_musabiha__M01 person;
+    class p_musa__M01 person;
+    style u_israr_hussain--IH01__shahnaz_israr--SI01 fill:#FFF5F7,stroke:#E0B0BD,color:#111111;
+    style u_abrar_hussain--AH01__shaheen_abrar--SA01 fill:#EEF4FF,stroke:#A8C3E6,color:#111111;
+    style u_rubinna--R01__sohaib_hussain--SH01 fill:#FFE9EF,stroke:#DBA3B4,color:#111111;
+    style u_asif_qamar--AQ01__sadia_asif--SA01 fill:#FFE1EA,stroke:#D88BA5,color:#111111;
+    style u_arsalan_israr--AI01__falak_naz--FN01 fill:#F7E3E8,stroke:#C992A3,color:#111111;
+    style u_ayesha_naeem--AN01__wahaj--W01 fill:#FFF0EA,stroke:#DCA18E,color:#111111;
+    class p_irsa_naz__IN01 matperson;
+    class p_mansoor_hussain__MH01 patperson;
+    style u_irsa_naz--IN01__mansoor_hussain--MH01 fill:#F7F7FA,stroke:#B4B4CC,color:#111111;
+    style u_hina--H01__zubair--Z01 fill:#E1EEFF,stroke:#97B6DE,color:#111111;
+    style u_sajjad--S01__sana--S01 fill:#ECF0F7,stroke:#A5B2C7,color:#111111;
+    style u_adeel_ahmad--AA01__afshan--A01 fill:#E0F2F5,stroke:#8EBECB,color:#111111;
+    style u_aresha_zubair--AZ01__owais--O01 fill:#E3F1F8,stroke:#8FBBD5,color:#111111;
+    style u_fizza_zubair--FZ01__moiz--M01 fill:#E7EDF6,stroke:#9FB3CD,color:#111111;
+    class j_israr_hussain__IH01__shahnaz_israr__SI01 junc;
+    class j_abrar_hussain__AH01__shaheen_abrar__SA01 junc;
+    class j_asif_qamar__AQ01__sadia_asif__SA01 junc;
+    class j_irsa_naz__IN01__mansoor_hussain__MH01 junc;
+    class j_hina__H01__zubair__Z01 junc;
+    class j_sajjad__S01__sana__S01 junc;
+    class j_adeel_ahmad__AA01__afshan__A01 junc;
+    class j_aresha_zubair__AZ01__owais__O01 junc;
     class x_rubinna_falak route;
     class x_abrar_israr route;
     class x_aresha_children route;

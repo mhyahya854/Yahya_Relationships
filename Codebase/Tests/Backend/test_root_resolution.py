@@ -52,11 +52,20 @@ def test_real_project_root_getters(tmp_path, monkeypatch):
     """The real project root resolves to the canonical layout from any cwd."""
     monkeypatch.chdir(tmp_path)
     root = PROJECT_ROOT
-    assert (
-        DataRootManager.get_database_path(root)
-        == root / "Database" / "Main" / "family.db"
-    )
-    assert DataRootManager.get_people_dir(root) == root / "Database" / "People"
+    if (root / "Database" / "relationships.db").exists():
+        assert (
+            DataRootManager.get_database_path(root)
+            == root / "Database" / "relationships.db"
+        )
+    else:
+        assert (
+            DataRootManager.get_database_path(root)
+            == root / "Database" / "Main" / "family.db"
+        )
+    if (root / "People").exists():
+        assert DataRootManager.get_people_dir(root) == root / "People"
+    else:
+        assert DataRootManager.get_people_dir(root) == root / "Database" / "People"
     assert DataRootManager.get_backups_dir(root) == root / "Backups"
     assert DataRootManager.get_config_dir(root) == root / "Database" / "Config"
     assert DataRootManager.get_exports_dir(root) == root / "Database" / "Exports"

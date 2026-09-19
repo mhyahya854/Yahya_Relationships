@@ -55,7 +55,8 @@ def _post_restore_health(root: Path, expected_people: int) -> Dict[str, Any]:
         schema_version = int(row[0]) if row else int(connection.execute("PRAGMA user_version").fetchone()[0])
     finally:
         connection.close()
-    if integrity != "ok" or person_count != expected_people or not (1 <= schema_version <= config.APP_SCHEMA_VERSION):
+    max_supported = max(config.APP_SCHEMA_VERSION, getattr(config, "CANONICAL_SCHEMA_VERSION", 3))
+    if integrity != "ok" or person_count != expected_people or not (1 <= schema_version <= max_supported):
         raise RestoreError("Restored database failed post-restore validation.", code="POST_RESTORE_HEALTH_FAILED")
 
     people_dir = DataRootManager.get_people_dir(root)
@@ -145,10 +146,15 @@ def restore_backup(
             active_db = DataRootManager.get_database_path(active_root)
             active_people = DataRootManager.get_people_dir(active_root)
             active_config = DataRootManager.get_config_dir(active_root)
-            staged_db = staged_snapshot / "data" / "family.db"
+            staged_db_filename = (
+                "relationships.db"
+                if (staged_snapshot / "data" / "relationships.db").is_file()
+                else "family.db"
+            )
+            staged_db = staged_snapshot / "data" / staged_db_filename
             staged_people = staged_snapshot / "people"
             staged_config = staged_snapshot / "config"
-            rollback_db = rollback_dir / "database" / "family.db"
+            rollback_db = rollback_dir / "database" / staged_db_filename
             rollback_people = rollback_dir / "people"
             rollback_config = rollback_dir / "config"
 

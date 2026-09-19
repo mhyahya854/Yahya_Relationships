@@ -8,6 +8,9 @@ from app.backend.hermes import tools as hermes
 from app.backend.services import errors, general, people, relationship
 
 
+pytestmark = pytest.mark.usefixtures("isolated")
+
+
 def labels_of(payload):
     return {(path["label_en"] or "").casefold() for path in payload["paths"]}
 

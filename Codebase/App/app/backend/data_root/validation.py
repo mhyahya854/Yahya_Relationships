@@ -98,7 +98,8 @@ def audit_data_root(root: Optional[Path] = None) -> DataRootHealth:
             ).fetchone()
             schema_ver = int(s_row["value"]) if s_row else 1
 
-            if not 1 <= schema_ver <= config.APP_SCHEMA_VERSION:
+            max_supported_schema = max(config.APP_SCHEMA_VERSION, getattr(config, "CANONICAL_SCHEMA_VERSION", 3))
+            if not 1 <= schema_ver <= max_supported_schema:
                 issues.append(
                     ValidationIssue(
                         code="SCHEMA_UNSUPPORTED",
@@ -154,10 +155,13 @@ def audit_data_root(root: Optional[Path] = None) -> DataRootHealth:
                         )
                     )
                 else:
-                    # Folder exists, check journal.md
+                    # Folder exists, check journal file (canonical or legacy)
                     primary_f = matching_folders[0]
-                    journal_file = primary_f / "journal.md"
-                    if not journal_file.exists():
+                    has_journal = (
+                        (primary_f / "journal(personal thoughts).md").is_file()
+                        or (primary_f / "journal.md").is_file()
+                    )
+                    if not has_journal:
                         fs_health.missing_journals.append(pid)
                         issues.append(
                             ValidationIssue(

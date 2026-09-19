@@ -72,10 +72,14 @@ def build_backup_manifest(
     created_at: datetime | None = None,
 ) -> Dict[str, Any]:
     """Write a deterministic v1 manifest for a staged portable snapshot."""
-    backup_dir = backup_dir.resolve()
-    database = backup_dir / "data" / "family.db"
+    db_candidates = [backup_dir / "data" / "relationships.db", backup_dir / "data" / "family.db"]
+    database = next((d for d in db_candidates if d.is_file()), db_candidates[1])
     person_count, schema_version = _database_metadata(database)
-    journal_count = sum(1 for path in (backup_dir / "people").rglob("journal.md") if path.is_file())
+    journal_count = sum(
+        1
+        for path in (backup_dir / "people").rglob("*")
+        if path.is_file() and path.name in ("journal(personal thoughts).md", "journal.md")
+    )
 
     file_entries: List[Dict[str, Any]] = []
     for file_path in sorted(backup_dir.rglob("*"), key=lambda value: value.as_posix()):
@@ -169,8 +173,9 @@ def validate_backup_manifest(data: Any) -> Dict[str, Any]:
             raise BackupManifestInvalidError(f"Manifest contains an invalid size for {path}.")
         normalized_files.append({"path": path, "sha256": digest.lower(), "size_bytes": size})
 
-    if "data/family.db" not in {entry["path"] for entry in normalized_files}:
-        raise BackupManifestInvalidError("Manifest does not include data/family.db.")
+    manifest_paths = {entry["path"] for entry in normalized_files}
+    if "data/relationships.db" not in manifest_paths and "data/family.db" not in manifest_paths:
+        raise BackupManifestInvalidError("Manifest does not include data/relationships.db or data/family.db.")
     for key in ("file_count", "total_size_bytes", "person_count", "journal_count", "sqlite_schema_version"):
         value = data.get(key)
         if key == "sqlite_schema_version" and legacy and value is None:

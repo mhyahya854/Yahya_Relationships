@@ -56,7 +56,8 @@ def isolated(tmp_path, monkeypatch):
     from app.backend import config, db as db_module
     from app.backend.data_root import DataRootManager
 
-    db_source = DataRootManager.get_database_path(REPO)
+    legacy_source = REPO / "Database" / "Main" / "family.db"
+    db_source = legacy_source if legacy_source.exists() else DataRootManager.get_database_path(REPO)
     db_target = tmp_path / "Database" / "Main" / "family.db"
     db_target.parent.mkdir(parents=True, exist_ok=True)
     if db_source.exists():
@@ -67,7 +68,8 @@ def isolated(tmp_path, monkeypatch):
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    people_src = DataRootManager.get_people_dir(REPO)
+    legacy_people = REPO / "Database" / "People"
+    people_src = legacy_people if legacy_people.exists() else DataRootManager.get_people_dir(REPO)
     people_target = tmp_path / "Database" / "People"
     people_target.parent.mkdir(parents=True, exist_ok=True)
     if people_src.exists():

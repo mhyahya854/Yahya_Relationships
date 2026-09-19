@@ -60,3 +60,61 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_directional_standard
 CREATE UNIQUE INDEX IF NOT EXISTS uq_general_rel_directional_custom
   ON general_relationships(person_a, person_b, direction_from, COALESCE(label_a_to_b, ''), COALESCE(label_b_to_a, ''))
   WHERE directionality = 'directional' AND type = 'custom';
+
+-- Phase 11: Canonical identity, aliases, and forward schema foundation tables
+
+CREATE TABLE IF NOT EXISTS unresolved_people (
+  id TEXT PRIMARY KEY,
+  label TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  resolved_to_person_id TEXT REFERENCES people(id),
+  resolved_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS identifier_aliases (
+  id INTEGER PRIMARY KEY,
+  old_identifier TEXT NOT NULL UNIQUE,
+  canonical_id TEXT NOT NULL,
+  entity_type TEXT NOT NULL DEFAULT 'person',
+  notes TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_identifier_aliases_canonical
+  ON identifier_aliases(canonical_id);
+
+CREATE TABLE IF NOT EXISTS platform_identities (
+  id INTEGER PRIMARY KEY,
+  person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  identity_value TEXT NOT NULL,
+  is_current INTEGER NOT NULL DEFAULT 1 CHECK (is_current IN (0, 1)),
+  notes TEXT,
+  created_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_platform_identities_person
+  ON platform_identities(person_id);
+
+CREATE TABLE IF NOT EXISTS places (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  address TEXT,
+  latitude REAL,
+  longitude REAL,
+  place_type TEXT,
+  notes TEXT,
+  created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS events (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  date_exact TEXT,
+  date_approx TEXT,
+  place_id TEXT REFERENCES places(id),
+  event_type TEXT,
+  notes TEXT,
+  created_at TEXT
+);

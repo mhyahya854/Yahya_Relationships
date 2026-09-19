@@ -57,14 +57,17 @@ ALLOWED_MARRIAGE_CHILD_STATUSES = {"no_children", "unknown"}
 
 
 def load_data():
-    """Normal data source: family.db (SQLite). Legacy JSON is used only as a
+    """Normal data source: relationships.db or family.db (SQLite). Legacy JSON is used only as a
     pre-migration fallback and never silently updated."""
+    db = DataRootManager.get_database_path()
+    if db.exists():
+        return read_sqlite_model(db)
     if DB_PATH.exists():
         return read_sqlite_model(DB_PATH)
     if DATA_PATH.exists():
         return json.loads(DATA_PATH.read_text(encoding="utf-8"))
     raise FileNotFoundError(
-        "No family.db or family.json found in the project directory."
+        "No relationships.db, family.db, or family.json found in the project directory."
     )
 
 
@@ -711,7 +714,7 @@ def read_sqlite_model(db_path):
                 "SELECT * FROM review_notes ORDER BY display_order, id"
             )
         ]
-        return {
+        result = {
             "metadata": metadata,
             "people": people,
             "parent_child": parent_child,
@@ -719,6 +722,19 @@ def read_sqlite_model(db_path):
             "sibling_groups": sibling_groups,
             "review_notes": review_notes,
         }
+        has_alias_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='identifier_aliases'"
+        ).fetchone()
+        if has_alias_table:
+            aliases_map = {
+                row["old_identifier"]: row["canonical_id"]
+                for row in connection.execute(
+                    "SELECT old_identifier, canonical_id FROM identifier_aliases WHERE entity_type = 'person'"
+                )
+            }
+            if aliases_map:
+                result["identifier_aliases"] = aliases_map
+        return result
     finally:
         connection.close()
 
@@ -893,11 +909,11 @@ def _cluster_id(couple_key):
 
 def _junction_id(couple_key):
     """ID of a layout-only family junction below a couple that has children."""
-    return f"j_{couple_key[0]}__{couple_key[1]}"
+    return f"j_{couple_key[0].replace('-', '_')}__{couple_key[1].replace('-', '_')}"
 
 
 def _person_node_id(person_id):
-    return f"p_{person_id}"
+    return f"p_{person_id.replace('-', '_')}"
 
 
 def _route_node_id(group_id):
@@ -1550,10 +1566,22 @@ def _marriage_derived_lines(data, first, second):
 def _audit_derived(data):
     """Fail the build if any required derived consequence is not calculated."""
     people_index = {person["id"]: person for person in data["people"]}
-    focus = data["metadata"]["focus_person"]
+    alias_map = dict(data.get("identifier_aliases") or {})
+    for p in data.get("people", []):
+        pid = p["id"]
+        alias_map[pid] = pid
+        if "--" in pid:
+            base = pid.split("--")[0]
+            alias_map.setdefault(base, pid)
+
+    def resolve_id(pid: str) -> str:
+        return alias_map.get(pid, pid)
+
+    focus = resolve_id(data["metadata"]["focus_person"])
     problems = []
 
     def terms(person_id):
+        res_id = resolve_id(person_id)
         return {
             (
                 term["degree"],
@@ -1563,7 +1591,7 @@ def _audit_derived(data):
             for term in _kinship_terms(
                 data,
                 focus,
-                person_id,
+                res_id,
                 focus_id=focus,
                 people_index=people_index,
             )
@@ -1575,13 +1603,15 @@ def _audit_derived(data):
         if missing:
             problems.append(f"{label} missing terms for {person_id}: {missing}.")
 
+    irsa = resolve_id("irsa_naz")
+    mansoor = resolve_id("mansoor_hussain")
     pair = {
         (
             term["degree"],
             term["removal"],
             term["side"],
         )
-        for term in _kinship_terms(data, "irsa_naz", "mansoor_hussain")
+        for term in _kinship_terms(data, irsa, mansoor)
     }
     if (1, 0, "") not in pair:
         problems.append("Irsa Naz + Mansoor Hussain are not derived as first cousins.")
@@ -2088,9 +2118,21 @@ def _kinship_regression_audit(data):
     """Phase-2 regression checks for arbitrary perspectives; fails the build
     if any required relationship is missing."""
     people_index = {person["id"]: person for person in data["people"]}
+    alias_map = dict(data.get("identifier_aliases") or {})
+    if not alias_map:
+        for p in data.get("people", []):
+            pid = p["id"]
+            if "--" in pid:
+                base = pid.split("--")[0]
+                alias_map[base] = pid
+
+    def resolve_id(pid: str) -> str:
+        return alias_map.get(pid, pid)
 
     def entry_labels(first, second):
-        pair = _viewer_pair(data, first, second, people_index)
+        resolved_first = resolve_id(first)
+        resolved_second = resolve_id(second)
+        pair = _viewer_pair(data, resolved_first, resolved_second, people_index)
         return {
             label["en"]
             for label in pair["main"] + pair["additional"]
@@ -3490,6 +3532,7 @@ def render_html(data, mermaid_text, mermaid_lib_js=""):
 
 
 def main():
+    rebind_active_root()
     parser = argparse.ArgumentParser(
         description=(
             "Validate family.db (SQLite is the structured source of truth) "

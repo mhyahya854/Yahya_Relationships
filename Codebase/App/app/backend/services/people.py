@@ -72,16 +72,26 @@ def _person_serialize(connection: sqlite3.Connection, row) -> dict:
     folder_path = None
     folder_exists = False
     journal_exists = False
+    facts_file_exists = False
+    category = None
+    if "category" in row.keys() and row["category"]:
+        category = row["category"]
+
     try:
         folder_path = db.find_person_folder(connection, row["id"])
         if folder_path is not None and folder_path.is_dir():
             folder_exists = True
-            journal_file = folder_path / "journal.md"
-            journal_exists = journal_file.is_file()
+            _, j_exists = db.find_journal_path(connection, row["id"])
+            journal_exists = j_exists
+            facts_file = folder_path / f"{row['id']}(facts and about).md"
+            facts_file_exists = facts_file.is_file()
+            if not category and folder_path.parent.name in ("Me", "Family", "Friends"):
+                category = folder_path.parent.name
     except (LookupError, OSError):
         folder_path = None
         folder_exists = False
         journal_exists = False
+        facts_file_exists = False
 
     return {
         "id": row["id"],
@@ -98,6 +108,8 @@ def _person_serialize(connection: sqlite3.Connection, row) -> dict:
         "folder": str(folder_path) if folder_exists else None,
         "folder_exists": folder_exists,
         "journal_exists": journal_exists,
+        "facts_file_exists": facts_file_exists,
+        "category": category,
     }
 
 
@@ -140,8 +152,9 @@ def list_people(*, query: str | None = None, group_id: str | None = None) -> lis
 def get_person(person_id: str) -> dict:
     connection = db.get_connection()
     try:
+        resolved_id = db.resolve_canonical_id(connection, person_id)
         row = connection.execute(
-            "SELECT * FROM people WHERE id = ?", (person_id,)
+            "SELECT * FROM people WHERE id = ?", (resolved_id,)
         ).fetchone()
         if row is None:
             raise errors.NotFoundError(f"Unknown person id: {person_id}")
@@ -204,6 +217,7 @@ def create_person(
     group_ids: list[str] | None = None,
     primary_group_id: str | None = None,
     origin: str = "user",
+    category: str | None = None,
 ) -> dict:
     if not name or not str(name).strip():
         raise errors.ValidationError("Person name is required.")
@@ -232,30 +246,77 @@ def create_person(
     snapshot_committed = False
     try:
         connection.execute("BEGIN")
-        base = _slugify(str(name).strip())
-        person_id = _next_person_id(connection, base)
+
+        # Determine if database is running canonical schema (v3)
+        is_canonical = db.is_canonical_connection(connection)
+
+        if is_canonical:
+            from ..domain.canonical.ids import generate_canonical_person_id
+            existing_rows = connection.execute(
+                "SELECT id FROM people UNION SELECT id FROM unresolved_people UNION SELECT old_identifier FROM identifier_aliases"
+            ).fetchall()
+            existing_ids = {r[0] for r in existing_rows}
+            person_id = generate_canonical_person_id(str(name).strip(), existing_ids)
+        else:
+            base = _slugify(str(name).strip())
+            person_id = _next_person_id(connection, base)
+
         max_order = connection.execute(
             "SELECT COALESCE(MAX(display_order), -1) AS m FROM people"
         ).fetchone()["m"]
-        connection.execute(
-            """
-            INSERT INTO people (
-              id, name, birth_year, gender, marital_status, branch,
-              note_en, note_ur, display_order
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                person_id,
-                str(name).strip(),
-                birth_year,
-                gender,
-                marital_status,
-                branch,
-                note_en,
-                note_ur,
-                int(max_order) + 1,
-            ),
+
+        has_category_col = bool(
+            connection.execute(
+                "SELECT 1 FROM pragma_table_info('people') WHERE name = 'category'"
+            ).fetchone()
         )
+
+        effective_category = category
+        if not effective_category and is_canonical:
+            effective_category = "Family"
+
+        if has_category_col:
+            connection.execute(
+                """
+                INSERT INTO people (
+                  id, name, birth_year, gender, marital_status, branch,
+                  note_en, note_ur, display_order, category
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    person_id,
+                    str(name).strip(),
+                    birth_year,
+                    gender,
+                    marital_status,
+                    branch,
+                    note_en,
+                    note_ur,
+                    int(max_order) + 1,
+                    effective_category,
+                ),
+            )
+        else:
+            connection.execute(
+                """
+                INSERT INTO people (
+                  id, name, birth_year, gender, marital_status, branch,
+                  note_en, note_ur, display_order
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    person_id,
+                    str(name).strip(),
+                    birth_year,
+                    gender,
+                    marital_status,
+                    branch,
+                    note_en,
+                    note_ur,
+                    int(max_order) + 1,
+                ),
+            )
+
         for index, alias in enumerate(aliases or []):
             alias = str(alias).strip()
             if alias:
@@ -313,16 +374,33 @@ def create_person(
         source_id = db.register_source(connection, origin=origin)
         db.link_fact_source(connection, source_id, "people", person_id, origin=origin)
 
-        # Canonical filesystem creation with failure-atomicity
-        target_folder = db.expected_person_folder(connection, person_id)
-        target_journal = target_folder / "journal.md"
+        # Filesystem creation with failure-atomicity
+        target_folder = db.expected_person_folder(
+            connection, person_id, category=effective_category
+        )
+        target_journal = target_folder / (
+            "journal(personal thoughts).md" if is_canonical else "journal.md"
+        )
         folder_existed_before = target_folder.exists()
         journal_existed_before = target_journal.exists()
 
         try:
-            journal_path = db.ensure_journal(connection, person_id)
+            if is_canonical:
+                from ..domain.canonical.template import initialize_person_folder
+                initialize_person_folder(
+                    target_folder,
+                    person_id,
+                    str(name).strip(),
+                    primary_category=effective_category or "Family",
+                    aliases=aliases,
+                    birth_year=birth_year,
+                    gender=gender,
+                )
+                journal_path = db.ensure_journal(connection, person_id)
+            else:
+                journal_path = db.ensure_journal(connection, person_id)
             if not journal_path.is_file():
-                raise OSError(f"Canonical journal.md not created at {journal_path}")
+                raise OSError(f"Journal not created at {journal_path}")
         except Exception as fs_exc:
             raise errors.StorageError(
                 f"Failed to create canonical journal for '{name}': {fs_exc}",
@@ -376,19 +454,30 @@ def update_person(
     clear_note_ur: bool = False,
     group_ids: list[str] | None = None,
     primary_group_id: str | None = None,
+    category: str | None = None,
     origin: str = "user",
 ) -> dict:
     record_pre_mutation_snapshot(f"Updated person: {person_id}")
 
     connection = db.get_connection()
     try:
+        resolved_id = db.resolve_canonical_id(connection, person_id)
         row = connection.execute(
-            "SELECT * FROM people WHERE id = ?", (person_id,)
+            "SELECT * FROM people WHERE id = ?", (resolved_id,)
         ).fetchone()
         if row is None:
             raise errors.NotFoundError(f"Unknown person id: {person_id}")
+        person_id = resolved_id
         fields = []
         params: list = []
+        has_category_col = bool(
+            connection.execute(
+                "SELECT 1 FROM pragma_table_info('people') WHERE name = 'category'"
+            ).fetchone()
+        )
+        if category is not None and has_category_col:
+            fields.append("category = ?")
+            params.append(category)
         if name is not None:
             if not str(name).strip():
                 raise errors.ValidationError("Person name is required.")
@@ -547,11 +636,15 @@ def get_person_profile(person_id: str, perspective_id: str | None = None) -> dic
     general relationships, perspective-interpreted kinship, and journal preview."""
     connection = db.get_connection()
     try:
+        resolved_id = db.resolve_canonical_id(connection, person_id)
         row = connection.execute(
-            "SELECT * FROM people WHERE id = ?", (person_id,)
+            "SELECT * FROM people WHERE id = ?", (resolved_id,)
         ).fetchone()
         if row is None:
             raise errors.NotFoundError(f"Unknown person id: {person_id}")
+        person_id = resolved_id
+        if perspective_id:
+            perspective_id = db.resolve_canonical_id(connection, perspective_id)
         person_brief = _person_serialize(connection, row)
 
         # 1. Direct Family Facts
@@ -724,11 +817,13 @@ def delete_person(person_id: str, *, force: bool = False) -> dict:
 
     connection = db.get_connection()
     try:
+        resolved_id = db.resolve_canonical_id(connection, person_id)
         row = connection.execute(
-            "SELECT * FROM people WHERE id = ?", (person_id,)
+            "SELECT * FROM people WHERE id = ?", (resolved_id,)
         ).fetchone()
         if row is None:
             raise errors.NotFoundError(f"Unknown person id: {person_id}")
+        person_id = resolved_id
         folder = _folder_for(connection, person_id)
         blocking = []
         if connection.execute(
@@ -773,6 +868,20 @@ def delete_person(person_id: str, *, force: bool = False) -> dict:
                     details={"blocking": family_blocks},
                 )
         connection.execute("BEGIN")
+        has_aliases = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='identifier_aliases'"
+        ).fetchone()
+        if has_aliases:
+            connection.execute(
+                "DELETE FROM identifier_aliases WHERE canonical_id = ?", (person_id,)
+            )
+        has_platform = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='platform_identities'"
+        ).fetchone()
+        if has_platform:
+            connection.execute(
+                "DELETE FROM platform_identities WHERE person_id = ?", (person_id,)
+            )
         connection.execute(
             "DELETE FROM general_relationships WHERE person_a = ? OR person_b = ?",
             (person_id, person_id),
@@ -788,14 +897,15 @@ def delete_person(person_id: str, *, force: bool = False) -> dict:
         archived_folder = None
         if folder is not None:
             resolved = folder.resolve()
-            people_root = config.PEOPLE_DIR.resolve()
+            from ..data_root.manager import DataRootManager
+            people_root = DataRootManager.get_people_dir().resolve()
             if (
                 people_root in resolved.parents
                 and resolved.name == person_id
                 and resolved.exists()
             ):
                 # Archive journal directory before deleting folder
-                archive_root = config.PEOPLE_DIR / "_archived"
+                archive_root = people_root / "_archived"
                 archive_root.mkdir(parents=True, exist_ok=True)
                 stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
                 target_archive = archive_root / f"{person_id}_{stamp}"
@@ -826,13 +936,15 @@ def assign_group(person_id: str, group_id: str, *, primary: bool = False) -> dic
     record_pre_mutation_snapshot(f"Assigned group {group_id} to person {person_id}")
     connection = db.get_connection()
     try:
+        resolved_id = db.resolve_canonical_id(connection, person_id)
         person = connection.execute(
-            "SELECT id FROM people WHERE id = ?", (person_id,)
+            "SELECT id FROM people WHERE id = ?", (resolved_id,)
         ).fetchone()
         if person is None:
             raise errors.NotFoundError(f"Unknown person id: {person_id}")
+        person_id = resolved_id
         group = connection.execute(
-            "SELECT id FROM groups WHERE id = ?", (group_id,)
+            "SELECT id, slug FROM groups WHERE id = ?", (group_id,)
         ).fetchone()
         if group is None:
             raise errors.NotFoundError(f"Unknown group id: {group_id}")
@@ -847,7 +959,9 @@ def assign_group(person_id: str, group_id: str, *, primary: bool = False) -> dic
                 (person_id,),
             ).fetchone()
             if existing_primary and existing_primary["slug"] != group["slug"]:
-                target = config.PEOPLE_DIR / group["slug"] / person_id
+                from ..data_root.manager import DataRootManager
+                people_dir = DataRootManager.get_people_dir()
+                target = people_dir / group["slug"] / person_id
                 if target.exists() and target != old_folder.resolve():
                     raise errors.InvalidOperationError(
                         "A person folder already exists under the target group. "
@@ -874,9 +988,11 @@ def assign_group(person_id: str, group_id: str, *, primary: bool = False) -> dic
             )
         connection.commit()
         if primary and old_folder is not None and old_folder.exists():
-            target = config.PEOPLE_DIR / group["slug"] / person_id
+            from ..data_root.manager import DataRootManager
+            people_dir = DataRootManager.get_people_dir()
+            target = people_dir / group["slug"] / person_id
             if target != old_folder and not target.exists():
-                config.PEOPLE_DIR.joinpath(group["slug"]).mkdir(
+                people_dir.joinpath(group["slug"]).mkdir(
                     parents=True, exist_ok=True
                 )
                 shutil.move(str(old_folder), str(target))
@@ -895,15 +1011,17 @@ def remove_group(person_id: str, group_id: str) -> dict:
     record_pre_mutation_snapshot(f"Removed group {group_id} from person {person_id}")
     connection = db.get_connection()
     try:
+        resolved_id = db.resolve_canonical_id(connection, person_id)
         row = connection.execute(
             """
             SELECT is_primary FROM person_groups
             WHERE person_id = ? AND group_id = ?
             """,
-            (person_id, group_id),
+            (resolved_id, group_id),
         ).fetchone()
         if row is None:
             raise errors.NotFoundError("That person is not in that group.")
+        person_id = resolved_id
         if row["is_primary"]:
             raise errors.InvalidOperationError(
                 "Cannot remove the primary group without choosing another.",
@@ -919,5 +1037,200 @@ def remove_group(person_id: str, group_id: str) -> dict:
     except Exception:
         connection.rollback()
         raise
+    finally:
+        connection.close()
+
+
+def allocate_unresolved_person(
+    *,
+    source_context: str | None = None,
+    provisional_label: str | None = None,
+    create_folder: bool = True,
+    origin: str = "user",
+) -> dict:
+    from ..data_root.errors import DataRootReadOnlyError
+    from ..data_root.manager import DataRootManager
+    from ..domain.maintenance import check_maintenance_lock
+
+    check_maintenance_lock()
+    if DataRootManager.is_read_only():
+        raise DataRootReadOnlyError()
+
+    record_pre_mutation_snapshot(f"Allocated unresolved person: {provisional_label or 'Unknown'}")
+
+    connection = db.get_connection()
+    target_folder: Path | None = None
+    folder_existed_before = True
+    snapshot_committed = False
+    try:
+        has_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='unresolved_people'"
+        ).fetchone()
+        if not has_table:
+            raise errors.InvalidOperationError("Unresolved people table does not exist in this database schema.")
+
+        connection.execute("BEGIN")
+        from ..domain.canonical.ids import generate_unresolved_person_id
+        existing_rows = connection.execute("SELECT id FROM unresolved_people").fetchall()
+        existing_ids = {r[0] for r in existing_rows}
+        unresolved_id = generate_unresolved_person_id(existing_ids)
+
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        connection.execute(
+            """
+            INSERT INTO unresolved_people (id, label, notes, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (unresolved_id, provisional_label, source_context, now_iso),
+        )
+
+        if create_folder:
+            people_dir = DataRootManager.get_people_dir()
+            target_folder = people_dir / unresolved_id
+            folder_existed_before = target_folder.exists()
+            from ..domain.canonical.template import initialize_person_folder
+            label_text = provisional_label or "Unknown Person"
+            initialize_person_folder(
+                target_folder,
+                unresolved_id,
+                label_text,
+                primary_category="Unresolved",
+                identity_notes=source_context,
+            )
+
+        connection.commit()
+        snapshot_committed = True
+        if target_folder:
+            update_latest_filesystem_manifest({"created_paths": [str(target_folder)]})
+
+        return {
+            "id": unresolved_id,
+            "label": provisional_label,
+            "notes": source_context,
+            "created_at": now_iso,
+            "resolved_to_person_id": None,
+            "resolved_at": None,
+            "folder": str(target_folder) if target_folder else None,
+        }
+    except Exception:
+        if not snapshot_committed:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            if not folder_existed_before and target_folder is not None and target_folder.exists():
+                try:
+                    shutil.rmtree(target_folder)
+                except OSError:
+                    pass
+            pop_latest_snapshot()
+        raise
+    finally:
+        connection.close()
+
+
+def resolve_unresolved_person(
+    unresolved_id: str,
+    target_person_id: str,
+    *,
+    resolution_notes: str | None = None,
+    origin: str = "user",
+) -> dict:
+    from ..data_root.errors import DataRootReadOnlyError
+    from ..data_root.manager import DataRootManager
+    from ..domain.maintenance import check_maintenance_lock
+
+    check_maintenance_lock()
+    if DataRootManager.is_read_only():
+        raise DataRootReadOnlyError()
+
+    record_pre_mutation_snapshot(f"Resolved {unresolved_id} to {target_person_id}")
+
+    connection = db.get_connection()
+    try:
+        unresolved_row = connection.execute(
+            "SELECT * FROM unresolved_people WHERE id = ?", (unresolved_id,)
+        ).fetchone()
+        if not unresolved_row:
+            raise errors.NotFoundError(f"Unresolved person not found: {unresolved_id}")
+
+        canonical_target_id = db.resolve_canonical_id(connection, target_person_id)
+        target_row = connection.execute(
+            "SELECT * FROM people WHERE id = ?", (canonical_target_id,)
+        ).fetchone()
+        if not target_row:
+            raise errors.NotFoundError(f"Target person not found: {target_person_id}")
+
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        connection.execute("BEGIN")
+        connection.execute(
+            """
+            UPDATE unresolved_people
+            SET resolved_to_person_id = ?, resolved_at = ?, notes = COALESCE(?, notes)
+            WHERE id = ?
+            """,
+            (canonical_target_id, now_iso, resolution_notes, unresolved_id),
+        )
+
+        has_alias_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='identifier_aliases'"
+        ).fetchone()
+        if has_alias_table:
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO identifier_aliases (
+                    old_identifier, canonical_id, entity_type, notes, created_at
+                ) VALUES (?, ?, 'person', ?, ?)
+                """,
+                (
+                    unresolved_id,
+                    canonical_target_id,
+                    f"Resolved unresolved person: {resolution_notes or ''}".strip(),
+                    now_iso,
+                ),
+            )
+
+        connection.commit()
+
+        return {
+            "unresolved_id": unresolved_id,
+            "resolved_to_person_id": canonical_target_id,
+            "resolved_at": now_iso,
+            "notes": resolution_notes or unresolved_row["notes"],
+            "target_person": _person_serialize(connection, target_row),
+        }
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def list_unresolved_people(*, include_resolved: bool = False) -> list[dict]:
+    connection = db.get_connection()
+    try:
+        has_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='unresolved_people'"
+        ).fetchone()
+        if not has_table:
+            return []
+
+        sql = "SELECT * FROM unresolved_people"
+        if not include_resolved:
+            sql += " WHERE resolved_to_person_id IS NULL"
+        sql += " ORDER BY id"
+        rows = connection.execute(sql).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "label": r["label"],
+                "notes": r["notes"],
+                "created_at": r["created_at"],
+                "resolved_to_person_id": r["resolved_to_person_id"],
+                "resolved_at": r["resolved_at"],
+            }
+            for r in rows
+        ]
     finally:
         connection.close()

@@ -114,10 +114,25 @@ def get_current_schema_version(connection: sqlite3.Connection) -> int:
     return 1
 
 
+def is_canonical_connection(connection: sqlite3.Connection) -> bool:
+    """Return True if this connection targets the canonical database (Schema 3 / relationships.db)."""
+    try:
+        ver = connection.execute("PRAGMA user_version").fetchone()[0]
+        if ver >= 3:
+            return True
+        for row in connection.execute("PRAGMA database_list").fetchall():
+            db_file = row[2]
+            if db_file and Path(db_file).name == config.CANONICAL_DB_NAME:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def _seed_groups_and_assignments(connection: sqlite3.Connection) -> None:
     """Seed organisational groups and default family primary assignment."""
     existing_groups = {
-        row["name"] for row in connection.execute("SELECT name FROM groups")
+        row[0] for row in connection.execute("SELECT name FROM groups")
     }
     for index, (group_id, name, slug, kind) in enumerate(DEFAULT_GROUPS):
         if name not in existing_groups:
@@ -130,15 +145,15 @@ def _seed_groups_and_assignments(connection: sqlite3.Connection) -> None:
             )
 
     assigned = {
-        row["person_id"]
+        row[0]
         for row in connection.execute("SELECT person_id FROM person_groups")
     }
     family_row = connection.execute(
         "SELECT id FROM groups WHERE id = 'family'"
     ).fetchone()
-    family_group_id = family_row["id"] if family_row else "family"
+    family_group_id = family_row[0] if family_row else "family"
     people_ids = [
-        row["id"]
+        row[0]
         for row in connection.execute("SELECT id FROM people ORDER BY display_order")
     ]
     for person_id in people_ids:
@@ -153,8 +168,8 @@ def _seed_groups_and_assignments(connection: sqlite3.Connection) -> None:
         )
 
 
-def _bootstrap_new_database(connection: sqlite3.Connection) -> None:
-    """Initialize a brand-new empty database directly into schema v2."""
+def _bootstrap_new_database(connection: sqlite3.Connection, target_schema: int = 2) -> None:
+    """Initialize a brand-new empty database directly into target schema (v2 for family.db, v3 for relationships.db)."""
     from .domain.family import engine as build_family
 
     build_family.create_sqlite_schema(connection)
@@ -165,7 +180,7 @@ def _bootstrap_new_database(connection: sqlite3.Connection) -> None:
     try:
         connection.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_schema_version', ?)",
-            (str(config.APP_SCHEMA_VERSION),),
+            (str(target_schema),),
         )
         connection.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_name', ?)",
@@ -175,7 +190,7 @@ def _bootstrap_new_database(connection: sqlite3.Connection) -> None:
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_version', ?)",
             (config.APP_VERSION,),
         )
-        connection.execute(f"PRAGMA user_version = {int(config.APP_SCHEMA_VERSION)}")
+        connection.execute(f"PRAGMA user_version = {int(target_schema)}")
 
         _seed_groups_and_assignments(connection)
         connection.execute("COMMIT")
@@ -349,8 +364,7 @@ def _migrate_v1_to_v2_atomic(connection: sqlite3.Connection) -> None:
 
         # Schema version bookkeeping
         connection.execute(
-            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_schema_version', ?)",
-            (str(config.APP_SCHEMA_VERSION),),
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_schema_version', '2')",
         )
         connection.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_name', ?)",
@@ -360,7 +374,7 @@ def _migrate_v1_to_v2_atomic(connection: sqlite3.Connection) -> None:
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_version', ?)",
             (config.APP_VERSION,),
         )
-        connection.execute(f"PRAGMA user_version = {int(config.APP_SCHEMA_VERSION)}")
+        connection.execute("PRAGMA user_version = 2")
 
         _seed_groups_and_assignments(connection)
 
@@ -369,6 +383,130 @@ def _migrate_v1_to_v2_atomic(connection: sqlite3.Connection) -> None:
             raise RuntimeError(f"Foreign key violation after v1->v2 migration: {fk_violations}")
 
         _check_migration_failpoint("after_version_bookkeeping")
+
+        connection.execute("COMMIT")
+    except Exception:
+        connection.execute("ROLLBACK")
+        raise
+
+
+def _migrate_v2_to_v3_atomic(connection: sqlite3.Connection) -> None:
+    """Migrate an existing schema v2 database to v3 in a single atomic transaction."""
+    connection.isolation_level = None
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        _ensure_column(
+            connection,
+            "people",
+            "category",
+            "ALTER TABLE people ADD COLUMN category TEXT NOT NULL DEFAULT 'Family' CHECK (category IN ('Me', 'Family', 'Friends'))",
+        )
+        _ensure_column(
+            connection,
+            "people",
+            "created_at",
+            "ALTER TABLE people ADD COLUMN created_at TEXT",
+        )
+        _ensure_column(
+            connection,
+            "people",
+            "updated_at",
+            "ALTER TABLE people ADD COLUMN updated_at TEXT",
+        )
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS unresolved_people (
+              id TEXT PRIMARY KEY,
+              label TEXT,
+              notes TEXT,
+              created_at TEXT NOT NULL,
+              resolved_to_person_id TEXT REFERENCES people(id),
+              resolved_at TEXT
+            )
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS identifier_aliases (
+              id INTEGER PRIMARY KEY,
+              old_identifier TEXT NOT NULL UNIQUE,
+              canonical_id TEXT NOT NULL,
+              entity_type TEXT NOT NULL DEFAULT 'person',
+              notes TEXT,
+              created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_identifier_aliases_canonical ON identifier_aliases(canonical_id)"
+        )
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS platform_identities (
+              id INTEGER PRIMARY KEY,
+              person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+              platform TEXT NOT NULL,
+              identity_value TEXT NOT NULL,
+              is_current INTEGER NOT NULL DEFAULT 1 CHECK (is_current IN (0, 1)),
+              notes TEXT,
+              created_at TEXT
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_platform_identities_person ON platform_identities(person_id)"
+        )
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS places (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              address TEXT,
+              latitude REAL,
+              longitude REAL,
+              place_type TEXT,
+              notes TEXT,
+              created_at TEXT
+            )
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS events (
+              id TEXT PRIMARY KEY,
+              title TEXT NOT NULL,
+              date_exact TEXT,
+              date_approx TEXT,
+              place_id TEXT REFERENCES places(id),
+              event_type TEXT,
+              notes TEXT,
+              created_at TEXT
+            )
+            """
+        )
+
+        connection.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_schema_version', ?)",
+            (str(config.CANONICAL_SCHEMA_VERSION),),
+        )
+        connection.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_name', ?)",
+            (config.APP_NAME,),
+        )
+        connection.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_version', ?)",
+            (config.APP_VERSION,),
+        )
+        connection.execute(f"PRAGMA user_version = {int(config.CANONICAL_SCHEMA_VERSION)}")
+
+        fk_violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        if fk_violations:
+            raise RuntimeError(f"Foreign key violation after v2->v3 migration: {fk_violations}")
 
         connection.execute("COMMIT")
     except Exception:
@@ -394,20 +532,29 @@ def migrate(
             "SELECT count(*) FROM sqlite_master WHERE type='table'"
         ).fetchone()[0]
 
+        resolved_db = db_path if db_path else DataRootManager.get_database_path()
+        target_ver = 3 if resolved_db.name == "relationships.db" else 2
+
         if table_count == 0:
-            _bootstrap_new_database(connection)
+            _bootstrap_new_database(connection, target_schema=target_ver)
+            if target_ver == 3:
+                _migrate_v2_to_v3_atomic(connection)
             return
 
         # EXISTING DATABASE:
         # Pre-validation: detect schema-version mismatch BEFORE any mutation
         current_ver = get_current_schema_version(connection)
 
-        if current_ver >= config.APP_SCHEMA_VERSION:
+        if current_ver >= target_ver:
             # Idempotent: already at target version, no destructive work
             return
 
         if current_ver < 2:
             _migrate_v1_to_v2_atomic(connection)
+            current_ver = 2
+
+        if current_ver < target_ver and target_ver == 3:
+            _migrate_v2_to_v3_atomic(connection)
     finally:
         connection.close()
 
@@ -434,7 +581,7 @@ def _ensure_column(
     alter_sql: str,
 ) -> None:
     columns = {
-        row["name"]
+        row[1]
         for row in connection.execute(f'PRAGMA table_info("{table}")')
     }
     if column not in columns:
@@ -516,49 +663,97 @@ def metadata_to_json(connection: sqlite3.Connection) -> dict:
     return result
 
 
+def resolve_canonical_id(connection: sqlite3.Connection, identifier: str) -> str:
+    """Resolve an identifier (historical or canonical) to its authoritative canonical person ID."""
+    if not identifier:
+        return identifier
+    # Check if identifier directly matches a person in people table
+    row = connection.execute("SELECT id FROM people WHERE id = ?", (identifier,)).fetchone()
+    if row:
+        return str(row["id"])
+    # Check identifier_aliases table if it exists
+    has_alias_table = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='identifier_aliases'"
+    ).fetchone()
+    if has_alias_table:
+        alias_row = connection.execute(
+            "SELECT canonical_id FROM identifier_aliases WHERE old_identifier = ? AND entity_type = 'person'",
+            (identifier,),
+        ).fetchone()
+        if alias_row:
+            return str(alias_row["canonical_id"])
+    return identifier
+
+
 def find_person_folder(
     connection: sqlite3.Connection, person_id: str, root: Path | None = None
 ) -> Path | None:
     """Resolve the canonical person folder without modifying the filesystem.
 
-    Checks the person's primary group first, then other group directories under
-    people_dir, excluding `_archived` and hidden directories.
+    Checks top-level People/, category directories (Me, Family, Friends),
+    primary group directories, and legacy layouts.
     Returns None if no folder exists. Never creates directories or files.
     """
+    resolved_id = resolve_canonical_id(connection, person_id)
+    candidate_ids = [resolved_id] if resolved_id == person_id else [resolved_id, person_id]
+
     people_dir = DataRootManager.get_people_dir(root) if root else config.PEOPLE_DIR
     if not people_dir.exists():
         return None
 
-    # 1. Determine primary group slug to check primary location first
-    group_row = connection.execute(
-        """
-        SELECT g.id, g.slug FROM groups g
-        JOIN person_groups pg ON pg.group_id = g.id
-        WHERE pg.person_id = ? AND pg.is_primary = 1
-        """,
-        (person_id,),
-    ).fetchone()
+    # 1. Check top-level under people_dir (e.g. unknown_person--UP####)
+    for cid in candidate_ids:
+        candidate = people_dir / cid
+        if candidate.is_dir():
+            return candidate
 
-    if group_row:
-        slug = group_row["slug"]
-        primary_dir = people_dir / slug
-        if primary_dir.is_dir():
-            candidate = primary_dir / person_id
-            if candidate.is_dir():
-                return candidate
-        # Check case-insensitive match for primary group directory
-        for sub in people_dir.iterdir():
-            if sub.is_dir() and sub.name.lower() == slug.lower() and sub.name != "_archived":
-                candidate = sub / person_id
+    # 2. Check canonical category if available in people table
+    has_cat = connection.execute(
+        "SELECT 1 FROM pragma_table_info('people') WHERE name = 'category'"
+    ).fetchone()
+    if has_cat:
+        for cid in candidate_ids:
+            cat_row = connection.execute(
+                "SELECT category FROM people WHERE id = ?", (cid,)
+            ).fetchone()
+            if cat_row and cat_row["category"]:
+                cat_dir = people_dir / cat_row["category"]
+                if cat_dir.is_dir():
+                    candidate = cat_dir / cid
+                    if candidate.is_dir():
+                        return candidate
+
+    # 3. Determine primary group slug to check primary location
+    for cid in candidate_ids:
+        group_row = connection.execute(
+            """
+            SELECT g.id, g.slug FROM groups g
+            JOIN person_groups pg ON pg.group_id = g.id
+            WHERE pg.person_id = ? AND pg.is_primary = 1
+            """,
+            (cid,),
+        ).fetchone()
+
+        if group_row:
+            slug = group_row["slug"]
+            primary_dir = people_dir / slug
+            if primary_dir.is_dir():
+                candidate = primary_dir / cid
                 if candidate.is_dir():
                     return candidate
+            for sub in people_dir.iterdir():
+                if sub.is_dir() and sub.name.lower() == slug.lower() and sub.name != "_archived":
+                    candidate = sub / cid
+                    if candidate.is_dir():
+                        return candidate
 
-    # 2. Check other directories under people_dir (ignoring _archived and hidden dirs)
+    # 4. Check other directories under people_dir (ignoring _archived and hidden dirs)
     for sub in people_dir.iterdir():
         if sub.is_dir() and sub.name != "_archived" and not sub.name.startswith("."):
-            candidate = sub / person_id
-            if candidate.is_dir():
-                return candidate
+            for cid in candidate_ids:
+                candidate = sub / cid
+                if candidate.is_dir():
+                    return candidate
 
     return None
 
@@ -567,10 +762,39 @@ def expected_person_folder(
     connection: sqlite3.Connection,
     person_id: str,
     group_id: str | None = None,
+    category: str | None = None,
     root: Path | None = None,
 ) -> Path:
     """Return the expected canonical folder path for a person without touching the filesystem."""
     people_dir = DataRootManager.get_people_dir(root) if root else config.PEOPLE_DIR
+    resolved_id = resolve_canonical_id(connection, person_id)
+
+    # Unresolved people live directly under People/
+    if resolved_id.startswith("unknown_person--"):
+        return people_dir / resolved_id
+
+    # If category provided or in database
+    target_category = category
+    if not target_category:
+        has_cat = connection.execute(
+            "SELECT 1 FROM pragma_table_info('people') WHERE name = 'category'"
+        ).fetchone()
+        if has_cat:
+            cat_row = connection.execute(
+                "SELECT category FROM people WHERE id = ?", (resolved_id,)
+            ).fetchone()
+            if cat_row and cat_row["category"]:
+                target_category = cat_row["category"]
+
+    if target_category in ("Me", "Family", "Friends"):
+        target_dir = people_dir / target_category
+        if target_dir.exists():
+            return target_dir / resolved_id
+        for sub in people_dir.iterdir():
+            if sub.is_dir() and sub.name.lower() == target_category.lower() and sub.name != "_archived":
+                return sub / resolved_id
+        return target_dir / resolved_id
+
     group_row = None
     if group_id is not None:
         group_row = connection.execute(
@@ -584,13 +808,17 @@ def expected_person_folder(
             JOIN person_groups pg ON pg.group_id = g.id
             WHERE pg.person_id = ? AND pg.is_primary = 1
             """,
-            (person_id,),
+            (resolved_id,),
+        ).fetchone()
+    if group_row is None:
+        group_row = connection.execute(
+            "SELECT id, slug FROM groups WHERE id = 'family'"
         ).fetchone()
     if group_row is None:
         group_row = connection.execute(
             "SELECT id, slug FROM groups WHERE id = 'other'"
         ).fetchone()
-    slug = group_row["slug"] if group_row else "Other"
+    slug = group_row["slug"] if group_row else "Family"
 
     target_group_dir = people_dir / slug
     if not target_group_dir.exists() and people_dir.exists():
@@ -599,25 +827,41 @@ def expected_person_folder(
                 target_group_dir = sub
                 break
 
-    return target_group_dir / person_id
+    return target_group_dir / resolved_id
 
 
 def find_journal_path(
     connection: sqlite3.Connection, person_id: str, root: Path | None = None
 ) -> tuple[Path, bool]:
-    """Return (canonical_journal_path, exists) without modifying the filesystem."""
-    folder = find_person_folder(connection, person_id, root=root)
+    """Return (canonical_journal_path, exists) without modifying the filesystem.
+    Checks canonical journal(personal thoughts).md first, then legacy journal.md.
+    """
+    resolved_id = resolve_canonical_id(connection, person_id)
+    folder = find_person_folder(connection, resolved_id, root=root)
     if folder is not None:
-        journal = folder / "journal.md"
-        return journal, journal.is_file()
-    expected = expected_person_folder(connection, person_id, root=root)
-    return expected / "journal.md", False
+        canonical_journal = folder / "journal(personal thoughts).md"
+        if canonical_journal.is_file():
+            return canonical_journal, True
+        legacy_journal = folder / "journal.md"
+        if legacy_journal.is_file():
+            return legacy_journal, True
+        people_dir = DataRootManager.get_people_dir(root) if root else config.PEOPLE_DIR
+        if (root and (root / "Database" / "People").exists()) or (people_dir.name == "People" and people_dir.parent.name == "Database"):
+            return legacy_journal, False
+        return canonical_journal, False
+
+    expected = expected_person_folder(connection, resolved_id, root=root)
+    people_dir = DataRootManager.get_people_dir(root) if root else config.PEOPLE_DIR
+    if (root and (root / "Database" / "People").exists()) or (people_dir.name == "People" and people_dir.parent.name == "Database"):
+        return expected / "journal.md", False
+    return expected / "journal(personal thoughts).md", False
 
 
 def ensure_person_folder(
     connection: sqlite3.Connection,
     person_id: str,
     group_id: str | None = None,
+    category: str | None = None,
     root: Path | None = None,
 ) -> Path:
     """Return the canonical person folder, creating it on disk if absent.
@@ -628,11 +872,12 @@ def ensure_person_folder(
         DataRootManager.ensure_structure(root)
     else:
         config.ensure_root_dirs()
-    existing = find_person_folder(connection, person_id, root=root)
+    resolved_id = resolve_canonical_id(connection, person_id)
+    existing = find_person_folder(connection, resolved_id, root=root)
     if existing is not None:
         return existing
 
-    folder = expected_person_folder(connection, person_id, group_id=group_id, root=root)
+    folder = expected_person_folder(connection, resolved_id, group_id=group_id, category=category, root=root)
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
@@ -640,20 +885,32 @@ def ensure_person_folder(
 def ensure_journal(
     connection: sqlite3.Connection, person_id: str, root: Path | None = None
 ) -> Path:
-    """Return the canonical journal.md path, creating the folder and file if absent.
+    """Return the canonical journal path, creating the folder and file if absent.
 
     MUTATING operation - for explicit creation, repair, or write paths only.
     """
+    resolved_id = resolve_canonical_id(connection, person_id)
     person = connection.execute(
-        "SELECT id, name FROM people WHERE id = ?", (person_id,)
+        "SELECT id, name FROM people WHERE id = ?", (resolved_id,)
     ).fetchone()
     if person is None:
         raise LookupError(f"Unknown person: {person_id}")
-    folder = ensure_person_folder(connection, person_id, root=root)
-    journal = folder / "journal.md"
-    if not journal.exists():
-        name = person["name"] if person["name"] else person_id
-        journal.write_text(
-            f"# {name}\n\n", encoding="utf-8", newline="\n"
-        )
-    return journal
+    folder = ensure_person_folder(connection, resolved_id, root=root)
+    canonical_j = folder / "journal(personal thoughts).md"
+    legacy_j = folder / "journal.md"
+
+    if canonical_j.exists():
+        return canonical_j
+    if legacy_j.exists():
+        return legacy_j
+
+    name = person["name"] if person["name"] else resolved_id
+    header = f"# {name}\n\n"
+
+    people_dir = DataRootManager.get_people_dir(root) if root else config.PEOPLE_DIR
+    if (root and (root / "Database" / "People").exists()) or (people_dir.name == "People" and people_dir.parent.name == "Database"):
+        legacy_j.write_text(header, encoding="utf-8", newline="\n")
+        return legacy_j
+
+    canonical_j.write_text(header, encoding="utf-8", newline="\n")
+    return canonical_j

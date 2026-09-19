@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from .. import db
 from ..services import (
     backups,
     errors,
@@ -42,9 +43,25 @@ def resolve_person(query: str) -> dict:
     query = (query or "").strip()
     if not query:
         raise errors.ValidationError("A person name or id is required.")
+    
+    resolved_query_id = query
+    try:
+        connection = db.get_connection()
+        try:
+            resolved_query_id = db.resolve_canonical_id(connection, query)
+        finally:
+            connection.close()
+    except Exception:
+        pass
+
     exact = None
     for row in people.list_people(query=""):
-        if row["id"].lower() == query.lower() or row["name"].lower() == query.lower():
+        if (
+            row["id"].lower() == query.lower()
+            or row["id"].lower() == resolved_query_id.lower()
+            or ("--" in row["id"] and row["id"].split("--")[0].lower() == query.lower())
+            or row["name"].lower() == query.lower()
+        ):
             exact = row
             break
         if any(alias.lower() == query.lower() for alias in row["aliases"]):

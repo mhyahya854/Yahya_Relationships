@@ -140,9 +140,10 @@ def create_backup(
     with lock:
         try:
             staging_dir.mkdir(parents=True, exist_ok=False)
+            db_source = DataRootManager.get_database_path(active_root)
             _snapshot_sqlite(
-                DataRootManager.get_database_path(active_root),
-                staging_dir / "data" / "family.db",
+                db_source,
+                staging_dir / "data" / db_source.name,
             )
             people_source = DataRootManager.get_people_dir(active_root)
             if not people_source.is_dir():

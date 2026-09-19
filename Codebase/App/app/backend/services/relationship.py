@@ -20,7 +20,11 @@ def _person_brief(model: dict, person_id: str) -> dict:
     person = people_index(model).get(person_id)
     if person is None:
         raise errors.NotFoundError(f"Unknown person id: {person_id}")
-    return {"id": person["id"], "name": person["name"]}
+    return {
+        "id": person_id if person_id in people_index(model) else person["id"],
+        "canonical_id": person["id"],
+        "name": person["name"],
+    }
 
 
 def _general_rows(
@@ -282,9 +286,12 @@ def get_relationship(
     perspective = _person_brief(model, perspective_person_id)
     target = _person_brief(model, target_person_id)
 
-    if perspective_person_id == target_person_id:
+    persp_id = perspective.get("canonical_id", perspective["id"])
+    tgt_id = target.get("canonical_id", target["id"])
+
+    if persp_id == tgt_id:
         self_entry = labels.normalize_family_entry({"en": "Self", "ur": "خود", "derived": False})
-        self_entry["id"] = f"{target_person_id}:self:0"
+        self_entry["id"] = f"{tgt_id}:self:0"
         self_entry["path_ids"] = []
         return {
             "perspective": perspective,
@@ -293,15 +300,15 @@ def get_relationship(
             "additional": [],
         }
 
-    pair = _engine_pair(model, perspective_person_id, target_person_id)
+    pair = _engine_pair(model, persp_id, tgt_id)
     family_primary, family_additional = _family_entries(pair)
 
     connection = db.get_connection()
     try:
         general_primary = _general_entries(
-            _general_rows(connection, perspective_person_id, target_person_id),
-            perspective_person_id,
-            target_person_id,
+            _general_rows(connection, persp_id, tgt_id),
+            persp_id,
+            tgt_id,
         )
     finally:
         connection.close()
@@ -311,15 +318,15 @@ def get_relationship(
     all_paths: list[dict] = []
     try:
         paths_res = path_service.get_relationship_paths(
-            perspective_person_id, target_person_id, max_depth=15, max_paths=50
+            persp_id, tgt_id, max_depth=15, max_paths=50
         )
         all_paths = paths_res.get("paths", [])
     except Exception:
         all_paths = []
 
-    _bind_paths_and_metadata(family_primary, all_paths, model, perspective_person_id, target_person_id)
-    _bind_paths_and_metadata(family_additional, all_paths, model, perspective_person_id, target_person_id)
-    _bind_paths_and_metadata(general_primary, all_paths, model, perspective_person_id, target_person_id)
+    _bind_paths_and_metadata(family_primary, all_paths, model, persp_id, tgt_id)
+    _bind_paths_and_metadata(family_additional, all_paths, model, persp_id, tgt_id)
+    _bind_paths_and_metadata(general_primary, all_paths, model, persp_id, tgt_id)
 
     # One deterministic easiest role is the calm default. Alternatives remain
     # canonical evidence and are never deleted or collapsed into a new fact.

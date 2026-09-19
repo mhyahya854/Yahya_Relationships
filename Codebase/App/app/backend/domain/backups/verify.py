@@ -92,11 +92,17 @@ def verify_backup(backup_dir: str | Path, root: Path | None = None) -> Dict[str,
         if not (backup_path / required_dir).is_dir():
             issues.append(_issue("BACKUP_COMPONENT_MISSING", f"Required {required_dir} directory is missing.", required_dir))
 
-    database = backup_path / "data" / "family.db"
+    db_filename = (
+        "relationships.db"
+        if (backup_path / "data" / "relationships.db").is_file()
+        else "family.db"
+    )
+    database = backup_path / "data" / db_filename
+    db_rel_path = f"data/{db_filename}"
     db_integrity = "missing"
     database_schema: int | None = None
     person_count: int | None = None
-    if database.is_file() and "data/family.db" in actual_files:
+    if database.is_file() and db_rel_path in actual_files:
         try:
             connection = sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)
             try:
@@ -120,9 +126,11 @@ def verify_backup(backup_dir: str | Path, root: Path | None = None) -> Dict[str,
     manifest_schema = manifest.get("sqlite_schema_version")
     if database_schema is not None and manifest_schema != database_schema:
         issues.append(_issue("BACKUP_SCHEMA_MISMATCH", "Manifest schema does not match the database schema."))
-    compatibility_ok = database_schema is not None and 1 <= database_schema <= config.APP_SCHEMA_VERSION
+    is_canonical = (backup_path / "data" / "relationships.db").is_file()
+    max_supported = getattr(config, "CANONICAL_SCHEMA_VERSION", 3) if is_canonical else config.APP_SCHEMA_VERSION
+    compatibility_ok = database_schema is not None and 1 <= database_schema <= max_supported
     compatibility_status = "supported" if compatibility_ok else "unknown"
-    if database_schema is not None and database_schema > config.APP_SCHEMA_VERSION:
+    if database_schema is not None and database_schema > max_supported:
         compatibility_status = "too_new"
         issues.append(_issue("BACKUP_SCHEMA_TOO_NEW", "Backup schema is newer than this application supports."))
     elif database_schema is not None and database_schema < 1:

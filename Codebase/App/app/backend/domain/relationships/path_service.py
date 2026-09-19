@@ -19,7 +19,7 @@ from ..family import engine as legacy
 
 from ... import db
 from ...kinship import labels
-from ...model import load_model
+from ...model import load_model, people_index as get_people_index
 from ...services.errors import AppError
 from ..family import paths as family_paths
 from ..family.paths import virtual_display_name
@@ -867,7 +867,7 @@ def get_relationship_paths(
 ) -> dict:
     _validate_limits(max_depth, max_paths)
     model = load_model()
-    people_index = {person["id"]: person for person in model["people"]}
+    people_index = get_people_index(model)
     if perspective_person_id not in people_index:
         raise AppError(
             f"Unknown perspective person: {perspective_person_id}",
@@ -878,15 +878,17 @@ def get_relationship_paths(
             f"Unknown target person: {target_person_id}",
             code="NOT_FOUND",
         )
+    perspective_id = people_index[perspective_person_id]["id"]
+    target_id = people_index[target_person_id]["id"]
     perspective = {
-        "id": people_index[perspective_person_id]["id"],
-        "name": people_index[perspective_person_id]["name"],
+        "id": perspective_id,
+        "name": people_index[perspective_id]["name"],
     }
     target = {
-        "id": people_index[target_person_id]["id"],
-        "name": people_index[target_person_id]["name"],
+        "id": target_id,
+        "name": people_index[target_id]["name"],
     }
-    if perspective_person_id == target_person_id:
+    if perspective_id == target_id:
         return {
             "perspective": perspective,
             "target": target,
@@ -897,7 +899,7 @@ def get_relationship_paths(
     connection = db.get_connection()
     try:
         general_rows = _general_rows_for(
-            connection, perspective_person_id, target_person_id
+            connection, perspective_id, target_id
         )
         all_general_rows = connection.execute(
             "SELECT * FROM general_relationships ORDER BY id"
@@ -908,15 +910,15 @@ def get_relationship_paths(
     explicit, sibling_present = _explicit_paths(
         model=model,
         people_index=people_index,
-        perspective_id=perspective_person_id,
-        target_id=target_person_id,
+        perspective_id=perspective_id,
+        target_id=target_id,
         general_rows=general_rows,
     )
     derived = _derived_paths(
         model=model,
         people_index=people_index,
-        perspective_id=perspective_person_id,
-        target_id=target_person_id,
+        perspective_id=perspective_id,
+        target_id=target_id,
         explicit_sibling=sibling_present,
         max_depth=max_depth,
     )
@@ -929,8 +931,8 @@ def get_relationship_paths(
         connection_routes, connection_truncated = _explicit_connection_routes(
             model=model,
             people_index=people_index,
-            perspective_id=perspective_person_id,
-            target_id=target_person_id,
+            perspective_id=perspective_id,
+            target_id=target_id,
             general_rows=all_general_rows,
             max_depth=max_depth,
             max_routes=max_paths + 1,

@@ -102,7 +102,7 @@ class DataRootManager:
 
         if not getattr(sys, "frozen", False):
             repo = _repo_root()
-            if (repo / "Database" / "Main" / "family.db").exists():
+            if (repo / "Database" / "relationships.db").exists() or (repo / "Database" / "Main" / "family.db").exists():
                 return {"configured": True, "invalid": False, "active_root": repo, "source": "source_fallback"}
 
         return {"configured": False, "invalid": False, "active_root": None, "source": "bootstrap"}
@@ -170,6 +170,19 @@ class DataRootManager:
     @classmethod
     def get_database_path(cls, root: Path | None = None) -> Path:
         r = root.resolve() if root else cls.resolve_active_root()
+        # 1. Primary canonical SQLite store: Database/relationships.db
+        db_rel = r / "Database" / "relationships.db"
+        if db_rel.exists():
+            return db_rel
+        # 2. Directly under root relationships.db
+        db_rel_root = r / "relationships.db"
+        if db_rel_root.exists():
+            return db_rel_root
+        # 3. Portable backup snapshot layout: data/relationships.db
+        db_data_rel = r / "data" / "relationships.db"
+        if db_data_rel.exists():
+            return db_data_rel
+        # 4. Fallback to legacy family.db locations if unmigrated
         db_main = r / "Database" / "Main" / "family.db"
         if db_main.exists():
             return db_main
@@ -179,61 +192,83 @@ class DataRootManager:
         db_root = r / "family.db"
         if db_root.exists():
             return db_root
+
+        # If neither exists: check if canonical People/ directory exists
+        if (r / "People").is_dir() and not (r / "Database" / "Main").is_dir():
+            return db_rel
+        # Otherwise default to legacy main_db for unmigrated / newly initialized roots
         return db_main
 
     @classmethod
     def get_people_dir(cls, root: Path | None = None) -> Path:
         r = root.resolve() if root else cls.resolve_active_root()
+        # 1. If canonical relationships.db exists, people dir is top-level People/
+        if (r / "Database" / "relationships.db").exists() or (r / "relationships.db").exists():
+            return r / "People"
+
+        # 2. Legacy Pass 4 / Phase 8 layout: Database/People
         db_people = r / "Database" / "People"
         if db_people.exists():
             return db_people
+
+        # 3. Portable backup layout: people/
         legacy_people = r / "people"
         if legacy_people.exists():
             return legacy_people
-        return db_people
+
+        # 4. Canonical top-level People/ directory (if exists)
+        people_top = r / "People"
+        if people_top.exists():
+            return people_top
+
+        # Default: if Database/Main exists, default to Database/People
+        if (r / "Database" / "Main").exists():
+            return db_people
+        return people_top
 
     @classmethod
     def get_backups_dir(cls, root: Path | None = None) -> Path:
         r = root.resolve() if root else cls.resolve_active_root()
-        backups = r / "Backups"
-        if backups.exists():
-            return backups
         legacy_backups = r / "backups"
         if legacy_backups.exists():
             return legacy_backups
-        return backups
+        return r / "Backups"
 
     @classmethod
     def get_config_dir(cls, root: Path | None = None) -> Path:
         r = root.resolve() if root else cls.resolve_active_root()
-        db_config = r / "Database" / "Config"
-        if db_config.exists():
-            return db_config
+        config_db = r / "Database" / "Config"
+        if config_db.exists():
+            return config_db
         legacy_config = r / "config"
         if legacy_config.exists():
             return legacy_config
-        return db_config
+        return config_db
 
     @classmethod
     def get_exports_dir(cls, root: Path | None = None) -> Path:
         r = root.resolve() if root else cls.resolve_active_root()
-        db_exports = r / "Database" / "Exports"
-        if db_exports.exists():
-            return db_exports
+        exports_db = r / "Database" / "Exports"
+        if exports_db.exists():
+            return exports_db
         legacy_exports = r / "exports"
         if legacy_exports.exists():
             return legacy_exports
-        return db_exports
+        return exports_db
 
     @classmethod
     def is_read_only(cls, root: Path | None = None) -> bool:
         r = root.resolve() if root else cls.resolve_active_root()
         if not r.exists():
             return False
-        if not os.access(r, os.W_OK):
+        # Windows directory writable probe: try creating and deleting a temporary probe file
+        probe_file = r / f".write_test_{uuid.uuid4().hex}"
+        try:
+            probe_file.touch(exist_ok=False)
+            probe_file.unlink()
+            return False
+        except (OSError, PermissionError):
             return True
-        database = cls.get_database_path(r)
-        return database.exists() and not os.access(database, os.W_OK)
 
     @classmethod
     def is_active_root_available(cls) -> bool:
@@ -242,6 +277,7 @@ class DataRootManager:
 
     @classmethod
     def ensure_structure(cls, root: Path | None = None, *, create: bool = False) -> None:
+        """Ensure Data Root directory layout exists."""
         r = root.resolve() if root else cls.resolve_active_root()
         if not r.exists():
             if not create:
@@ -255,13 +291,14 @@ class DataRootManager:
         (r / "Database" / "Config").mkdir(parents=True, exist_ok=True)
         (r / "Database" / "Sources").mkdir(parents=True, exist_ok=True)
         (r / "Database" / "Exports" / "Family").mkdir(parents=True, exist_ok=True)
+        (r / "Backups").mkdir(parents=True, exist_ok=True)
+
         (r / "Database" / "Logs").mkdir(parents=True, exist_ok=True)
         (r / "Backups" / "Manual").mkdir(parents=True, exist_ok=True)
         (r / "Backups" / "Automatic").mkdir(parents=True, exist_ok=True)
         (r / "Backups" / "Safety" / "Pre-Upgrade").mkdir(parents=True, exist_ok=True)
         (r / "Backups" / "Safety" / "Pre-Organization").mkdir(parents=True, exist_ok=True)
         (r / "Backups" / "Safety" / "Pre-Restore").mkdir(parents=True, exist_ok=True)
-        (r / "Backups" / "Safety" / "Pre-Repair").mkdir(parents=True, exist_ok=True)
 
         meta_file = cls.get_config_dir(r) / "data-root.json"
         meta_file.parent.mkdir(parents=True, exist_ok=True)
