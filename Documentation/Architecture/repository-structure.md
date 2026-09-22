@@ -32,7 +32,8 @@ The **Family Relationships** repository was restructured to establish four clear
 | `pytest.ini` | `Codebase/pytest.ini` | pytest configuration | Configured with `pythonpath = . App Scripts` |
 | `.venv/` | `Codebase/.venv/` | Python virtual environment | Created inside `Codebase/` |
 | `node_modules/` | `Codebase/node_modules/` | Node.js dependencies | Installed under `Codebase/` |
-| `family.db` | `Database/Main/family.db` | Authoritative SQLite database | Single canonical active database |
+| `family.db` | `Database/Main/family.db` | Historical SQLite provenance | Preserved; not a canonical runtime fallback |
+| — | `Database/relationships.db` | Authoritative canonical SQLite database | Schema 3 forward store |
 | `people/` | `Database/People/` | Per-person journal directories and `journal.md` files | Structure preserved byte-for-byte |
 | `config/` | `Database/Config/` | Runtime state (`state.json`, `data-root.json`) | Managed by `DataRootManager` |
 | `sources/` | `Database/Sources/` | Relationship evidence files | Preserved under `Database/Sources` |
@@ -49,8 +50,9 @@ The **Family Relationships** repository was restructured to establish four clear
 ## Canonical Data Resolution
 
 All runtime paths are dynamically resolved via `DataRootManager`:
-- Database path: `Database/Main/family.db`
-- People directory: `Database/People/`
+- Canonical database path: `Database/relationships.db`
+- Canonical People directory: `People/`
+- Supported unmigrated legacy paths: `Database/Main/family.db` and `Database/People/`
 - Config directory: `Database/Config/`
 - Backups directory: `Backups/`
 - Exports directory: `Database/Exports/`

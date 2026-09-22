@@ -14,6 +14,7 @@ Governed by Master Plan:
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Collection, Iterable
 
 CANONICAL_KNOWN_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*--[A-Z]+[0-9]{2}$")
@@ -21,16 +22,39 @@ UNRESOLVED_RE = re.compile(r"^unknown_person--UP[0-9]{4}$")
 
 
 def normalize_name(name: str) -> str:
-    """Normalize a display name into a lowercase, underscore-delimited string."""
-    tokens = re.findall(r"[a-z0-9]+", (name or "").lower())
-    return "_".join(tokens) or "person"
+    """Normalize a display name into a portable lowercase identifier stem.
+
+    Accented Latin text is folded to ASCII. Other Unicode letters and digits are
+    represented by stable ``uXXXX`` code-point tokens rather than collapsing
+    unrelated names to a guessed ``person`` identifier.
+    """
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("A non-empty person name is required for a canonical ID.")
+
+    normalized = unicodedata.normalize("NFKD", name.strip())
+    tokens: list[str] = []
+    current: list[str] = []
+    for char in normalized:
+        if unicodedata.combining(char):
+            continue
+        if char.isascii() and char.isalnum():
+            current.append(char.lower())
+        elif char.isalnum():
+            current.append(f"u{ord(char):04x}")
+        elif current:
+            tokens.append("".join(current))
+            current = []
+    if current:
+        tokens.append("".join(current))
+    if not tokens:
+        raise ValueError("The person name has no usable letters or digits.")
+    return "_".join(tokens)
 
 
 def compute_initials(name: str) -> str:
     """Compute uppercase initials representing all full-name components."""
-    tokens = re.split(r"[_\s]+", (name or "").strip())
-    initials = "".join(token[0].upper() for token in tokens if token and token[0].isalnum())
-    return initials or "P"
+    normalized = normalize_name(name)
+    return "".join(token[0].upper() for token in normalized.split("_") if token)
 
 
 def generate_canonical_person_id(name: str, existing_ids: Iterable[str] | Collection[str] = ()) -> str:
@@ -44,12 +68,11 @@ def generate_canonical_person_id(name: str, existing_ids: Iterable[str] | Collec
     base = f"{normalized}--{initials}"
     existing_set = set(existing_ids)
 
-    counter = 1
-    while True:
+    for counter in range(1, 100):
         candidate = f"{base}{counter:02d}"
         if candidate not in existing_set:
             return candidate
-        counter += 1
+    raise ValueError(f"Canonical ID counter exhausted for normalized name '{normalized}'.")
 
 
 def is_valid_canonical_person_id(person_id: str) -> bool:
@@ -69,9 +92,8 @@ def is_valid_unresolved_person_id(unresolved_id: str) -> bool:
 def generate_unresolved_person_id(existing_ids: Iterable[str] | Collection[str] = ()) -> str:
     """Allocate the next sequential unknown_person--UP#### identifier."""
     existing_set = set(existing_ids)
-    counter = 1
-    while True:
+    for counter in range(1, 10000):
         candidate = f"unknown_person--UP{counter:04d}"
         if candidate not in existing_set:
             return candidate
-        counter += 1
+    raise ValueError("Unresolved-person ID space is exhausted.")

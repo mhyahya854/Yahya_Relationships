@@ -4,8 +4,8 @@
 - **Full Name**: Barirah
 - **Aliases / Nicknames**: Unknown
 - **Previous Names**: Unknown
-- **Date of Birth**: Unknown
-- **Gender**: unknown
+- **Date of Birth**: 2015
+- **Gender**: female
 - **Current / Old Phone Numbers**: Unknown
 - **Current / Old Email Addresses**: Unknown
 - **Current / Historical Platform Identities**: Unknown
@@ -13,13 +13,13 @@
 - **When We Met**: Unknown
 - **How We Met**: Unknown
 - **Primary Category**: Family
-- **Secondary / Additional Relationships**: None
-- **Groups**: None
+- **Secondary / Additional Relationships**: Unknown
+- **Groups**: Family
 - **Alternative Group Names**: Unknown
-- **Contact Status**: Active
-- **Historical Relationship Status**: Active
+- **Contact Status**: Unknown
+- **Historical Relationship Status**: Unknown
 - **Identity-Link Evidence**: Unknown
-- **Important Identity Notes**: None
-- **Created**: 2026-09-19T18:43:32Z
-- **Updated**: 2026-09-19T18:43:32Z
+- **Important Identity Notes**: Unknown
+- **Created**: Unknown
+- **Updated**: Unknown
 - **Last Identity Verification**: Unknown

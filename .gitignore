@@ -12,6 +12,14 @@
 **/__pycache__/
 **/*.pyc
 **/.pytest_cache/
+**/graphify-out/
+**/*.tsbuildinfo
+**/*.db-wal
+**/*.db-shm
+.migration_staging_*/
+.restore_staging_*/
+.restore_rollback_*/
+.backup_staging_*/
 
 # Logs and environment
 *.log

@@ -1,9 +1,4 @@
-"""SQLite access for People Relationships.
-
-``family.db`` remains the single structured store. This module applies the
-legacy schema plus the application schema, tracks schema versions, and keeps
-foreign keys enabled on every connection.
-"""
+"""SQLite access for Mosaic's active legacy or canonical structured store."""
 
 import json
 import sqlite3
@@ -39,22 +34,30 @@ def get_connection(
     mode: str = DatabaseOpenMode.OPEN_EXISTING,
     create: bool = False,
 ) -> sqlite3.Connection:
-    """Open the canonical family.db connection.
+    """Open the active SQLite connection without silent creation or fallback.
 
-    ``family.db`` is the single structured source of truth, so a missing file
-    is an error, not an invitation for sqlite3 to silently create an empty
-    database. Only explicit initialisation (mode=INITIALIZE_NEW or create=True)
-    may create the file.
+    The resolved active database is the single structured source of truth, so
+    a missing file is an error, not an invitation for sqlite3 to silently
+    create an empty database. Only explicit initialisation
+    (mode=INITIALIZE_NEW or create=True) may create the file.
     """
     target = Path(db_path) if db_path is not None else config.DB_PATH
     should_create = create or (mode == DatabaseOpenMode.INITIALIZE_NEW)
+    if db_path is None and DataRootManager.has_incomplete_operation():
+        from .data_root.errors import DataRootInvalidError
+
+        raise DataRootInvalidError(
+            "The Data Root contains an incomplete migration or restore marker. "
+            "Runtime database access is blocked until recovery completes.",
+            detail={"code": "DATA_ROOT_OPERATION_INCOMPLETE"},
+        )
     if not target.exists():
         if not should_create:
             from .data_root.errors import DataRootNotFoundError
 
             raise DataRootNotFoundError(
                 f"Database file not found at '{target}'. Refusing to silently "
-                "create an empty family.db; restore from backup or run "
+                "create an empty database; restore from backup or run "
                 "initialize_database() to initialise it explicitly.",
                 detail={"code": "MISSING_DATABASE", "path": str(target)},
             )
@@ -63,6 +66,17 @@ def get_connection(
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA busy_timeout = 5000")
+    if target.exists() and not should_create and target.name == config.CANONICAL_DB_NAME:
+        try:
+            schema_version = get_current_schema_version(connection)
+            if schema_version != config.CANONICAL_SCHEMA_VERSION:
+                raise SchemaVersionMismatchError(
+                    f"Canonical database must be schema {config.CANONICAL_SCHEMA_VERSION}; "
+                    f"found schema {schema_version}."
+                )
+        except Exception:
+            connection.close()
+            raise
     return connection
 
 
@@ -432,10 +446,11 @@ def _migrate_v2_to_v3_atomic(connection: sqlite3.Connection) -> None:
             CREATE TABLE IF NOT EXISTS identifier_aliases (
               id INTEGER PRIMARY KEY,
               old_identifier TEXT NOT NULL UNIQUE,
-              canonical_id TEXT NOT NULL,
-              entity_type TEXT NOT NULL DEFAULT 'person',
+              canonical_id TEXT NOT NULL REFERENCES people(id) ON DELETE RESTRICT,
+              entity_type TEXT NOT NULL DEFAULT 'person' CHECK (entity_type = 'person'),
               notes TEXT,
-              created_at TEXT NOT NULL
+              created_at TEXT NOT NULL,
+              CHECK (old_identifier <> canonical_id)
             )
             """
         )
@@ -501,6 +516,9 @@ def _migrate_v2_to_v3_atomic(connection: sqlite3.Connection) -> None:
         connection.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_version', ?)",
             (config.APP_VERSION,),
+        )
+        connection.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('_source_of_truth', 'relationships.db')"
         )
         connection.execute(f"PRAGMA user_version = {int(config.CANONICAL_SCHEMA_VERSION)}")
 
@@ -768,6 +786,18 @@ def expected_person_folder(
     """Return the expected canonical folder path for a person without touching the filesystem."""
     people_dir = DataRootManager.get_people_dir(root) if root else config.PEOPLE_DIR
     resolved_id = resolve_canonical_id(connection, person_id)
+
+    if is_canonical_connection(connection):
+        from .domain.canonical.ids import (
+            is_valid_canonical_person_id,
+            is_valid_unresolved_person_id,
+        )
+
+        if not (
+            is_valid_canonical_person_id(resolved_id)
+            or is_valid_unresolved_person_id(resolved_id)
+        ):
+            raise ValueError(f"Invalid canonical person ID for filesystem path: {resolved_id!r}")
 
     # Unresolved people live directly under People/
     if resolved_id.startswith("unknown_person--"):

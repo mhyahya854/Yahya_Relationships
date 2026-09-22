@@ -7,19 +7,28 @@ The active Data Root is the single authoritative directory for user data. In a s
 ```text
 <DataRoot>/
 ├── Database/
-│   ├── Main/family.db
-│   ├── People/<group>/<person>/journal.md
+│   ├── relationships.db
+│   ├── Main/family.db       # historical provenance; never canonical fallback
 │   ├── Config/data-root.json
 │   ├── Sources/
 │   ├── Exports/
 │   └── Logs/
+├── People/
+│   ├── Me/<canonical-id>/...
+│   ├── Family/<canonical-id>/...
+│   ├── Friends/<canonical-id>/...
+│   └── unknown_person--UP####/...
 └── Backups/
     ├── Manual/
     ├── Automatic/
     └── Safety/
 ```
 
-Legacy layouts (`data/family.db`, root `family.db`, `people/`, `backups/`, `config/`, and `exports/`) remain readable when their canonical counterpart is absent. Data Root format stays at 1 and application schema stays at 2.
+Unmigrated legacy roots (`Database/Main/family.db`, `data/family.db`, root
+`family.db`, and their legacy People locations) remain readable. A root marked
+or detected as canonical never falls back to a legacy database when
+`Database/relationships.db` is missing or corrupt. Data Root format remains 1;
+legacy application schema is 2 and the Phase 11 canonical schema is 3.
 
 ## Bootstrap pointer
 
@@ -41,7 +50,17 @@ Status, health audit, backup inspection, and candidate inspection are read-only.
 
 ### Create New
 
-Create New accepts only a nonexistent or empty destination and never changes to an existing root. The user supplies their name and may supply a supported gender value; canonical person-ID generation is reused. A hidden sibling staging root is constructed with schema 2, required groups, exactly one owner, owner folder and Journal, focus/default perspective metadata, and Data Root metadata. It is audited and loaded through the family model before publication. The staged directory is renamed to the final target and the bootstrap pointer is committed last. Construction or validation failures remove staging and leave no final root. If the final pointer write fails, the complete inactive root is retained for explicit recovery while the old pointer remains unchanged.
+Create New accepts only a nonexistent or empty destination and never changes
+to an existing root. The user supplies their name and may supply a supported
+gender value; canonical person-ID generation is reused. A hidden sibling
+staging root is constructed with canonical schema 3, required groups, exactly
+one owner under `People/Me/` with the seven-item template, focus/default
+perspective metadata, and Data Root metadata. It is audited and loaded through
+the family model before publication. The staged directory is renamed to the
+final target and the bootstrap pointer is committed last. Construction or
+validation failures remove staging and leave no final root. If the final
+pointer write fails, the complete inactive root is retained for explicit
+recovery while the old pointer remains unchanged.
 
 ### Use Existing
 

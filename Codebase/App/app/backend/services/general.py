@@ -34,6 +34,7 @@ def list_general_relationships(person_id: str | None = None) -> list[dict]:
         sql = "SELECT * FROM general_relationships"
         params: list = []
         if person_id:
+            person_id = db.resolve_canonical_id(connection, person_id)
             sql += " WHERE person_a = ? OR person_b = ?"
             params.extend([person_id, person_id])
         sql += " ORDER BY id"
@@ -78,6 +79,8 @@ def add_general_relationship(
     record_pre_mutation_snapshot(f"Added general relationship ({type}) between {person_a} and {person_b}")
     connection = db.get_connection()
     try:
+        person_a = db.resolve_canonical_id(connection, person_a)
+        person_b = db.resolve_canonical_id(connection, person_b)
         for pid, label in ((person_a, "first person"), (person_b, "second person")):
             if connection.execute(
                 "SELECT 1 FROM people WHERE id = ?", (pid,)

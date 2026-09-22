@@ -192,8 +192,8 @@ try {
   if (peopleA.people.length !== 1 || peopleA.people[0].name !== "Alice Root A") throw new Error("Fresh owner records incorrect");
   step("Fresh Data Root contains exactly the initial owner");
   const statusA = await api("/api/data-root");
-  if (statusA.schema_version !== 2 || statusA.data_root_format_version !== 1) throw new Error("Fresh versions incorrect");
-  step("Fresh root keeps schema 2 and Data Root format 1");
+  if (statusA.schema_version !== 3 || statusA.data_root_format_version !== 1) throw new Error("Fresh versions incorrect");
+  step("Fresh root keeps schema 3 and Data Root format 1");
   if (JSON.parse(readFileSync(bootstrap, "utf8")).active_root !== rootA) throw new Error("Bootstrap does not point to Root A");
   step("Atomic isolated bootstrap points to the published root");
   await clickText(".nav", "Family");
@@ -232,7 +232,7 @@ try {
   await page.waitForSelector("[aria-label='Data Root change summary']");
   step("Existing root is inspected before any pointer change");
   const preview = await page.$eval("[aria-label='Data Root change summary']", (node) => node.textContent);
-  if (!preview.includes("People: 1") || !preview.includes("Schema: 2") || !preview.includes("Writable")) throw new Error("Candidate summary incomplete");
+  if (!preview.includes("People: 1") || !preview.includes("Schema: 3") || !preview.includes("Writable")) throw new Error("Candidate summary incomplete");
   step("Candidate preview shows health, counts, schema, and write state");
   await screenshot("data-root-existing-preview.png");
   step("Existing-root preview has visual evidence");
@@ -340,10 +340,10 @@ try {
   await clickText("[aria-label='Change Data Location']", "Reload and Continue");
   await page.waitForSelector(".nav", { timeout: 30_000 });
 
-  const ownerJournal = collectFiles(join(movedRoot, "Database/People")).find((row) => row.path.endsWith("/journal.md"));
-  const journalPath = join(movedRoot, "Database/People", ownerJournal.path);
+  const ownerJournal = collectFiles(join(movedRoot, "People")).find((row) => row.path.endsWith("/journal(personal thoughts).md"));
+  const journalPath = join(movedRoot, "People", ownerJournal.path);
   await unlinkWithRetry(journalPath);
-  const orphan = join(movedRoot, "Database/People/Other/human-review/notes.md");
+  const orphan = join(movedRoot, "People/Other/human-review/notes.md");
   mkdirSync(dirname(orphan), { recursive: true });
   writeFileSync(orphan, "preserve", "utf8");
   await reload();

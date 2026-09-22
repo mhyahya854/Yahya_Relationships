@@ -75,10 +75,11 @@ CREATE TABLE IF NOT EXISTS unresolved_people (
 CREATE TABLE IF NOT EXISTS identifier_aliases (
   id INTEGER PRIMARY KEY,
   old_identifier TEXT NOT NULL UNIQUE,
-  canonical_id TEXT NOT NULL,
-  entity_type TEXT NOT NULL DEFAULT 'person',
+  canonical_id TEXT NOT NULL REFERENCES people(id) ON DELETE RESTRICT,
+  entity_type TEXT NOT NULL DEFAULT 'person' CHECK (entity_type = 'person'),
   notes TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  CHECK (old_identifier <> canonical_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_identifier_aliases_canonical

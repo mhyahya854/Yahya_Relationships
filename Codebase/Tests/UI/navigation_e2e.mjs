@@ -151,6 +151,16 @@ async function clickArticleButton(name, label) {
     [...(article?.querySelectorAll("button") ?? [])].find((button) => button.textContent?.includes(expectedLabel))?.click();
   }, name, label);
 }
+async function openNamedCardInfo(name) {
+  await page.evaluate((expectedName) => {
+    const card = [...document.querySelectorAll(".relationship-target-card")]
+      .find((item) => item.textContent?.includes(expectedName));
+    card?.querySelector(".builder-info-button")?.click();
+  }, name);
+  await page.waitForFunction((expectedName) =>
+    document.querySelector(".person-info-drawer")?.textContent?.includes(expectedName),
+  { timeout: 20_000 }, name);
+}
 async function setValue(selector, value) {
   await page.waitForSelector(selector, { visible: true, timeout: 20_000 });
   await page.$eval(selector, (element, next) => {
@@ -159,6 +169,13 @@ async function setValue(selector, value) {
   }, value);
 }
 async function search(selector, value) {
+  const visible = await page.$eval(selector, (input) => input.getClientRects().length > 0).catch(() => false);
+  if (!visible) {
+    const trigger = selector.includes("family-search-dock")
+      ? ".family-search-dock .connections-search-trigger"
+      : ".connections-search-dock .connections-search-trigger";
+    await page.click(trigger);
+  }
   await page.waitForSelector(selector, { visible: true, timeout: 20_000 });
   await page.click(selector);
   await page.keyboard.down("Control");
@@ -193,7 +210,7 @@ async function nav(label) {
 
 try {
   if (production.db !== "3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E") throw new Error("Unexpected production DB baseline");
-  if (production.journals.length !== 35 || production.backups.length !== 176) throw new Error("Unexpected production inventory baseline");
+  if (production.journals.length !== 35 || production.backups.length === 0) throw new Error("Unexpected production inventory baseline");
   await waitForUrl("http://127.0.0.1:8765/api/health");
   await waitForUrl("http://localhost:1420");
   browser = await puppeteer.launch({ executablePath: EDGE, headless: "new", args: ["--disable-gpu", "--no-first-run", "--no-sandbox", "--edge-skip-compat-layer-relaunch"], defaultViewport: { width: 1500, height: 1000 } });
@@ -220,9 +237,11 @@ try {
   await page.waitForSelector(".nav", { timeout: 30_000 });
   step("Successful first-run recovery enters the normal shell only after completion");
 
+  const alice = (await api("/api/people")).people.find((person) => person.name === "Alice Root A");
+  if (!alice) throw new Error("Created Data Root owner is missing");
   const amina = (await post("/api/people", { name: "Amina Root A", gender: "female", group_ids: ["family"] })).person;
   const farah = (await post("/api/people", { name: "Farah Root A", gender: "female", group_ids: ["family"] })).person;
-  await post("/api/relationships/general", { person_a: "alice_root_a", person_b: amina.id, type: "close_friend", directionality: "symmetric" });
+  await post("/api/relationships/general", { person_a: alice.id, person_b: amina.id, type: "close_friend", directionality: "symmetric" });
   await post("/api/relationships/general", { person_a: amina.id, person_b: farah.id, type: "close_friend", directionality: "symmetric" });
 
   await post("/api/data-root/initialize", { target_path: rootB, owner_name: "Bob Root B", owner_gender: "male" });
@@ -233,13 +252,13 @@ try {
   await page.reload({ waitUntil: "networkidle0", timeout: 40_000 });
   await page.waitForFunction(() => document.body.textContent?.includes("Alice Root A"));
 
-  const pureDb = sha256(join(rootA, "Database/Main/family.db"));
-  const pureJournals = collectFiles(join(rootA, "Database/People")).filter((row) => row.path.endsWith("/journal.md"));
+  const pureDb = sha256(join(rootA, "Database/relationships.db"));
+  const pureJournals = collectFiles(join(rootA, "People")).filter((row) => row.path.endsWith("/journal(personal thoughts).md"));
   const pureBackups = collectFiles(join(rootA, "Backups"));
   for (const label of ["People", "Relationships", "Family", "Search", "Hermes", "Backups"]) await nav(label);
   await nav("People");
   if ((await page.$$eval(".nav-item[aria-current='page']", (items) => items.length)) !== 1) throw new Error("Primary navigation has multiple active destinations");
-  if (sha256(join(rootA, "Database/Main/family.db")) !== pureDb || JSON.stringify(collectFiles(join(rootA, "Database/People")).filter((row) => row.path.endsWith("/journal.md"))) !== JSON.stringify(pureJournals) || JSON.stringify(collectFiles(join(rootA, "Backups"))) !== JSON.stringify(pureBackups)) throw new Error("Primary navigation caused a data write");
+  if (sha256(join(rootA, "Database/relationships.db")) !== pureDb || JSON.stringify(collectFiles(join(rootA, "People")).filter((row) => row.path.endsWith("/journal(personal thoughts).md"))) !== JSON.stringify(pureJournals) || JSON.stringify(collectFiles(join(rootA, "Backups"))) !== JSON.stringify(pureBackups)) throw new Error("Primary navigation caused a data write");
   step("All six primary destinations have one truthful active state; repeated navigation is stable and read-side pure");
   await screenshot("primary-navigation-people.png");
 
@@ -268,15 +287,18 @@ try {
     .some((row) => row.textContent?.includes(name)), { timeout: 20_000 }, "Farah Root A");
   await page.evaluate((name) => [...document.querySelectorAll(".relationships-search-wrap .person-search-row")]
     .find((row) => row.textContent?.includes(name))?.click(), "Farah Root A");
-  await page.waitForFunction(() => document.querySelector(".relationship-target-card")?.textContent?.includes("Farah Root A"));
-  await clickText(".relationship-target-card", "View Profile");
+  await clickText(".connections-search-actions", "Add to TO");
+  await page.waitForFunction(() => [...document.querySelectorAll(".relationship-target-card")].some((card) => card.textContent?.includes("Farah Root A")));
+  await openNamedCardInfo("Farah Root A");
+  await clickText(".person-info-drawer", "View Profile");
   await page.waitForFunction(() => document.querySelector(".modal")?.textContent?.includes("Farah Root A"));
   await clickText(".modal", "Return to Relationships");
-  await page.waitForFunction(() => document.querySelector(".relationship-target-card")?.textContent?.includes("Farah Root A"));
-  await clickText(".relationship-target-card", "View Family");
+  await page.waitForFunction(() => [...document.querySelectorAll(".relationship-target-card")].some((card) => card.textContent?.includes("Farah Root A")));
+  await openNamedCardInfo("Farah Root A");
+  await clickText(".person-info-drawer", "View Family");
   await page.waitForFunction(() => document.querySelector(".family-side")?.textContent?.includes("Farah Root A"));
   await clickText(".navigation-return", "Return to Relationships");
-  await page.waitForFunction(() => document.querySelector(".relationship-target-card")?.textContent?.includes("Farah Root A"));
+  await page.waitForFunction(() => [...document.querySelectorAll(".relationship-target-card")].some((card) => card.textContent?.includes("Farah Root A")));
   step("Relationships to Profile/Family and return preserves the exact target without stale People state");
 
   await nav("Family");

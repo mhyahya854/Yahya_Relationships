@@ -211,8 +211,8 @@ export function drawerDemoFor(people) {
   };
 }
 
-export async function seedConnectionsRedesignFixture({ api, post, dataRoot, python, fixtureLoader }) {
-  await post("/api/data-root/initialize", { target_path: dataRoot, owner_name: "Mira Rahim", owner_gender: "female" });
+export async function seedConnectionsRedesignFixture({ api, post, dataRoot, python, fixtureLoader, environment }) {
+  const initialized = await post("/api/data-root/initialize", { target_path: dataRoot, owner_name: "Mira Rahim", owner_gender: "female" });
   const groupNames = [
     "Synthetic Friends & Community", "Synthetic Work Mentors", "Synthetic Heritage Circle",
     "Synthetic Neighbourhood Garden", "Synthetic International Branches", "Synthetic Archive Volunteers",
@@ -220,7 +220,7 @@ export async function seedConnectionsRedesignFixture({ api, post, dataRoot, pyth
   ];
   const groups = {};
   for (const name of groupNames) groups[name] = (await post("/api/groups", { name })).group.id;
-  const people = { mira: (await api("/api/people/mira_rahim")).person };
+  const people = { mira: (await api(`/api/people/${initialized.owner_id}`)).person };
   const communityKeys = new Set(["darya", "maeve", "oren", "sage", "quinn", "tamsin", "azhar", "leila", "murad", "naia", "hadi", "samira", "julian", "priya", "dev", "celine", "nico", "iris", "pavel", "zoe", "iman", "rhea"]);
   for (const [key, name, gender, birth_year, aliases] of [...CORE_SPECS, ...EXTRA_SPECS]) {
     const group_ids = communityKeys.has(key)
@@ -239,11 +239,11 @@ export async function seedConnectionsRedesignFixture({ api, post, dataRoot, pyth
   const familyFacts = buildFamilyFixture(people);
   const certification = JSON.parse(execFileSync(
     python,
-    [fixtureLoader, join(dataRoot, "Database", "Main", "family.db")],
+    [fixtureLoader, join(dataRoot, "Database", "relationships.db")],
     {
       input: JSON.stringify(familyFacts),
       encoding: "utf8",
-      env: { ...process.env, PEOPLE_RELATIONSHIPS_ROOT: dataRoot },
+      env: { ...environment, PEOPLE_RELATIONSHIPS_ROOT: dataRoot },
     },
   ).trim());
   if (certification.people !== CONNECTIONS_FIXTURE_EXPECTED_PEOPLE) throw new Error("Canonical synthetic fixture certification count mismatch.");

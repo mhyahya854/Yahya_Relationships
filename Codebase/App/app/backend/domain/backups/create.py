@@ -15,6 +15,7 @@ from ...data_root.errors import BackupError, DataRootReadOnlyError
 from ...data_root.manager import DataRootManager
 from ..maintenance import MaintenanceLockContext
 from .manifest import build_backup_manifest
+from .paths import native_io_path, remove_tree
 from .verify import verify_backup
 
 
@@ -72,9 +73,11 @@ def _is_temporary(path: Path) -> bool:
 
 def _copy_tree_safe(source: Path, destination: Path) -> None:
     """Copy a tree without following links or copying known temporary files."""
-    destination.mkdir(parents=True, exist_ok=False)
-    for item in sorted(source.rglob("*"), key=lambda value: value.as_posix()):
-        relative = item.relative_to(source)
+    scan_source = native_io_path(source)
+    native_destination = native_io_path(destination)
+    native_destination.mkdir(parents=True, exist_ok=False)
+    for item in sorted(scan_source.rglob("*"), key=lambda value: value.as_posix()):
+        relative = item.relative_to(scan_source)
         if _is_temporary(relative):
             continue
         if item.is_symlink():
@@ -82,7 +85,7 @@ def _copy_tree_safe(source: Path, destination: Path) -> None:
                 f"Backup input contains an unsupported symbolic link: {relative.as_posix()}",
                 code="BACKUP_SYMLINK_UNSAFE",
             )
-        target = destination / relative
+        target = native_destination / relative
         if item.is_dir():
             target.mkdir(parents=True, exist_ok=True)
         elif item.is_file():
@@ -91,11 +94,13 @@ def _copy_tree_safe(source: Path, destination: Path) -> None:
 
 
 def _snapshot_sqlite(source: Path, destination: Path) -> None:
-    if not source.is_file():
+    native_source = native_io_path(source)
+    native_destination = native_io_path(destination)
+    if not native_source.is_file():
         raise BackupError("The active SQLite database is missing.", code="BACKUP_DATABASE_MISSING")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    source_connection = sqlite3.connect(str(source))
-    destination_connection = sqlite3.connect(str(destination))
+    native_destination.parent.mkdir(parents=True, exist_ok=True)
+    source_connection = sqlite3.connect(str(native_source))
+    destination_connection = sqlite3.connect(str(native_destination))
     try:
         source_connection.backup(destination_connection)
         integrity = destination_connection.execute("PRAGMA integrity_check").fetchone()[0]
@@ -176,7 +181,7 @@ def create_backup(
             staging_dir.rename(final_dir)
         except Exception:
             if staging_dir.exists():
-                shutil.rmtree(staging_dir, ignore_errors=True)
+                remove_tree(staging_dir, ignore_errors=True)
             raise
 
     return {

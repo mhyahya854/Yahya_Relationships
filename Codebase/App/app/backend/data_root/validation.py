@@ -50,8 +50,10 @@ def audit_data_root(root: Optional[Path] = None) -> DataRootHealth:
         )
 
     db_path = DataRootManager.get_database_path(active_root)
-    if (active_root / "Database" / "Main" / "family.db").exists():
-        layout_mode = "canonical"
+    if DataRootManager.is_canonical_root(active_root):
+        layout_mode = "canonical_v3"
+    elif (active_root / "Database" / "Main" / "family.db").exists():
+        layout_mode = "legacy_canonical_paths"
     elif (active_root / "data" / "family.db").exists():
         # Portable snapshot layout (used inside backup archives).
         layout_mode = "portable"
@@ -96,7 +98,33 @@ def audit_data_root(root: Optional[Path] = None) -> DataRootHealth:
             s_row = conn.execute(
                 "SELECT value FROM metadata WHERE key = 'app_schema_version'"
             ).fetchone()
-            schema_ver = int(s_row["value"]) if s_row else 1
+            metadata_schema = int(s_row["value"]) if s_row else 0
+            pragma_schema = int(conn.execute("PRAGMA user_version").fetchone()[0])
+            schema_ver = metadata_schema or pragma_schema or 1
+
+            if metadata_schema and pragma_schema and metadata_schema != pragma_schema:
+                issues.append(
+                    ValidationIssue(
+                        code="SCHEMA_VERSION_MISMATCH",
+                        severity="error",
+                        message=(
+                            f"metadata.app_schema_version ({metadata_schema}) disagrees "
+                            f"with PRAGMA user_version ({pragma_schema})."
+                        ),
+                        suggested_action="Restore or repair the database; do not guess a schema version.",
+                    )
+                )
+
+            foreign_key_violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if foreign_key_violations:
+                issues.append(
+                    ValidationIssue(
+                        code="FOREIGN_KEY_VIOLATION",
+                        severity="error",
+                        message=f"SQLite foreign-key check found {len(foreign_key_violations)} violation(s).",
+                        suggested_action="Restore from a verified backup or repair the broken references.",
+                    )
+                )
 
             max_supported_schema = max(config.APP_SCHEMA_VERSION, getattr(config, "CANONICAL_SCHEMA_VERSION", 3))
             if not 1 <= schema_ver <= max_supported_schema:
@@ -118,23 +146,32 @@ def audit_data_root(root: Optional[Path] = None) -> DataRootHealth:
             )
 
             # Reconcile Database People with Filesystem Folders
+            has_category = conn.execute(
+                "SELECT 1 FROM pragma_table_info('people') WHERE name = 'category'"
+            ).fetchone()
+            category_select = "p.category" if has_category else "NULL AS category"
             people_rows = conn.execute(
-                """
-                SELECT p.id, p.name, g.slug AS group_slug
+                f"""
+                SELECT p.id, p.name, {category_select}, g.slug AS group_slug
                 FROM people p
                 LEFT JOIN person_groups pg ON pg.person_id = p.id AND pg.is_primary = 1
                 LEFT JOIN groups g ON g.id = pg.group_id
                 """
             ).fetchall()
-            conn.close()
-
             people_dir = DataRootManager.get_people_dir(active_root)
             db_person_ids = {r["id"] for r in people_rows}
+            unresolved_table = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='unresolved_people'"
+            ).fetchone()
+            unresolved_ids = {
+                r[0] for r in conn.execute("SELECT id FROM unresolved_people")
+            } if unresolved_table else set()
+            conn.close()
 
             for p_row in people_rows:
                 pid = p_row["id"]
                 p_name = p_row["name"]
-                group_slug = p_row["group_slug"] or "Other"
+                group_slug = p_row["category"] or p_row["group_slug"] or "Family"
 
                 expected_folder = people_dir / group_slug / pid
                 archived_folder = people_dir / "_archived" / pid
@@ -204,6 +241,8 @@ def audit_data_root(root: Optional[Path] = None) -> DataRootHealth:
             if people_dir.exists():
                 for group_dir in people_dir.iterdir():
                     if not group_dir.is_dir() or group_dir.name == "_archived":
+                        continue
+                    if group_dir.name in unresolved_ids:
                         continue
                     for p_dir in group_dir.iterdir():
                         if p_dir.is_dir():

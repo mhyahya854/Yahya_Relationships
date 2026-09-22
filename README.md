@@ -48,14 +48,24 @@ what their new feature requires.
 
 ### Phase 11 — Canonical Data Foundation & Migration
 
-**STATUS: PROVISIONALLY IMPLEMENTED — SOL AUDIT REQUIRED BEFORE FREEZE.**
-The single forward-architecture database (`Database/relationships.db` at Schema Version 3), canonical human-readable identifiers (`normalized_name--INITIALS##`), deterministic folder hierarchy under `People/` (`Me/`, `Family/`, `Friends/`), full migration engine with atomic staging, bidirectional alias resolution (`identifier_aliases`), and automated safety backups have been provisionally implemented and verified against all 512 backend tests. The legacy `Database/Main/family.db` database is preserved 100% untouched for historical provenance and safety audits.
+**STATUS: FROZEN.**
+The canonical data foundation and migration have passed an independent
+architectural audit. `Database/relationships.db` is the forward authoritative
+structured store. Legacy `Database/Main/family.db` is retained only for
+historical provenance / compatibility safety and is not a competing runtime
+authority.
+
+Frozen means the Phase 11 invariants are now baseline architecture. Later
+phases may add explicitly versioned, verified schema migrations, but may not
+silently change canonical identifiers, reintroduce a second runtime database,
+or bypass migration and recovery guarantees.
 
 Full handoff and verification reports:
-- [Phase 11 Sol Audit Handoff](Documentation/Planning/phase11-sol-audit-handoff.md)
+- [Phase 11 Audit Handoff](Documentation/Planning/phase11-audit-handoff.md)
+- [Phase 11 Independent Audit](Documentation/Testing/phase11-independent-audit.md)
 - [Phase 11 Canonical Data Verification](Documentation/Testing/phase11-canonical-data-verification.md)
 
-- Phase 12 — Raw Intake, Provenance & Organization
+- Phase 12 — Raw Intake, Provenance & Organization — **NOT STARTED**
 - Phase 13 — Media, Documents & Gallery
 - Phase 14 — Events, Memories & Flashbacks
 - Phase 15 — Conversations & Social Media Archive
@@ -123,7 +133,7 @@ React + TypeScript + Vite (Codebase/App/Frontend)
 FastAPI local backend (Codebase/App/app/backend)
         |
         +---- Python relationship engine (canonical domain/family/engine.py, reused)
-        +---- Database/relationships.db (locked future canonical structured truth)
+        +---- Database/relationships.db (authoritative canonical structured truth)
         +---- People/<group>/<person-id>/... (locked Markdown/context hierarchy)
 ```
 
@@ -143,7 +153,7 @@ Repository layout (the repo root is also the personal-data root):
     Tests/UI/            headless Edge smoke test
     Resources/Vendor/    bundled third-party assets (mermaid.min.js)
   Database/
-    relationships.db     locked future canonical SQLite store
+    relationships.db     authoritative canonical SQLite store
     raw_processing_history.md
     Sources/             provenance source batches
     Exports/Family/      family.html / family.md (still generated)
@@ -183,6 +193,12 @@ There is exactly one forward-architecture SQLite database:
 Database/
 └── relationships.db
 ```
+
+Phase 11 establishes identity, identifier history, family/general relationship,
+group, provenance, unresolved-person, platform-identity, place, and event
+foundations in schema 3. The remaining logical domains named below belong to
+their roadmap phases and must arrive through later versioned migrations; the
+Phase 11 freeze does not require empty speculative tables for Phase 12–17.
 
 It has logically separated tables for people, relationships and their
 aliases/statuses, groups and memberships, places, events, memories/indexes,
@@ -821,7 +837,8 @@ npm run legacy:check  # legacy builder audit for the current compatibility datas
 ## Architecture & Detailed Documentation
 
 For in-depth architectural and testing documentation, see:
-- [Phase 11 Sol Audit Handoff](Documentation/Planning/phase11-sol-audit-handoff.md)
+- [Phase 11 Audit Handoff](Documentation/Planning/phase11-audit-handoff.md)
+- [Phase 11 Independent Audit](Documentation/Testing/phase11-independent-audit.md)
 - [Phase 11 Canonical Data Verification](Documentation/Testing/phase11-canonical-data-verification.md)
 - [Cross-Platform Packaging Architecture](Documentation/Architecture/cross-platform-packaging.md)
 - [Platform Compatibility Matrix](Documentation/Testing/platform-compatibility.md)

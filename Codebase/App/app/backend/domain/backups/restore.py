@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import shutil
+import os
 import sqlite3
 import uuid
 from contextlib import nullcontext
@@ -11,14 +11,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ... import config
 from ...data_root.errors import DataRootReadOnlyError, RestoreError
 from ...data_root.manager import DataRootManager
 from ...data_root.validation import audit_data_root
 from ...model import load_model, validate_model
 from ..maintenance import MaintenanceLockContext
 from .create import BackupCategory, SafetyReason, _copy_tree_safe, create_backup
-from .paths import resolve_backup_reference
+from .paths import native_io_path, remove_tree, resolve_backup_reference, sqlite_read_only_uri
 from .verify import verify_backup
 
 
@@ -35,33 +34,48 @@ def _switch_component(active: Path, staged: Path, rollback: Path) -> None:
 
 
 def _rollback_component(active: Path, rollback: Path, recovery: Path) -> None:
-    if not rollback.exists():
-        return
     if active.exists():
         recovery.parent.mkdir(parents=True, exist_ok=True)
         active.rename(recovery)
-    rollback.rename(active)
+    if rollback.exists():
+        active.parent.mkdir(parents=True, exist_ok=True)
+        rollback.rename(active)
 
 
-def _post_restore_health(root: Path, expected_people: int) -> Dict[str, Any]:
+def _post_restore_health(
+    root: Path,
+    expected_people: int,
+    *,
+    expected_schema: int,
+) -> Dict[str, Any]:
     database = DataRootManager.get_database_path(root)
-    connection = sqlite3.connect(str(database))
+    connection = sqlite3.connect(sqlite_read_only_uri(database), uri=True)
     try:
         integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+        foreign_key_violations = connection.execute("PRAGMA foreign_key_check").fetchall()
         person_count = int(connection.execute("SELECT COUNT(*) FROM people").fetchone()[0])
         row = connection.execute(
             "SELECT value FROM metadata WHERE key = 'app_schema_version'"
         ).fetchone()
-        schema_version = int(row[0]) if row else int(connection.execute("PRAGMA user_version").fetchone()[0])
+        metadata_schema = int(row[0]) if row else 0
+        pragma_schema = int(connection.execute("PRAGMA user_version").fetchone()[0])
+        if metadata_schema and pragma_schema and metadata_schema != pragma_schema:
+            raise RestoreError("Restored database schema authorities disagree.", code="POST_RESTORE_HEALTH_FAILED")
+        schema_version = metadata_schema or pragma_schema
     finally:
         connection.close()
-    max_supported = max(config.APP_SCHEMA_VERSION, getattr(config, "CANONICAL_SCHEMA_VERSION", 3))
-    if integrity != "ok" or person_count != expected_people or not (1 <= schema_version <= max_supported):
+    if (
+        integrity != "ok"
+        or foreign_key_violations
+        or person_count != expected_people
+        or schema_version != expected_schema
+    ):
         raise RestoreError("Restored database failed post-restore validation.", code="POST_RESTORE_HEALTH_FAILED")
 
     people_dir = DataRootManager.get_people_dir(root)
-    for journal in people_dir.rglob("journal.md"):
-        journal.read_bytes()
+    for journal in native_io_path(people_dir).rglob("*"):
+        if journal.is_file() and journal.name in ("journal.md", "journal(personal thoughts).md"):
+            journal.read_bytes()
     health = audit_data_root(root)
     if not health.ok:
         raise RestoreError(
@@ -73,6 +87,23 @@ def _post_restore_health(root: Path, expected_people: int) -> Dict[str, Any]:
     if model.get("metadata", {}).get("focus_person"):
         validate_model(model)
     return health.to_dict()
+
+
+def _write_restore_marker(path: Path, *, canonical: bool) -> None:
+    payload = {
+        "kind": "mosaic-backup-restore",
+        "target_layout": "canonical" if canonical else "legacy",
+    }
+    temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(temp, path)
+
+
+def _rollback_paths(
+    switched: list[tuple[Path, Path]], recovery_root: Path
+) -> None:
+    for index, (active, rollback) in enumerate(reversed(switched)):
+        _rollback_component(active, rollback, recovery_root / f"component-{index}")
 
 
 def restore_backup(
@@ -105,10 +136,13 @@ def restore_backup(
         raise DataRootReadOnlyError("Data root is read-only; restore is blocked.")
 
     manifest = verification["manifest"]
+    canonical_backup = (backup_path / "data" / "relationships.db").is_file()
     safety_backup: Dict[str, Any] | None = None
     operation_id = uuid.uuid4().hex
     staging_dir = active_root / f".restore_staging_{operation_id}"
     rollback_dir = active_root / f".restore_rollback_{operation_id}"
+    marker_path = active_root / ".restore_incomplete.json"
+    switched: list[tuple[Path, Path]] = []
 
     lock = nullcontext() if _maintenance_held else MaintenanceLockContext(f"RESTORE_BACKUP:{backup_path.name}")
     with lock:
@@ -143,26 +177,66 @@ def restore_backup(
             if not staged_verification["ok"]:
                 raise RestoreError("Staged restore failed verification.", code="RESTORE_STAGING_INVALID")
 
-            active_db = DataRootManager.get_database_path(active_root)
-            active_people = DataRootManager.get_people_dir(active_root)
-            active_config = DataRootManager.get_config_dir(active_root)
-            staged_db_filename = (
-                "relationships.db"
-                if (staged_snapshot / "data" / "relationships.db").is_file()
-                else "family.db"
-            )
+            staged_db_filename = "relationships.db" if canonical_backup else "family.db"
             staged_db = staged_snapshot / "data" / staged_db_filename
             staged_people = staged_snapshot / "people"
             staged_config = staged_snapshot / "config"
-            rollback_db = rollback_dir / "database" / staged_db_filename
-            rollback_people = rollback_dir / "people"
-            rollback_config = rollback_dir / "config"
+            if canonical_backup:
+                active_db = active_root / "Database" / "relationships.db"
+                active_people = active_root / "People"
+            else:
+                active_db = active_root / "Database" / "Main" / "family.db"
+                active_people = active_root / "Database" / "People"
+            active_config = active_root / "Database" / "Config"
 
-            _switch_component(active_db, staged_db, rollback_db)
-            _switch_component(active_people, staged_people, rollback_people)
-            _switch_component(active_config, staged_config, rollback_config)
+            _write_restore_marker(marker_path, canonical=canonical_backup)
 
-            post_health = _post_restore_health(active_root, manifest["person_count"])
+            if not canonical_backup:
+                # A legacy restore must cease being canonical. Move both
+                # canonical authority components aside before publishing legacy.
+                for active, rollback in (
+                    (active_root / "Database" / "relationships.db", rollback_dir / "obsolete" / "relationships.db"),
+                    (
+                        active_root / "Database" / "HISTORICAL_FAMILY_DB.md",
+                        rollback_dir / "obsolete" / "HISTORICAL_FAMILY_DB.md",
+                    ),
+                    (active_root / "People", rollback_dir / "obsolete" / "People"),
+                ):
+                    if active.exists():
+                        rollback.parent.mkdir(parents=True, exist_ok=True)
+                        active.rename(rollback)
+                        switched.append((active, rollback))
+
+            for active, staged, rollback in (
+                (active_db, staged_db, rollback_dir / "active" / staged_db_filename),
+                (active_people, staged_people, rollback_dir / "active" / "people"),
+                (active_config, staged_config, rollback_dir / "active" / "config"),
+            ):
+                _switch_component(active, staged, rollback)
+                switched.append((active, rollback))
+
+            root_metadata = DataRootManager.read_root_metadata(active_root)
+            if canonical_backup:
+                root_metadata.update(
+                    {
+                        "storage_layout": DataRootManager.CANONICAL_LAYOUT,
+                        "canonical_database": "Database/relationships.db",
+                    }
+                )
+            else:
+                root_metadata.pop("storage_layout", None)
+                root_metadata.pop("canonical_database", None)
+            active_config.mkdir(parents=True, exist_ok=True)
+            (active_config / "data-root.json").write_text(
+                json.dumps(root_metadata, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            post_health = _post_restore_health(
+                active_root,
+                manifest["person_count"],
+                expected_schema=manifest["sqlite_schema_version"],
+            )
             history_path = active_config / "restore-history.json"
             history: list[Dict[str, Any]] = []
             if history_path.exists():
@@ -183,17 +257,19 @@ def restore_backup(
                 }
             )
             history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            marker_path.unlink()
         except Exception as exc:
-            if not rollback_dir.exists():
-                shutil.rmtree(staging_dir, ignore_errors=True)
+            if not switched:
+                remove_tree(staging_dir, ignore_errors=True)
+                if marker_path.exists():
+                    marker_path.unlink()
                 if isinstance(exc, RestoreError):
                     raise
                 raise RestoreError(f"Restore staging failed: {exc}", code="RESTORE_FAILED") from exc
             try:
-                recovery_dir = staging_dir / "failed-active"
-                _rollback_component(active_config, rollback_dir / "config", recovery_dir / "config")
-                _rollback_component(active_people, rollback_dir / "people", recovery_dir / "people")
-                _rollback_component(active_db, rollback_dir / "database" / "family.db", recovery_dir / "family.db")
+                _rollback_paths(switched, staging_dir / "failed-active")
+                if marker_path.exists():
+                    marker_path.unlink()
                 rollback_health = audit_data_root(active_root)
                 if not rollback_health.ok:
                     raise RuntimeError("Rolled-back Data Root failed validation.")
@@ -207,16 +283,16 @@ def restore_backup(
                         "safety_backup_id": safety_backup["id"] if safety_backup else None,
                     },
                 ) from exc
-            shutil.rmtree(staging_dir, ignore_errors=True)
-            shutil.rmtree(rollback_dir, ignore_errors=True)
+            remove_tree(staging_dir, ignore_errors=True)
+            remove_tree(rollback_dir, ignore_errors=True)
             raise RestoreError(
                 "Restore failed; database, People, and Config were rolled back exactly.",
                 code="RESTORE_FAILED",
                 detail={"cause": str(exc), "safety_backup_id": safety_backup["id"] if safety_backup else None},
             ) from exc
 
-    shutil.rmtree(staging_dir, ignore_errors=True)
-    shutil.rmtree(rollback_dir, ignore_errors=True)
+    remove_tree(staging_dir, ignore_errors=True)
+    remove_tree(rollback_dir, ignore_errors=True)
     return {
         "ok": True,
         "restored_backup_id": backup_path.name,

@@ -25,7 +25,7 @@ const EDGE = existsSync("C:/Program Files (x86)/Microsoft/Edge/Application/msedg
 const PROD_DB = resolve(REPO_ROOT, "Database/Main/family.db");
 const PROD_PEOPLE = resolve(REPO_ROOT, "Database/People");
 const PROD_BACKUPS = resolve(REPO_ROOT, "Backups");
-const PERSON_ID = "mohammad_yahya_hussain";
+const PERSON_ID = "mohammad_yahya_hussain--MYH01";
 
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex").toUpperCase();
@@ -61,9 +61,10 @@ console.log(`[Safety Baseline] DB ${productionDbHash}; journals ${productionJour
 const sandbox = resolve(tmpdir(), `backups_e2e_root_${Date.now()}`);
 mkdirSync(sandbox, { recursive: true });
 cpSync(resolve(REPO_ROOT, "Database"), join(sandbox, "Database"), { recursive: true });
+cpSync(resolve(REPO_ROOT, "People"), join(sandbox, "People"), { recursive: true });
 cpSync(PROD_BACKUPS, join(sandbox, "Backups"), { recursive: true });
 mkdirSync(SCREENSHOTS, { recursive: true });
-const journalPath = join(sandbox, "Database/People/Family", PERSON_ID, "journal.md");
+const journalPath = join(sandbox, "People/Me", PERSON_ID, "journal(personal thoughts).md");
 const originalJournal = readFileSync(journalPath);
 const configPath = join(sandbox, "Database/Config/e2e-phase7.json");
 writeFileSync(configPath, '{"state":"before"}\n', "utf8");
@@ -331,7 +332,7 @@ try {
   await page.waitForSelector("[aria-label='Safety backups']", { timeout: 30_000 });
   step("Application reloads into a usable Backups screen after restore");
 
-  writeFileSync(join(second.path, "data/family.db"), "corrupt", "utf8");
+  writeFileSync(join(second.path, "data/relationships.db"), "corrupt", "utf8");
   await clickText(await rowFor(second.id), "Verify");
   await page.waitForSelector("[aria-label='Verification Failed']", { timeout: 30_000 });
   step("Corrupted sandbox backup produces an in-app verification failure");

@@ -25,8 +25,14 @@ const EDGE = existsSync("C:/Program Files (x86)/Microsoft/Edge/Application/msedg
   : "C:/Program Files/Microsoft/Edge/Application/msedge.exe";
 const PROD_DB = resolve(REPO_ROOT, "Database/Main/family.db");
 const PROD_PEOPLE = resolve(REPO_ROOT, "Database/People");
-const DEFAULT_PERSON_ID = "mohammad_yahya_hussain";
+const DEFAULT_PERSON_ID = "mohammad_yahya_hussain--MYH01";
 const DEFAULT_PERSON_NAME = "Mohammad Yahya Hussain";
+const MUAAZ_ID = "muaaz--M01";
+const SOHAIB_ID = "sohaib_hussain--SH01";
+const MANSOOR_ID = "mansoor_hussain--MH01";
+const MAHAM_ID = "maham_mansoor--MM01";
+const IRSA_ID = "irsa_naz--IN01";
+const ISRAR_ID = "israr_hussain--IH01";
 
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex").toUpperCase();
@@ -63,9 +69,10 @@ console.log(`[Safety Baseline] Production DB ${productionDbHash}; journals ${pro
 const sandbox = resolve(tmpdir(), `search_e2e_root_${Date.now()}`);
 mkdirSync(sandbox, { recursive: true });
 cpSync(resolve(REPO_ROOT, "Database"), join(sandbox, "Database"), { recursive: true });
+cpSync(resolve(REPO_ROOT, "People"), join(sandbox, "People"), { recursive: true });
 mkdirSync(SCREENSHOTS, { recursive: true });
 
-const journalPath = join(sandbox, "Database/People/Family", DEFAULT_PERSON_ID, "journal.md");
+const journalPath = join(sandbox, "People/Me", DEFAULT_PERSON_ID, "journal(personal thoughts).md");
 const originalJournal = readFileSync(journalPath, "utf8");
 const searchJournal = `${originalJournal.trimEnd()}\n\n## Phase 6 Search Fixture\n\n` +
   "English: cobalt compass search phrase.\n\n" +
@@ -222,7 +229,7 @@ try {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       person_a: DEFAULT_PERSON_ID,
-      person_b: "sohaib_hussain",
+      person_b: SOHAIB_ID,
       type: "custom",
       directionality: "directional",
       label_a_to_b: "Phase Six trusted mentor with a deliberately long searchable orientation label",
@@ -279,13 +286,13 @@ try {
 
   await submitSearch("Maaz");
   results = await searchResults();
-  const aliasResult = results.find((row) => row.id === "person:muaaz");
+  const aliasResult = results.find((row) => row.id === `person:${MUAAZ_ID}`);
   if (!aliasResult) throw new Error("Alias did not resolve canonical Muaaz person");
   step("Alias search finds the canonical person");
   if (!aliasResult.text.includes("Alias: Maaz")) throw new Error("Matched alias explanation missing");
   step("Matched alias is visibly explained");
 
-  await clickText("[data-result-id='person:muaaz']", "Details");
+  await clickText(`[data-result-id='person:${MUAAZ_ID}']`, "Details");
   await page.waitForFunction(() => document.querySelector(".person-profile-container")?.textContent?.includes("Muaaz"));
   step("Person Details opens the exact canonical profile");
   if (!(await page.$eval(".perspective-current", (node) => node.textContent)).includes(DEFAULT_PERSON_NAME)) throw new Error("Details silently changed perspective");
@@ -293,15 +300,16 @@ try {
   await page.click(".modal-head button[title='Close']");
   await navigate("Search");
   await submitSearch("Maaz");
-  await clickText("[data-result-id='person:muaaz']", "View in Relationships");
+  await clickText(`[data-result-id='person:${MUAAZ_ID}']`, "View in Relationships");
   await page.waitForFunction(() => document.querySelector(".relationship-target-card")?.textContent?.includes("Muaaz"), { timeout: 20_000 });
+  await page.waitForSelector(".target-path-option", { visible: true, timeout: 20_000 });
   step("Person handoff selects the exact Relationships target");
   const personHandoff = await page.evaluate(() => ({
     perspective: document.querySelector(".perspective-current")?.textContent,
     panel: document.querySelector(".relationship-target-card")?.textContent,
   }));
-  if (!personHandoff.perspective.includes(DEFAULT_PERSON_NAME) || !personHandoff.panel.includes(`Relationship to ${DEFAULT_PERSON_NAME}`)) {
-    throw new Error("Person handoff silently changed perspective");
+  if (!personHandoff.perspective.includes(DEFAULT_PERSON_NAME) || !personHandoff.panel.includes(DEFAULT_PERSON_NAME)) {
+    throw new Error(`Person handoff silently changed perspective: ${JSON.stringify(personHandoff)}`);
   }
   step("Person handoff preserves perspective A");
   await navigate("Search");
@@ -361,7 +369,7 @@ try {
   await navigate("Search");
   await submitSearch("maternal uncle");
   results = await searchResults();
-  const uncle = results.find((row) => row.id?.startsWith(`family:${DEFAULT_PERSON_ID}:sohaib_hussain:`));
+  const uncle = results.find((row) => row.id?.startsWith(`family:${DEFAULT_PERSON_ID}:${SOHAIB_ID}:`));
   if (!uncle || !uncle.text.includes("Maternal uncle")) throw new Error("English family result missing");
   step("English family relationship term resolves deterministically");
   if (!uncle.text.includes(`from ${DEFAULT_PERSON_NAME}`)) throw new Error("Family result omits current perspective");
@@ -378,15 +386,15 @@ try {
 
   await submitSearch("ماموں");
   results = await searchResults();
-  if (!results.some((row) => row.id?.startsWith(`family:${DEFAULT_PERSON_ID}:sohaib_hussain:`))) throw new Error("Urdu family result missing");
+  if (!results.some((row) => row.id?.startsWith(`family:${DEFAULT_PERSON_ID}:${SOHAIB_ID}:`))) throw new Error("Urdu family result missing");
   step("Urdu family relationship term resolves the same canonical target");
   if (!results.some((row) => row.text.includes("ماموں"))) throw new Error("Urdu result text is not visible");
   step("Urdu result text remains readable");
 
   await submitSearch("second cousin");
-  const firstMultipath = (await searchResults()).filter((row) => row.id?.includes(":maham_mansoor:"));
+  const firstMultipath = (await searchResults()).filter((row) => row.id?.includes(`:${MAHAM_ID}:`));
   await submitSearch("second cousin");
-  const secondMultipath = (await searchResults()).filter((row) => row.id?.includes(":maham_mansoor:"));
+  const secondMultipath = (await searchResults()).filter((row) => row.id?.includes(`:${MAHAM_ID}:`));
   if (firstMultipath.length < 2 || new Set(firstMultipath.map((row) => row.id)).size !== firstMultipath.length ||
       JSON.stringify(firstMultipath.map((row) => row.id)) !== JSON.stringify(secondMultipath.map((row) => row.id))) {
     throw new Error("Multipath family results are missing, collapsed, duplicated, or unstable");
@@ -394,15 +402,15 @@ try {
   step("Multipath family results retain distinct stable path IDs in deterministic order");
 
   await submitSearch("father");
-  await page.waitForFunction((prefix) => [...document.querySelectorAll(".search-result")].some((node) => node.getAttribute("data-result-id")?.startsWith(prefix)), {}, `family:${DEFAULT_PERSON_ID}:mansoor_hussain:`);
+  await page.waitForFunction((prefix) => [...document.querySelectorAll(".search-result")].some((node) => node.getAttribute("data-result-id")?.startsWith(prefix)), {}, `family:${DEFAULT_PERSON_ID}:${MANSOOR_ID}:`);
   await page.click(".perspective-current");
   await clickText(".perspective-dropdown", "Irsa Naz");
   await page.waitForFunction(() => document.querySelector(".perspective-current")?.textContent?.includes("Irsa Naz"));
   step("The explicit perspective selector changes perspective");
-  await page.waitForFunction(() => {
+  await page.waitForFunction((prefix) => {
     const nodes = [...document.querySelectorAll(".search-result")];
-    return nodes.some((node) => node.getAttribute("data-result-id")?.startsWith("family:irsa_naz:israr_hussain:"));
-  }, { timeout: 20_000 });
+    return nodes.some((node) => node.getAttribute("data-result-id")?.startsWith(prefix));
+  }, { timeout: 20_000 }, `family:${IRSA_ID}:${ISRAR_ID}:`);
   if ([...await page.$$eval(".search-result", (nodes) => nodes.map((node) => node.getAttribute("data-result-id")))].some((id) => id?.startsWith(`family:${DEFAULT_PERSON_ID}:`))) {
     throw new Error("Old-perspective family results survived recomputation");
   }
@@ -474,11 +482,11 @@ try {
       const payload = {
         query: term,
         normalized_query: term,
-        perspective: { id: "mohammad_yahya_hussain", name: "Mohammad Yahya Hussain" },
+        perspective: { id: "mohammad_yahya_hussain--MYH01", name: "Mohammad Yahya Hussain" },
         results: [{
-          result_id: `person:${slow ? "muaaz" : "irsa_naz"}`,
+          result_id: `person:${slow ? "muaaz--M01" : "irsa_naz--IN01"}`,
           category: "PERSON",
-          person_id: slow ? "muaaz" : "irsa_naz",
+          person_id: slow ? "muaaz--M01" : "irsa_naz--IN01",
           title: slow ? "Slow Result" : "Fast Result",
           subtitle: "Person",
           match: "Canonical name",

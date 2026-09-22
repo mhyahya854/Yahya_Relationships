@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .. import config, db
+from ..data_root.manager import DataRootManager
 from ..domain.mutations.history import (
     pop_latest_snapshot,
     record_pre_mutation_snapshot,
@@ -229,7 +230,6 @@ def create_person(
         raise errors.ValidationError("Unsupported marital status value.")
 
     from ..data_root.errors import DataRootReadOnlyError
-    from ..data_root.manager import DataRootManager
     from ..domain.maintenance import check_maintenance_lock
 
     check_maintenance_lock()
@@ -273,7 +273,19 @@ def create_person(
 
         effective_category = category
         if not effective_category and is_canonical:
-            effective_category = "Family"
+            requested_groups = {
+                str(value).strip().casefold()
+                for value in ((group_ids or []) + ([group_id] if group_id else []))
+                if str(value).strip()
+            }
+            if "family" in requested_groups:
+                effective_category = "Family"
+            elif requested_groups.intersection({"friends", "close_friends", "close friends"}):
+                effective_category = "Friends"
+            else:
+                effective_category = "Family"
+        if effective_category not in (None, "Me", "Family", "Friends"):
+            raise errors.ValidationError("Category must be Me, Family, or Friends.")
 
         if has_category_col:
             connection.execute(
@@ -475,7 +487,10 @@ def update_person(
                 "SELECT 1 FROM pragma_table_info('people') WHERE name = 'category'"
             ).fetchone()
         )
+        is_canonical = db.is_canonical_connection(connection)
         if category is not None and has_category_col:
+            if category not in ("Me", "Family", "Friends"):
+                raise errors.ValidationError("Category must be Me, Family, or Friends.")
             fields.append("category = ?")
             params.append(category)
         if name is not None:
@@ -518,7 +533,23 @@ def update_person(
         elif clear_note_ur:
             fields.append("note_ur = NULL")
 
-        group_moves = []
+        folder_moves = []
+        if (
+            is_canonical
+            and category is not None
+            and category != row["category"]
+        ):
+            people_dir = DataRootManager.get_people_dir()
+            old_folder = people_dir / row["category"] / person_id
+            target_folder = people_dir / category / person_id
+            if old_folder.exists() and old_folder.resolve() != target_folder.resolve():
+                if target_folder.exists():
+                    raise errors.InvalidOperationError(
+                        "A person folder already exists under the target category. "
+                        "Resolve the duplicate folders manually before moving.",
+                        code="FOLDER_EXISTS",
+                    )
+                folder_moves.append((old_folder, target_folder))
         if group_ids is not None:
             target_group_ids = []
             for gid in group_ids:
@@ -564,7 +595,16 @@ def update_person(
                 "SELECT id, slug FROM groups WHERE id = ?", (new_primary_id,)
             ).fetchone()
 
-            if old_primary_row and new_primary_group and old_primary_row["slug"] != new_primary_group["slug"]:
+            # Canonical physical placement is owned by people.category, not by
+            # logical group membership.  A family member who is also a friend
+            # therefore keeps one folder under People/Family.  Only legacy
+            # layouts retain their historical primary-group folder moves.
+            if (
+                not is_canonical
+                and old_primary_row
+                and new_primary_group
+                and old_primary_row["slug"] != new_primary_group["slug"]
+            ):
                 old_folder = config.PEOPLE_DIR / old_primary_row["slug"] / person_id
                 target_folder = config.PEOPLE_DIR / new_primary_group["slug"] / person_id
                 if old_folder.exists() and old_folder.resolve() != target_folder.resolve():
@@ -574,7 +614,7 @@ def update_person(
                             "Resolve the duplicate folders manually before moving.",
                             code="FOLDER_EXISTS",
                         )
-                    group_moves.append((old_folder, target_folder))
+                    folder_moves.append((old_folder, target_folder))
 
         if fields or aliases is not None or group_ids is not None:
             connection.execute("BEGIN")
@@ -615,7 +655,7 @@ def update_person(
             connection.commit()
 
             # Execute folder move safely if primary changed
-            for old_f, target_f in group_moves:
+            for old_f, target_f in folder_moves:
                 if old_f.exists() and not target_f.exists():
                     target_f.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(old_f), str(target_f))
@@ -1179,7 +1219,7 @@ def resolve_unresolved_person(
         if has_alias_table:
             connection.execute(
                 """
-                INSERT OR REPLACE INTO identifier_aliases (
+                INSERT INTO identifier_aliases (
                     old_identifier, canonical_id, entity_type, notes, created_at
                 ) VALUES (?, ?, 'person', ?, ?)
                 """,

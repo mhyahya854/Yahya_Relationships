@@ -78,12 +78,12 @@ def test_data_root_portability_lifecycle(tmp_path, monkeypatch):
     assert DataRootManager.resolve_active_root() == root_a.resolve()
 
     # 2. Verify canonical layout
-    assert (root_a / "Database" / "Main" / "family.db").exists()
-    assert (root_a / "Database" / "People").exists()
+    assert (root_a / "Database" / "relationships.db").exists()
+    assert (root_a / "People").exists()
     assert (root_a / "Database" / "Config" / "data-root.json").exists()
 
     # 3. Verify SQLite integrity
-    db_path = root_a / "Database" / "Main" / "family.db"
+    db_path = root_a / "Database" / "relationships.db"
     conn = sqlite3.connect(str(db_path))
     integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
     assert integrity == "ok"
@@ -97,7 +97,7 @@ def test_data_root_portability_lifecycle(tmp_path, monkeypatch):
         group_id="family",
     )
     person_id = person["id"]
-    assert person_id.replace("_", "").isalnum()
+    assert person_id == "jane_doe--JD01"
 
     # Write UTF-8 journal with Unicode
     journal_text = "# Jane Doe\n\nNotes with UTF-8 symbols: ❖ ⌁ ◉ — Special text: résumé, café, façade.\n"
@@ -129,7 +129,7 @@ def test_data_root_portability_lifecycle(tmp_path, monkeypatch):
     assert DataRootManager.resolve_active_root() == root_b.resolve()
 
     # Verify SQLite on restored root B
-    db_b = root_b / "Database" / "Main" / "family.db"
+    db_b = root_b / "Database" / "relationships.db"
     conn_b = sqlite3.connect(str(db_b))
     assert conn_b.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     count = conn_b.execute("SELECT COUNT(*) FROM people").fetchone()[0]
@@ -187,10 +187,10 @@ def test_paths_with_spaces_and_unicode(tmp_path, monkeypatch):
         birth_year=2000,
         group_id="family",
     )
-    assert person["id"] == "m_nchen_sch_n"
-    journal_path = Path(person["folder"]) / "journal.md"
+    assert person["id"] == "munchen_schon--MS01"
+    journal_path = Path(person["folder"]) / "journal(personal thoughts).md"
     assert journal_path.exists()
-    assert journal_path == complex_root / "Database" / "People" / "Family" / person["id"] / "journal.md"
+    assert journal_path == complex_root / "People" / "Family" / person["id"] / "journal(personal thoughts).md"
 
 
 def test_case_sensitivity_safety(tmp_path, monkeypatch):
@@ -209,12 +209,12 @@ def test_case_sensitivity_safety(tmp_path, monkeypatch):
         birth_year=1990,
         group_id="family",
     )
-    assert person["id"] == person["id"].lower()
-    assert person["id"] == "test_person"
+    assert person["id"].split("--", 1)[0] == person["id"].split("--", 1)[0].lower()
+    assert person["id"] == "test_person--TP01"
     assert person["groups"][0]["id"] == "family"
-    journal_path = Path(person["folder"]) / "journal.md"
+    journal_path = Path(person["folder"]) / "journal(personal thoughts).md"
     assert journal_path.exists()
-    assert journal_path == root / "Database" / "People" / "Family" / "test_person" / "journal.md"
+    assert journal_path == root / "People" / "Family" / "test_person--TP01" / "journal(personal thoughts).md"
 
 
 def test_case_tolerant_existing_folder_reuse(tmp_path, monkeypatch):
@@ -228,8 +228,8 @@ def test_case_tolerant_existing_folder_reuse(tmp_path, monkeypatch):
     initialize_new_data_root(str(root), owner_name="Owner")
 
     # Simulate existing data root where the group folder was named lowercase 'family'
-    canonical_family = root / "Database" / "People" / "Family"
-    lowercase_group_dir = root / "Database" / "People" / "family"
+    canonical_family = root / "People" / "Family"
+    lowercase_group_dir = root / "People" / "family"
     if canonical_family.exists() and canonical_family != lowercase_group_dir:
         canonical_family.rename(lowercase_group_dir)
     else:
@@ -243,7 +243,7 @@ def test_case_tolerant_existing_folder_reuse(tmp_path, monkeypatch):
     )
     folder = Path(person["folder"])
     assert folder.parent.name.lower() == "family"
-    assert (folder / "journal.md").exists()
+    assert (folder / "journal(personal thoughts).md").exists()
 
 
 def test_data_root_independent_of_cwd(tmp_path, monkeypatch):

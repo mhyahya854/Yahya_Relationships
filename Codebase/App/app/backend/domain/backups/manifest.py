@@ -12,6 +12,8 @@ from typing import Any, Dict, List
 
 from ... import config
 from ...data_root.errors import BackupManifestInvalidError
+from ...data_root.manager import DataRootManager
+from .paths import native_io_path, sqlite_read_only_uri
 
 BACKUP_KIND = "people-relationships-backup"
 BACKUP_FORMAT_VERSION = 1
@@ -43,20 +45,26 @@ _LEGACY_REQUIRED = {
 
 def file_sha256(path: Path) -> str:
     hasher = hashlib.sha256()
-    with path.open("rb") as handle:
+    with native_io_path(path).open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
 
 
 def _database_metadata(database: Path) -> tuple[int, int]:
-    connection = sqlite3.connect(str(database))
+    connection = sqlite3.connect(sqlite_read_only_uri(database), uri=True)
     try:
         person_count = int(connection.execute("SELECT COUNT(*) FROM people").fetchone()[0])
         row = connection.execute(
             "SELECT value FROM metadata WHERE key = 'app_schema_version'"
         ).fetchone()
-        schema_version = int(row[0]) if row else int(connection.execute("PRAGMA user_version").fetchone()[0])
+        metadata_version = int(row[0]) if row else 0
+        pragma_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+        if metadata_version and pragma_version and metadata_version != pragma_version:
+            raise BackupManifestInvalidError(
+                "Database metadata schema version disagrees with PRAGMA user_version."
+            )
+        schema_version = metadata_version or pragma_version
         return person_count, schema_version
     finally:
         connection.close()
@@ -75,22 +83,24 @@ def build_backup_manifest(
     db_candidates = [backup_dir / "data" / "relationships.db", backup_dir / "data" / "family.db"]
     database = next((d for d in db_candidates if d.is_file()), db_candidates[1])
     person_count, schema_version = _database_metadata(database)
+    scan_root = native_io_path(backup_dir)
+    people_root = scan_root / "people"
     journal_count = sum(
         1
-        for path in (backup_dir / "people").rglob("*")
+        for path in people_root.rglob("*")
         if path.is_file() and path.name in ("journal(personal thoughts).md", "journal.md")
     )
 
     file_entries: List[Dict[str, Any]] = []
-    for file_path in sorted(backup_dir.rglob("*"), key=lambda value: value.as_posix()):
+    for file_path in sorted(scan_root.rglob("*"), key=lambda value: value.as_posix()):
         if file_path.is_symlink():
             raise BackupManifestInvalidError(
-                f"Symbolic links are not allowed in backups: {file_path.relative_to(backup_dir).as_posix()}"
+                f"Symbolic links are not allowed in backups: {file_path.relative_to(scan_root).as_posix()}"
             )
         if file_path.is_file() and file_path.name != "manifest.json":
             file_entries.append(
                 {
-                    "path": file_path.relative_to(backup_dir).as_posix(),
+                    "path": file_path.relative_to(scan_root).as_posix(),
                     "sha256": file_sha256(file_path),
                     "size_bytes": file_path.stat().st_size,
                 }
@@ -111,11 +121,11 @@ def build_backup_manifest(
         "total_size_bytes": sum(entry["size_bytes"] for entry in file_entries),
         "person_count": person_count,
         "journal_count": journal_count,
-        # Informational only. Restore never reads this to choose a destination.
-        "source_root": str(source_root.resolve()),
+        # Portable identity only; never leak an absolute machine-specific path.
+        "source_root_id": DataRootManager.read_root_metadata(source_root).get("root_id"),
         "files": file_entries,
     }
-    (backup_dir / "manifest.json").write_text(
+    (scan_root / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
@@ -196,7 +206,7 @@ def validate_backup_manifest(data: Any) -> Dict[str, Any]:
 
 
 def read_backup_manifest(backup_dir: Path) -> Dict[str, Any]:
-    manifest_file = backup_dir.resolve() / "manifest.json"
+    manifest_file = native_io_path(backup_dir) / "manifest.json"
     if not manifest_file.is_file():
         raise BackupManifestInvalidError(f"No manifest.json found at '{backup_dir}'.")
     try:

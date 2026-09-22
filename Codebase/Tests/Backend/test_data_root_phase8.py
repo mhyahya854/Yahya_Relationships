@@ -84,7 +84,7 @@ def test_healthy_root_status_exposes_machine_fields(tmp_path):
     root = make_root(tmp_path, "healthy", "Status Owner")
     status = service.get_data_root_status()
     assert status["state"] == "HEALTHY"
-    assert status["schema_version"] == 2
+    assert status["schema_version"] == 3
     assert status["root_id"]
     assert status["data_root_format_version"] == 1
     assert status["active_root"] == str(root.resolve())
@@ -115,7 +115,7 @@ def test_corrupt_database_is_invalid(tmp_path):
 
 def test_missing_journal_is_repairable(tmp_path):
     root = make_root(tmp_path, "repairable")
-    next((root / "Database" / "People").rglob("journal.md")).unlink()
+    next((root / "People").rglob("journal(personal thoughts).md")).unlink()
     assert service.get_data_root_status()["state"] == "REPAIRABLE"
 
 
@@ -140,7 +140,7 @@ def test_candidate_inspection_returns_metadata_without_switching(tmp_path):
     assert candidate["can_switch"] is True
     assert candidate["person_count"] == 1
     assert candidate["journal_count"] == 1
-    assert candidate["schema_version"] == 2
+    assert candidate["schema_version"] == 3
     assert candidate["root_id"]
     assert bootstrap_path().read_bytes() == before
 
@@ -192,18 +192,20 @@ def test_bootstrap_failure_preserves_old_bytes_and_cleans_temp(tmp_path, monkeyp
 
 def test_create_new_uses_user_owner_and_default_perspective(tmp_path):
     root = make_root(tmp_path, "new", "Amina Example")
-    connection = sqlite3.connect(root / "Database" / "Main" / "family.db")
+    connection = sqlite3.connect(root / "Database" / "relationships.db")
     try:
         owner = connection.execute("SELECT id, name, gender FROM people").fetchone()
         focus = connection.execute("SELECT value FROM metadata WHERE key='focus_person'").fetchone()[0]
         schema = connection.execute("SELECT value FROM metadata WHERE key='app_schema_version'").fetchone()[0]
     finally:
         connection.close()
-    assert owner == ("amina_example", "Amina Example", None)
+    assert owner == ("amina_example--AE01", "Amina Example", None)
     assert focus == owner[0]
-    assert schema == "2"
+    assert schema == "3"
     assert json.loads((root / "Database" / "Config" / "state.json").read_text())["perspective_person_id"] == owner[0]
-    assert len(list((root / "Database" / "People").rglob("journal.md"))) == 1
+    owner_folder = root / "People" / "Me" / owner[0]
+    assert (owner_folder / "journal(personal thoughts).md").is_file()
+    assert len(list(owner_folder.iterdir())) == 7
 
 
 @pytest.mark.parametrize("kind", ["random", "valid"])
@@ -303,7 +305,7 @@ def test_switch_blocks_corrupt_and_unsupported_schema(tmp_path):
     with pytest.raises(DataRootInvalidError):
         service.switch_data_root(str(corrupt))
     newer = make_root(tmp_path, "newer")
-    connection = sqlite3.connect(newer / "Database" / "Main" / "family.db")
+    connection = sqlite3.connect(newer / "Database" / "relationships.db")
     connection.execute("UPDATE metadata SET value='99' WHERE key='app_schema_version'")
     connection.execute("PRAGMA user_version=99")
     connection.commit()
@@ -319,12 +321,12 @@ def test_switch_clears_cross_root_undo_history(tmp_path):
     service.switch_data_root(str(root_a))
     create_person(name="Root A mutation")
     assert can_undo() is True
-    before_b = file_hash(root_b / "Database" / "Main" / "family.db")
+    before_b = file_hash(root_b / "Database" / "relationships.db")
     service.switch_data_root(str(root_b))
     assert can_undo() is False
     with pytest.raises(Exception):
         undo_last_mutation()
-    assert file_hash(root_b / "Database" / "Main" / "family.db") == before_b
+    assert file_hash(root_b / "Database" / "relationships.db") == before_b
 
 
 def test_restore_external_backup_to_separate_new_root(tmp_path):
@@ -478,7 +480,7 @@ def test_backend_health_is_reachable_when_unconfigured_and_malformed(tmp_path):
 def test_create_owner_uses_each_supported_optional_gender(tmp_path, gender):
     root = tmp_path / gender
     result = service.initialize_new_data_root(str(root), f"{gender.title()} Owner", gender)
-    connection = sqlite3.connect(root / "Database" / "Main" / "family.db")
+    connection = sqlite3.connect(root / "Database" / "relationships.db")
     try:
         assert connection.execute("SELECT gender FROM people WHERE id=?", (result["owner_id"],)).fetchone()[0] == gender
     finally:
@@ -547,9 +549,9 @@ def test_move_rejects_containment_in_both_directions(tmp_path, direction):
 
 def test_safe_repair_restores_supported_items_and_preserves_orphan(tmp_path):
     root = make_root(tmp_path, "repair")
-    journal = next((root / "Database" / "People").rglob("journal.md"))
+    journal = next((root / "People").rglob("journal(personal thoughts).md"))
     journal.unlink()
-    orphan = root / "Database" / "People" / "Other" / "human-review"
+    orphan = root / "People" / "Friends" / "human-review"
     orphan.mkdir(parents=True)
     (orphan / "notes.md").write_text("preserve", encoding="utf-8")
     result = service.safe_repair_active_data_root()
@@ -570,9 +572,9 @@ def test_restore_preserves_backed_up_root_identity(tmp_path):
 def test_move_excludes_recognized_runtime_transients(tmp_path):
     source = make_root(tmp_path, "source")
     transient_files = [
-        source / "Database" / "Main" / "family.db-wal",
-        source / "Database" / "Main" / "family.db-shm",
-        source / "Database" / "People" / ".journal-test.tmp",
+        source / "Database" / "relationships.db-wal",
+        source / "Database" / "relationships.db-shm",
+        source / "People" / ".journal-test.tmp",
         source / "Backups" / ".backup_staging_test" / "partial.bin",
     ]
     for path in transient_files:
@@ -580,9 +582,9 @@ def test_move_excludes_recognized_runtime_transients(tmp_path):
         path.write_bytes(b"transient")
     destination = tmp_path / "moved"
     service.move_data_root(str(destination))
-    assert not (destination / "Database" / "Main" / "family.db-wal").exists()
-    assert not (destination / "Database" / "Main" / "family.db-shm").exists()
-    assert not (destination / "Database" / "People" / ".journal-test.tmp").exists()
+    assert not (destination / "Database" / "relationships.db-wal").exists()
+    assert not (destination / "Database" / "relationships.db-shm").exists()
+    assert not (destination / "People" / ".journal-test.tmp").exists()
     assert not (destination / "Backups" / ".backup_staging_test").exists()
 
 

@@ -84,12 +84,16 @@ export function PersonInfoDrawer({
   perspectiveName,
   onClose,
   onOpenJournal,
+  onNavigateToProfile,
+  onNavigateToFamily,
 }: {
   person: Person;
   perspectiveId: string | null;
   perspectiveName: string;
   onClose: () => void;
   onOpenJournal: (person: Person) => void;
+  onNavigateToProfile?: (personId: string) => void;
+  onNavigateToFamily?: (personId: string) => void;
 }) {
   const [tab, setTab] = useState<InfoTab>("overview");
   const [profile, setProfile] = useState<PersonProfileData | null>(null);
@@ -205,6 +209,20 @@ export function PersonInfoDrawer({
         {tabs.map((item) => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)}>{item.label}</button>)}
       </div>
       <div className="person-info-drawer-body" role="tabpanel">{tabContent()}</div>
+      {(onNavigateToProfile || onNavigateToFamily) && (
+        <footer className="person-info-drawer-actions">
+          {onNavigateToProfile && (
+            <Button kind="ghost" onClick={() => onNavigateToProfile(person.id)}>
+              <Icon name="profile" /> View Profile
+            </Button>
+          )}
+          {onNavigateToFamily && (
+            <Button kind="ghost" onClick={() => onNavigateToFamily(person.id)}>
+              <Icon name="family" /> View Family
+            </Button>
+          )}
+        </footer>
+      )}
     </aside>
   );
 }

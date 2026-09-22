@@ -1,8 +1,8 @@
 # Mosaic Phase 11 — Canonical Data Verification Report
 
 > **STATUS:**
-> `PHASE 11 — PROVISIONALLY IMPLEMENTED`  
-> `SOL AUDIT REQUIRED BEFORE FREEZE`
+> `HISTORICAL PROVISIONAL VERIFICATION — SUPERSEDED`
+> See [Phase 11 Independent Audit](phase11-independent-audit.md) for the freeze evidence and current test totals.
 
 ---
 
@@ -25,7 +25,7 @@ The original authoritative family database was preserved completely untouched in
 
 ### 2.2 Canonical Target Database
 - **File:** `Database/relationships.db`
-- **SHA-256:** `4bb9feb46c1186124be19809e5491c0ce60f6a38a76395ed8f9560652f56cfeb`
+- **SHA-256 after independent repair:** `95faa21cd46a8ee7d64455fe3aa2a881410bf734630f46a51e694b4ba6c41a2c`
 - **Size:** 266,240 bytes
 - **Pragma `user_version`:** `3`
 - **Integrity Check:** `ok`
@@ -43,7 +43,7 @@ The original authoritative family database was preserved completely untouched in
 Comparison of record counts between `Database/Main/family.db` and canonical `Database/relationships.db`:
 
 ```text
-Table                    family.db (v2)    relationships.db (v3)    Parity Check
+Table                    family.db (v1)    relationships.db (v3)    Parity Check
 --------------------------------------------------------------------------------
 people                   35                35                       PASS (100%)
 parent_child             44                44                       PASS (100%)
@@ -100,9 +100,8 @@ Codebase\.venv\Scripts\pytest Codebase/Tests/Backend -q
 ```
 
 **Test Results:**
-- **Total Tests Collected:** 512
-- **Passed:** 511
-- **Skipped:** 1 (`test_packaged_electron_launch_in_frozen_mode` in frozen suite, expected outside PyInstaller binary)
+- **Historical provisional run:** 512 collected, 511 passed, 1 skipped.
+- **Current authoritative totals:** recorded in `phase11-independent-audit.md`.
 - **Failed:** 0
 - **Duration:** 152.88 seconds
 - **Pass Rate:** 100% of runnable tests
@@ -132,7 +131,7 @@ Codebase\.venv\Scripts\python Codebase/Scripts/migrate_canonical.py --verify
 ```text
 Data Root Health: OK
   Layout: canonical
-  Root: C:\Users\mhyah\OneDrive\Desktop\Digital Brain\Projects\Family Relationships
+  Root: <Data Root>
   DB Schema: v3, People: 35
 ```
 
@@ -140,7 +139,8 @@ Data Root Health: OK
 
 ## 7. Reversibility & Rollback Procedure
 
-If the later Sol audit identifies any architectural defect requiring complete rollback to the Phase 10 baseline:
+The independent audit superseded this provisional rollback checklist. If a later
+architectural review requires rollback to the Phase 10 baseline:
 
 1. Restore from the pre-migration safety backup:
    ```powershell

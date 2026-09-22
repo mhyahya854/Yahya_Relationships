@@ -35,7 +35,7 @@ Mosaic follows a strict separation of concerns across its stack:
                               v
 +-------------------------------------------------------------+
 |                  Portable Data Root Brain                   |
-|       SQLite (Database/Main/family.db) + Markdown Journals   |
+|       SQLite (Database/relationships.db) + Markdown Journals |
 +-------------------------------------------------------------+
 ```
 
@@ -52,7 +52,7 @@ Mosaic follows a strict separation of concerns across its stack:
    - Tauri 2 compiles into native system packages (NSIS/MSI for Windows, DMG/.app for macOS, AppImage/.deb for Linux).
    - Desktop manages sidecar process lifecycle (spawning, dynamic port assignment, readiness polling, child tracking, clean termination).
 4. **OS-Neutral Data Root**:
-   - Relationship data (`Database/Main/family.db`, person journals in `Database/People/`, backups in `Backups/`) is never stored with machine-specific absolute paths.
+   - Relationship data (`Database/relationships.db`, person records in `People/`, backups in `Backups/`) is never stored with machine-specific absolute paths.
    - Data roots are 100% portable between Windows, macOS, and Linux.
 
 ---
@@ -96,8 +96,8 @@ The Python backend is packaged via PyInstaller using `Codebase/Packaging/Python/
   - Asset resolution (`sys._MEIPASS` / frozen mode)
 - **Excluded**:
   - All test files (`Tests/`)
-  - Live user databases (`family.db`)
-  - Personal journals (`Database/People/`)
+  - Live user databases (`relationships.db` and supported legacy `family.db`)
+  - Personal journals and person records (`People/`, plus supported legacy `Database/People/`)
   - Backups and private source materials
   - Unneeded PyInstaller hooks (Tkinter, matplotlib, scipy, etc.)
 
@@ -155,13 +155,13 @@ Inside the chosen relationship folder:
 ```text
 <Data Root>/
 ├── Database/
-│   ├── Main/
-│   │   └── family.db       # Standard SQLite 3, UTF-8, PRAGMA integrity_check verified
-│   ├── People/
-│   │   └── <Group>/<PersonID>/journal.md  # Standard UTF-8 Markdown journals
+│   ├── relationships.db    # Canonical SQLite schema 3
+│   ├── Main/family.db      # Preserved historical provenance
 │   ├── Config/
 │   │   └── state.json      # UI perspective state
 │   └── Exports/
+├── People/
+│   └── <Category>/<CanonicalID>/journal(personal thoughts).md
 └── Backups/
 ```
 

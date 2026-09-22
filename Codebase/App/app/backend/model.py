@@ -121,19 +121,18 @@ def _model_from_connection(connection: sqlite3.Connection) -> dict:
             "SELECT * FROM review_notes ORDER BY display_order, id"
         )
     ]
+    identifier_aliases = {}
     has_alias_table = connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='identifier_aliases'"
     ).fetchone()
     if has_alias_table:
-        aliases_map = {
+        identifier_aliases = {
             row["old_identifier"]: row["canonical_id"]
             for row in connection.execute(
                 "SELECT old_identifier, canonical_id FROM identifier_aliases WHERE entity_type = 'person'"
             )
         }
-        if aliases_map:
-            metadata["identifier_aliases"] = aliases_map
-    return {
+    result = {
         "metadata": metadata,
         "people": people,
         "parent_child": parent_child,
@@ -141,6 +140,9 @@ def _model_from_connection(connection: sqlite3.Connection) -> dict:
         "sibling_groups": sibling_groups,
         "review_notes": review_notes,
     }
+    if identifier_aliases:
+        result["identifier_aliases"] = identifier_aliases
+    return result
 
 
 def validate_model(model: dict) -> None:

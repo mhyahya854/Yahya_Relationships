@@ -52,6 +52,8 @@ class DataRootManager:
     """Singleton/Central manager for active data root path resolution."""
 
     _override_root: Optional[Path] = None
+    CANONICAL_LAYOUT = "canonical-v3"
+    INCOMPLETE_MARKERS = (".migration_incomplete.json", ".restore_incomplete.json")
 
     @classmethod
     def set_override_root(cls, path: Path | None) -> None:
@@ -168,6 +170,40 @@ class DataRootManager:
         return cls.get_bootstrap_root()
 
     @classmethod
+    def has_incomplete_operation(cls, root: Path | None = None) -> bool:
+        r = root.resolve() if root else cls.resolve_active_root()
+        return any((r / name).is_file() for name in cls.INCOMPLETE_MARKERS)
+
+    @classmethod
+    def is_canonical_root(cls, root: Path | None = None) -> bool:
+        """Return whether a root is committed to the Phase-11 canonical layout.
+
+        This deliberately does not require ``relationships.db`` to exist: a
+        missing canonical database must remain a visible failure, never turn
+        into permission to fall back to historical ``family.db``.
+        """
+        r = root.resolve() if root else cls.resolve_active_root()
+        metadata = cls.read_root_metadata(r)
+        migration_marker = (r / ".migration_incomplete.json").is_file()
+        restore_marker = r / ".restore_incomplete.json"
+        restore_targets_canonical = False
+        if restore_marker.is_file():
+            try:
+                marker_payload = json.loads(restore_marker.read_text(encoding="utf-8"))
+                restore_targets_canonical = marker_payload.get("target_layout") == "canonical"
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                restore_targets_canonical = True
+        return bool(
+            metadata.get("storage_layout") == cls.CANONICAL_LAYOUT
+            or (r / "Database" / "relationships.db").is_file()
+            or (r / "relationships.db").is_file()
+            or (r / "data" / "relationships.db").is_file()
+            or (r / "Database" / "HISTORICAL_FAMILY_DB.md").is_file()
+            or migration_marker
+            or restore_targets_canonical
+        )
+
+    @classmethod
     def get_database_path(cls, root: Path | None = None) -> Path:
         r = root.resolve() if root else cls.resolve_active_root()
         # 1. Primary canonical SQLite store: Database/relationships.db
@@ -182,7 +218,11 @@ class DataRootManager:
         db_data_rel = r / "data" / "relationships.db"
         if db_data_rel.exists():
             return db_data_rel
-        # 4. Fallback to legacy family.db locations if unmigrated
+        # A root committed to canonical storage stays canonical even if its DB
+        # is missing. Returning the expected path makes all callers fail closed.
+        if cls.is_canonical_root(r):
+            return db_rel
+        # 4. Fallback to legacy family.db locations only for unmigrated roots.
         db_main = r / "Database" / "Main" / "family.db"
         if db_main.exists():
             return db_main
@@ -193,17 +233,14 @@ class DataRootManager:
         if db_root.exists():
             return db_root
 
-        # If neither exists: check if canonical People/ directory exists
-        if (r / "People").is_dir() and not (r / "Database" / "Main").is_dir():
-            return db_rel
         # Otherwise default to legacy main_db for unmigrated / newly initialized roots
         return db_main
 
     @classmethod
     def get_people_dir(cls, root: Path | None = None) -> Path:
         r = root.resolve() if root else cls.resolve_active_root()
-        # 1. If canonical relationships.db exists, people dir is top-level People/
-        if (r / "Database" / "relationships.db").exists() or (r / "relationships.db").exists():
+        # 1. Canonical roots always use top-level People/, including repair states.
+        if cls.is_canonical_root(r):
             return r / "People"
 
         # 2. Legacy Pass 4 / Phase 8 layout: Database/People
@@ -261,14 +298,9 @@ class DataRootManager:
         r = root.resolve() if root else cls.resolve_active_root()
         if not r.exists():
             return False
-        # Windows directory writable probe: try creating and deleting a temporary probe file
-        probe_file = r / f".write_test_{uuid.uuid4().hex}"
-        try:
-            probe_file.touch(exist_ok=False)
-            probe_file.unlink()
-            return False
-        except (OSError, PermissionError):
-            return True
+        # Status inspection must be read-only. Avoid the former create/delete
+        # probe, which mutated a root merely by asking for its health.
+        return not os.access(r, os.W_OK | os.X_OK)
 
     @classmethod
     def is_active_root_available(cls) -> bool:
@@ -276,7 +308,13 @@ class DataRootManager:
         return r.exists() and cls.get_database_path(r).exists()
 
     @classmethod
-    def ensure_structure(cls, root: Path | None = None, *, create: bool = False) -> None:
+    def ensure_structure(
+        cls,
+        root: Path | None = None,
+        *,
+        create: bool = False,
+        canonical: bool | None = None,
+    ) -> None:
         """Ensure Data Root directory layout exists."""
         r = root.resolve() if root else cls.resolve_active_root()
         if not r.exists():
@@ -286,8 +324,14 @@ class DataRootManager:
                     detail={"code": "DATA_ROOT_NOT_FOUND", "path": str(r)},
                 )
             r.mkdir(parents=True, exist_ok=True)
-        (r / "Database" / "Main").mkdir(parents=True, exist_ok=True)
-        (r / "Database" / "People").mkdir(parents=True, exist_ok=True)
+        canonical_layout = cls.is_canonical_root(r) if canonical is None else canonical
+        if canonical_layout:
+            (r / "People" / "Me").mkdir(parents=True, exist_ok=True)
+            (r / "People" / "Family").mkdir(parents=True, exist_ok=True)
+            (r / "People" / "Friends").mkdir(parents=True, exist_ok=True)
+        else:
+            (r / "Database" / "Main").mkdir(parents=True, exist_ok=True)
+            (r / "Database" / "People").mkdir(parents=True, exist_ok=True)
         (r / "Database" / "Config").mkdir(parents=True, exist_ok=True)
         (r / "Database" / "Sources").mkdir(parents=True, exist_ok=True)
         (r / "Database" / "Exports" / "Family").mkdir(parents=True, exist_ok=True)
@@ -309,6 +353,9 @@ class DataRootManager:
                 "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "root_id": uuid.uuid4().hex,
             }
+            if canonical_layout:
+                metadata["storage_layout"] = cls.CANONICAL_LAYOUT
+                metadata["canonical_database"] = "Database/relationships.db"
             meta_file.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
     @classmethod

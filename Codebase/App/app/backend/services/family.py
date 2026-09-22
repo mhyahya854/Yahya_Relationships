@@ -41,11 +41,13 @@ def _validate_after_write(connection: sqlite3.Connection) -> None:
         raise errors.ValidationError(str(exc), code="FAMILY_VALIDATION") from exc
 
 
-def _require_person(connection: sqlite3.Connection, person_id: str, label: str):
+def _require_person(connection: sqlite3.Connection, person_id: str, label: str) -> str:
+    person_id = db.resolve_canonical_id(connection, person_id)
     if connection.execute(
         "SELECT 1 FROM people WHERE id = ?", (person_id,)
     ).fetchone() is None:
         raise errors.NotFoundError(f"Unknown person ({label}): {person_id}")
+    return person_id
 
 
 def _check_write_allowed() -> None:
@@ -76,8 +78,8 @@ def add_parent_child(
 
     connection = db.get_connection()
     try:
-        _require_person(connection, parent_id, "parent")
-        _require_person(connection, child_id, "child")
+        parent_id = _require_person(connection, parent_id, "parent")
+        child_id = _require_person(connection, child_id, "child")
         if parent_id == child_id:
             raise errors.ValidationError(
                 "A person cannot be their own parent.", code="SELF_PARENT"
@@ -135,6 +137,8 @@ def delete_parent_child(parent_id: str, child_id: str) -> dict:
     record_pre_mutation_snapshot(f"Deleted parent-child: {parent_id} -> {child_id}")
     connection = db.get_connection()
     try:
+        parent_id = db.resolve_canonical_id(connection, parent_id)
+        child_id = db.resolve_canonical_id(connection, child_id)
         existing = connection.execute(
             "SELECT 1 FROM parent_child WHERE parent_id = ? AND child_id = ?",
             (parent_id, child_id),
@@ -168,6 +172,8 @@ def update_parent_child(parent_id: str, child_id: str, *, role: str | None = Non
     record_pre_mutation_snapshot(f"Updated parent-child: {parent_id} -> {child_id}")
     connection = db.get_connection()
     try:
+        parent_id = db.resolve_canonical_id(connection, parent_id)
+        child_id = db.resolve_canonical_id(connection, child_id)
         existing = connection.execute(
             "SELECT role, kind FROM parent_child WHERE parent_id = ? AND child_id = ?",
             (parent_id, child_id),
@@ -219,8 +225,8 @@ def add_marriage(
 
     connection = db.get_connection()
     try:
-        _require_person(connection, person_a, "first spouse")
-        _require_person(connection, person_b, "second spouse")
+        person_a = _require_person(connection, person_a, "first spouse")
+        person_b = _require_person(connection, person_b, "second spouse")
         if person_a == person_b:
             raise errors.ValidationError(
                 "A person cannot marry themselves.", code="SELF_MARRIAGE"
@@ -287,11 +293,16 @@ def add_marriage(
 
 
 def delete_marriage(person_a: str, person_b: str) -> dict:
-    spouse_a, spouse_b = sorted((person_a, person_b))
     _check_write_allowed()
-    record_pre_mutation_snapshot(f"Deleted marriage: {spouse_a} & {spouse_b}")
+    record_pre_mutation_snapshot(f"Deleted marriage: {person_a} & {person_b}")
     connection = db.get_connection()
     try:
+        spouse_a, spouse_b = sorted(
+            (
+                db.resolve_canonical_id(connection, person_a),
+                db.resolve_canonical_id(connection, person_b),
+            )
+        )
         existing = connection.execute(
             "SELECT 1 FROM marriages WHERE spouse_a = ? AND spouse_b = ?",
             (spouse_a, spouse_b),
@@ -341,7 +352,6 @@ def update_marriage(
     year: int | None | object = _UNSET,
     children_status: str | None | object = _UNSET,
 ) -> dict:
-    spouse_a, spouse_b = sorted((person_a, person_b))
     if not _is_unset(status):
         if status is None or status not in MARRIAGE_STATUSES:
             raise errors.ValidationError(f"Unsupported marriage status: {status!r}.")
@@ -359,9 +369,15 @@ def update_marriage(
             raise errors.ValidationError("Marriage year must be between 1800 and 2100.")
 
     _check_write_allowed()
-    record_pre_mutation_snapshot(f"Updated marriage: {spouse_a} & {spouse_b}")
+    record_pre_mutation_snapshot(f"Updated marriage: {person_a} & {person_b}")
     connection = db.get_connection()
     try:
+        spouse_a, spouse_b = sorted(
+            (
+                db.resolve_canonical_id(connection, person_a),
+                db.resolve_canonical_id(connection, person_b),
+            )
+        )
         row = connection.execute(
             "SELECT * FROM marriages WHERE spouse_a = ? AND spouse_b = ?",
             (spouse_a, spouse_b),
@@ -433,8 +449,15 @@ def add_sibling_group(
 
     connection = db.get_connection()
     try:
-        for member in members:
+        members = [
             _require_person(connection, member, "sibling group member")
+            for member in members
+        ]
+        if len(set(members)) != len(members):
+            raise errors.ValidationError(
+                "A sibling group cannot repeat a person through identifier aliases.",
+                code="SIBLING_GROUP_REPEAT",
+            )
         for group in connection.execute("SELECT id FROM sibling_groups").fetchall():
             stored = [
                 row["person_id"]

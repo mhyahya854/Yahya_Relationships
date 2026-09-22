@@ -6464,6 +6464,18 @@ button.icon-button {
   flex: 0 0 auto;
 }
 
+.person-info-drawer-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.person-info-drawer-actions .btn {
+  flex: 1;
+  justify-content: center;
+}
+
 .builder-zone,
 .builder-paths,
 .builder-immediate-list,

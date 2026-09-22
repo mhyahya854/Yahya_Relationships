@@ -2,11 +2,43 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 from pathlib import Path
 from typing import Iterator
+from urllib.parse import quote
 
 from ...data_root.errors import BackupError
 from ...data_root.manager import DataRootManager
+
+
+def native_io_path(path: Path) -> Path:
+    """Return a Windows extended-length path without resolving symlinks.
+
+    Backup payloads include intentionally descriptive directory names.  Their
+    fully qualified paths can exceed the legacy MAX_PATH limit, especially in
+    test roots and restored snapshots.  The prefix is a transport detail only;
+    manifests continue to contain portable POSIX-relative paths.
+    """
+    if os.name != "nt":
+        return path
+    raw = os.path.abspath(str(path))
+    if raw.startswith("\\\\?\\"):
+        return Path(raw)
+    if raw.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + raw[2:])
+    return Path("\\\\?\\" + raw)
+
+
+def sqlite_read_only_uri(path: Path) -> str:
+    """Build a read-only SQLite URI that also accepts Windows long paths."""
+    native = native_io_path(path)
+    return f"file:{quote(str(native), safe=':/')}?mode=ro"
+
+
+def remove_tree(path: Path, *, ignore_errors: bool = False) -> None:
+    """Remove a directory tree using extended-length paths on Windows."""
+    shutil.rmtree(native_io_path(path), ignore_errors=ignore_errors)
 
 
 def iter_backup_directories(root: Path) -> Iterator[Path]:

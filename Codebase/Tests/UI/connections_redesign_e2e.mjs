@@ -238,7 +238,14 @@ try {
   await waitForUrl(`${apiOrigin}/api/health`);
   await waitForUrl(webOrigin);
 
-  const fixture = await seedConnectionsRedesignFixture({ api, post, dataRoot: syntheticRoot, python, fixtureLoader });
+  const fixture = await seedConnectionsRedesignFixture({
+    api,
+    post,
+    dataRoot: syntheticRoot,
+    python,
+    fixtureLoader,
+    environment: env,
+  });
   const health = await api("/api/health");
   assert(health.people === CONNECTIONS_FIXTURE_EXPECTED_PEOPLE, "Synthetic root has an unexpected person count.");
   const defaultGraph = await api(`/api/relationships/graph/neighbors/${fixture.people.mira.id}?perspective_id=${fixture.people.mira.id}&filters=parents,children,siblings,spouses,general`);

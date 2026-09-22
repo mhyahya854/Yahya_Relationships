@@ -62,6 +62,10 @@ def load_data():
     db = DataRootManager.get_database_path()
     if db.exists():
         return read_sqlite_model(db)
+    if DataRootManager.is_canonical_root():
+        raise FileNotFoundError(
+            f"Canonical database is missing at {db}; legacy fallback is blocked."
+        )
     if DB_PATH.exists():
         return read_sqlite_model(DB_PATH)
     if DATA_PATH.exists():
@@ -198,7 +202,7 @@ def validate(data):
 
 
 # ---------------------------------------------------------------------------
-# SQLite persistence (family.db is the authoritative structured store)
+# SQLite persistence (the DataRootManager-selected database is authoritative)
 # ---------------------------------------------------------------------------
 
 SOURCE_KIND_BY_BATCH = {
@@ -904,7 +908,7 @@ def _couple_key(marriage):
 
 def _cluster_id(couple_key):
     """ID of a couple's layout cluster (the colored couple unit)."""
-    return f"u_{couple_key[0]}__{couple_key[1]}"
+    return f"u_{couple_key[0].replace('-', '_')}__{couple_key[1].replace('-', '_')}"
 
 
 def _junction_id(couple_key):
@@ -1352,7 +1356,7 @@ def _biological_parent_index(data):
 def _full_sibling_shared_ancestors(data, parents):
     """Full-sibling facts with unrecorded parents share one calculation-only
     virtual ancestor. The virtual id never appears in the diagram or in
-    family.db and is never treated as a person.""" 
+    the structured database and is never treated as a person."""
     for group in data.get("sibling_groups", []):
         if group.get("type") != "full":
             continue
@@ -2107,7 +2111,7 @@ def _viewer_snapshot(data):
             "updated": data["metadata"].get("updated"),
             "focus_id": data["metadata"].get("focus_person"),
             "source_batches": data["metadata"].get("source_batches", []),
-            "source_of_truth": "family.db",
+            "source_of_truth": Path(DB_PATH).name,
         },
         "people": people_view,
         "relations": relations,
@@ -2167,7 +2171,7 @@ def _kinship_regression_audit(data):
 
 
 def build_mermaid(data):
-    """Return ONE Mermaid diagram string generated from family.db."""
+    """Return one Mermaid diagram generated from the active SQLite store."""
     (
         people_index,
         couples_in_order,
@@ -2211,10 +2215,10 @@ def build_mermaid(data):
 
     lines = [
         "flowchart TB",
-        "  %% Generated from family.db by build_family.py. Source of truth: family.db.",
+        f"  %% Generated from {Path(DB_PATH).name} by build_family.py. Source of truth: {Path(DB_PATH).name}.",
         "  %% Current master layout: maternal left, bridge center, paternal right.",
         "  %% Couple clusters are colored visual units only. Junctions (j_*) are",
-        "  %% layout-only helpers: not people and never written back to family.db.",
+        f"  %% layout-only helpers: not people and never written back to {Path(DB_PATH).name}.",
         "  classDef person fill:#fffefa,stroke:#7b817c,color:#202823;",
         "  classDef matperson fill:#f8e9ed,stroke:#c99ead,color:#202823;",
         "  classDef patperson fill:#e9f0f2,stroke:#96afb5,color:#202823;",
@@ -2481,7 +2485,7 @@ def _derived_focus_section(data):
         "## Derived cousin relationships / اخذ کردہ کزن رشتے",
         "",
         "Calculated from the biological parent-child graph and full-sibling "
-        "facts in family.db; these are not stored as user-stated facts.",
+        f"facts in {Path(DB_PATH).name}; these are not stored as user-stated facts.",
         "",
         "Side labels (maternal / paternal) show which of the focus person's "
         "parents the path runs through. Simple terms: first cousin / پہلے کزن، "
@@ -2507,7 +2511,7 @@ def _derived_focus_section_html(data):
     parts = [
         "<h2>Derived cousin relationships / اخذ کردہ کزن رشتے</h2>",
         "<p>Calculated from the biological parent-child graph and full-sibling "
-        "facts in <code>family.db</code>; these are not stored as user-stated "
+        f"facts in <code>{html_module.escape(Path(DB_PATH).name)}</code>; these are not stored as user-stated "
         "facts. Side labels (maternal / paternal) show which of the focus "
         "person's parents the path runs through. Simple terms: "
         "first cousin / پہلے کزن، second cousin / دوسرے کزن.</p>",
@@ -2588,12 +2592,13 @@ READING_GUIDE = [
 
 
 def render_markdown(data, mermaid_text):
+    database_name = Path(DB_PATH).name
     lines = [
         "# Family Relationships / خاندانی رشتے",
         "",
         _revision_line(data),
         "",
-        "> Generated from `family.db`. Update the data file, then run `python3.11 build_family.py`.",
+        f"> Generated from `{database_name}`. Update the data file, then run `python3.11 build_family.py`.",
         "> `family.md` and `family.html` are generated together from the same Mermaid diagram string.",
         ">",
         "> Reading guide:",
@@ -3158,6 +3163,7 @@ def _with_viewer(core_html, data, mermaid_lib_js):
 
 
 def render_html(data, mermaid_text, mermaid_lib_js=""):
+    database_name = Path(DB_PATH).name
     escaped_mermaid = html_module.escape(mermaid_text, quote=False)
     revision = _revision_line(data)
     (
@@ -3275,7 +3281,7 @@ def render_html(data, mermaid_text, mermaid_lib_js=""):
   <p class="meta">{html_module.escape(revision)}</p>
 </header>
 <div class="notice">
-  <strong>Generated from <code>family.db</code>.</strong> Update the data file, then run
+  <strong>Generated from <code>{database_name}</code>.</strong> Update the data file, then run
   <code>python3.11 build_family.py</code>. This page and <code>family.md</code> are generated from
   the same Mermaid diagram string.
   <ol>
@@ -3535,7 +3541,7 @@ def main():
     rebind_active_root()
     parser = argparse.ArgumentParser(
         description=(
-            "Validate family.db (SQLite is the structured source of truth) "
+            "Validate the active SQLite structured source of truth "
             "and generate family.md + family.html from one Mermaid diagram."
         )
     )
@@ -3581,7 +3587,7 @@ def main():
 
     if args.mark_migration_complete:
         if not DB_PATH.exists():
-            raise FileNotFoundError("family.db is missing; run the migration first.")
+            raise FileNotFoundError("The active SQLite database is missing; run the migration first.")
         connection = _connect(DB_PATH)
         try:
             row = connection.execute(

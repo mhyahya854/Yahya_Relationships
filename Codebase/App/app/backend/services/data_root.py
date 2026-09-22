@@ -20,11 +20,13 @@ from ..data_root.errors import (
 )
 from ..data_root.validation import audit_data_root, safe_repair_data_root
 from ..domain.backups import BackupCategory, SafetyReason, create_backup, restore_backup, verify_backup
+from ..domain.backups.paths import native_io_path, remove_tree
 from ..domain.maintenance import MaintenanceLockContext, is_maintenance_locked
 
 _REPAIRABLE_CODES = {"MISSING_PERSON_FOLDER", "MISSING_JOURNAL", "ARCHIVED_ACTIVE_MISMATCH"}
 _RUNTIME_NAMES = (
     "Database",
+    "People",
     "Backups",
     "family.db",
     "people",
@@ -173,7 +175,12 @@ def inspect_data_root(path: str) -> Dict[str, Any]:
             "health": health.to_dict(),
             "schema_version": health.database.schema_version if health.database else None,
             "person_count": health.database.people_count if health.database else 0,
-            "journal_count": sum(1 for item in DataRootManager.get_people_dir(candidate).rglob("journal.md") if item.is_file()),
+            "journal_count": sum(
+                1
+                for item in native_io_path(DataRootManager.get_people_dir(candidate)).rglob("*")
+                if item.is_file()
+                and item.name in {"journal.md", "journal(personal thoughts).md"}
+            ),
             "issues": [issue.to_dict() for issue in health.issues],
             "can_switch": state in {DataRootState.HEALTHY, DataRootState.READ_ONLY},
             **_metadata_fields(candidate),
@@ -251,6 +258,8 @@ def _validate_application_model(root: Path) -> None:
 
 
 def _create_initial_owner(root: Path, owner_name: str, owner_gender: str | None) -> str:
+    from ..domain.canonical.ids import generate_canonical_person_id
+    from ..domain.canonical.template import initialize_person_folder
     from .people import _next_person_id, _slugify
 
     name = str(owner_name).strip()
@@ -261,11 +270,24 @@ def _create_initial_owner(root: Path, owner_name: str, owner_gender: str | None)
     connection = db.get_connection(DataRootManager.get_database_path(root))
     try:
         connection.execute("BEGIN")
-        owner_id = _next_person_id(connection, _slugify(name))
-        connection.execute(
-            "INSERT INTO people (id, name, display_order, gender) VALUES (?, ?, 0, ?)",
-            (owner_id, name, owner_gender),
-        )
+        canonical = db.is_canonical_connection(connection)
+        if canonical:
+            owner_id = generate_canonical_person_id(name)
+            now = db.utc_now()
+            connection.execute(
+                """
+                INSERT INTO people
+                  (id, name, display_order, gender, category, created_at, updated_at)
+                VALUES (?, ?, 0, ?, 'Me', ?, ?)
+                """,
+                (owner_id, name, owner_gender, now, now),
+            )
+        else:
+            owner_id = _next_person_id(connection, _slugify(name))
+            connection.execute(
+                "INSERT INTO people (id, name, display_order, gender) VALUES (?, ?, 0, ?)",
+                (owner_id, name, owner_gender),
+            )
         connection.execute(
             "INSERT INTO person_groups (person_id, group_id, is_primary) VALUES (?, 'family', 1)",
             (owner_id,),
@@ -279,7 +301,16 @@ def _create_initial_owner(root: Path, owner_name: str, owner_gender: str | None)
             (config.APP_NAME,),
         )
         connection.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('revision', '1')")
-        db.ensure_journal(connection, owner_id, root=root)
+        if canonical:
+            initialize_person_folder(
+                root / "People" / "Me" / owner_id,
+                owner_id,
+                name,
+                primary_category="Me",
+                gender=owner_gender,
+            )
+        else:
+            db.ensure_journal(connection, owner_id, root=root)
         connection.commit()
     except Exception:
         connection.rollback()
@@ -303,7 +334,7 @@ def initialize_new_data_root(target_path: str, owner_name: str, owner_gender: st
     owner_id = ""
     with MaintenanceLockContext(f"INITIALIZE_DATA_ROOT:{target.name}"):
         try:
-            DataRootManager.ensure_structure(staging, create=True)
+            DataRootManager.ensure_structure(staging, create=True, canonical=True)
             db.initialize_database(DataRootManager.get_database_path(staging))
             owner_id = _create_initial_owner(staging, owner_name, owner_gender)
             health = audit_data_root(staging)
@@ -323,7 +354,7 @@ def initialize_new_data_root(target_path: str, owner_name: str, owner_gender: st
             _clear_root_bound_state()
         except Exception:
             if not published:
-                shutil.rmtree(staging, ignore_errors=True)
+                remove_tree(staging, ignore_errors=True)
             raise
     return {"ok": True, "active_root": str(target), "owner_id": owner_id, "health": audit_data_root(target).to_dict()}
 
@@ -358,15 +389,16 @@ def _is_transient(relative: Path) -> bool:
 
 def _runtime_inventory(root: Path) -> list[Dict[str, Any]]:
     rows: list[Dict[str, Any]] = []
+    scan_root = native_io_path(root)
     for name in _RUNTIME_NAMES:
-        payload = root / name
+        payload = scan_root / name
         if not payload.exists():
             continue
         if payload.is_symlink():
             raise DataRootInvalidError(f"Runtime payload contains an unsafe symbolic link: {name}")
         items = [payload] if payload.is_file() else sorted(payload.rglob("*"), key=lambda item: item.as_posix())
         for item in items:
-            relative = item.relative_to(root)
+            relative = item.relative_to(scan_root)
             if _is_transient(relative):
                 continue
             if item.is_symlink():
@@ -383,12 +415,14 @@ def _runtime_inventory(root: Path) -> list[Dict[str, Any]]:
 
 
 def _copy_runtime_payload(source: Path, destination: Path) -> None:
-    destination.mkdir(parents=True, exist_ok=False)
+    native_destination = native_io_path(destination)
+    native_source = native_io_path(source)
+    native_destination.mkdir(parents=True, exist_ok=False)
     for row in _runtime_inventory(source):
         relative = Path(row["path"])
-        target = destination / relative
+        target = native_destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source / relative, target)
+        shutil.copy2(native_source / relative, target)
 
 
 def move_data_root(destination_path: str) -> Dict[str, Any]:
@@ -430,7 +464,7 @@ def move_data_root(destination_path: str) -> Dict[str, Any]:
             _clear_root_bound_state()
         except Exception:
             if not published:
-                shutil.rmtree(staging, ignore_errors=True)
+                remove_tree(staging, ignore_errors=True)
             raise
     return {
         "ok": True,
@@ -484,7 +518,7 @@ def restore_backup_to_data_root(backup_path: str, target_root: str) -> Dict[str,
             _clear_root_bound_state()
         except Exception:
             if not published:
-                shutil.rmtree(staging, ignore_errors=True)
+                remove_tree(staging, ignore_errors=True)
             raise
     return {
         "ok": True,

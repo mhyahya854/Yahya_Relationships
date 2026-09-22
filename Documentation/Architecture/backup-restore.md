@@ -4,8 +4,8 @@
 
 A backup is a local, readable, portable snapshot of the restore-critical Data Root state only:
 
-- `data/family.db`, produced with SQLite's online backup API;
-- `people/`, including every canonical person file and `journal.md` byte;
+- `data/relationships.db` for canonical roots or `data/family.db` for supported legacy roots, produced with SQLite's online backup API;
+- `people/`, including every person file and exact Journal byte;
 - `config/`, containing portable Data Root configuration; and
 - `manifest.json`, containing deterministic metadata, counts, byte sizes, and SHA-256 hashes.
 
@@ -19,13 +19,30 @@ Backup IDs contain a millisecond UTC timestamp, a random short UUID, and a porta
 
 Creation holds the existing process-local maintenance lock, unless it is invoked by an operation that already holds that lock. It checks Data Root writability, builds the snapshot in a hidden staging directory on the destination filesystem, uses `sqlite3.Connection.backup()` for a standalone WAL-safe database, copies People and portable Config without following links, writes a deterministically sorted manifest, and runs full verification. Only a verified staging directory is renamed to its final visible ID. Failure removes staging and never publishes a partial backup.
 
-The format remains backup format v1 and application schema v2. Manifest paths are forward-slash relative paths. `source_root`, when present, is informational only and never controls restore destination.
+The format remains backup format v1. A manifest records the SQLite schema of
+its payload: canonical schema 3 or a supported legacy schema. Manifest paths
+are forward-slash relative paths. New manifests record only portable
+`source_root_id`; historical `source_root` values, if present, are ignored and
+never control restore destination.
 
 ## Manifest and verification
 
-New v1 manifests require kind, format version, creation time, category/reason, display label, application/Data Root/SQLite schema versions, file and byte totals, people and Journal counts, and a sorted file array of relative path, SHA-256, and byte size. The reader rejects missing keys, unsupported kind/version, empty or duplicate paths, absolute paths, traversal, backslashes, drive syntax, malformed hashes, non-integer or negative sizes, missing `data/family.db`, and inconsistent manifest totals.
+New v1 manifests require kind, format version, creation time, category/reason,
+display label, application/Data Root/SQLite schema versions, file and byte
+totals, people and Journal counts, and a sorted file array of relative path,
+SHA-256, and byte size. The reader rejects missing keys, unsupported
+kind/version, empty or duplicate paths, absolute paths, traversal, backslashes,
+drive syntax, malformed hashes, non-integer or negative sizes, a missing
+`data/relationships.db` or `data/family.db`, and inconsistent manifest totals.
 
-Full verification additionally rejects missing, extra, linked, wrong-size, or wrong-hash payload files; requires People and Config components; opens SQLite read-only; runs `PRAGMA integrity_check`; reads schema metadata; compares the schema, person count, and Journal count with the manifest; and returns machine-readable issue codes plus compatibility state. Schema 1 is accepted through the existing migration path, schema 2 is current, and a newer or otherwise unsupported schema is blocked.
+Full verification additionally rejects missing, extra, linked, wrong-size, or
+wrong-hash payload files; requires People and Config components; opens SQLite
+read-only; runs `PRAGMA integrity_check` and `PRAGMA foreign_key_check`; requires
+metadata and `PRAGMA user_version` coherence; compares schema, person count,
+and Journal count with the manifest; and returns machine-readable issue codes
+plus compatibility state. Legacy schemas 1–2 and canonical schema 3 are
+supported in their respective layouts; newer or otherwise unsupported schema
+versions are blocked.
 
 Public backup HTTP endpoints accept only an opaque backup directory name. Resolution searches only the recognized active `Backups` category positions and rejects path separators, absolute paths, traversal, missing IDs, and ambiguous IDs. The separate Data Root recovery workflow may accept a user-selected explicit snapshot directory, but it still performs the same strict manifest and payload verification before restore.
 
@@ -33,7 +50,14 @@ Public backup HTTP endpoints accept only an opaque backup directory name. Resolu
 
 Restore requires the exact `RESTORE` token, a writable Data Root, no competing maintenance operation, and a verified compatible source. A corrupt source is rejected before a safety snapshot or active mutation. Under the maintenance lock the source is verified again, then a separately verified current-state snapshot is published under `Backups/Safety/Pre-Restore` before mutation.
 
-The restore source is copied to a hidden same-filesystem workspace and fully verified again. The active SQLite file, People tree, and portable Config tree are individually renamed into one rollback workspace before their staged replacements are renamed into place. `Backups/` is never part of this switch, so the chosen source, safety snapshot, and older backups survive.
+The restore source is copied to a hidden same-filesystem workspace and fully
+verified again. The active SQLite file, People tree, and portable Config tree
+are individually renamed into one rollback workspace before their staged
+replacements are renamed into place. A canonical backup publishes
+`Database/relationships.db` and top-level `People/`; a legacy backup publishes
+`Database/Main/family.db` and `Database/People/` and is not falsely labeled
+canonical. `Backups/` is never part of this switch, so the chosen source,
+safety snapshot, and older backups survive.
 
 After the switch the backend runs SQLite integrity and schema checks, exact expected person count, Journal readability, the full Data Root audit/reconciliation, and the canonical family model validation when a focus person is configured. Only then is a successful entry appended to restored portable Config history. DB connections are request-scoped, and the frontend reloads only after backend success; there is no stale singleton database handle to invalidate.
 

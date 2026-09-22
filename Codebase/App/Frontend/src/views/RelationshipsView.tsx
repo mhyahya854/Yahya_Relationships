@@ -164,6 +164,8 @@ function RelationshipsContent({
   initialTargetId,
   onTargetChange,
   onTargetUnavailable,
+  onNavigateToProfile,
+  onNavigateToFamily,
 }: NavigationProps) {
   const { perspectiveId, perspectivePerson, defaultId, setPerspective, returnToDefault } = usePerspective();
   const graph = useRelationshipGraph();
@@ -790,6 +792,8 @@ function RelationshipsContent({
               perspectiveName={perspectiveName}
               onClose={() => setInfoPerson(null)}
               onOpenJournal={setJournalFor}
+              onNavigateToProfile={onNavigateToProfile}
+              onNavigateToFamily={onNavigateToFamily}
             />
           )}
 

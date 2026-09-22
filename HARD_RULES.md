@@ -5,7 +5,8 @@ batch). Historical evidence stays in `Database/Sources/`.
 
 ## 1. Data authority
 
-- `family.db` (SQLite) is the authoritative structured family data store.
+- `Database/relationships.db` (SQLite schema 3) is the authoritative structured data store.
+- `Database/Main/family.db` is preserved historical provenance and compatibility material; runtime code must never treat it as a competing authority after canonical migration.
 - `build_family.py` is the only writer of `family.md` and `family.html`.
 - The standalone `family.html` is a generated view; it is never imported back
   as authoritative data.

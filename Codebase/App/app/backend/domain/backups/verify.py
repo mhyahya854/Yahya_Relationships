@@ -10,6 +10,7 @@ from ... import config
 from ...data_root.errors import BackupManifestInvalidError
 from ...data_root.manager import DataRootManager
 from .manifest import file_sha256, read_backup_manifest
+from .paths import native_io_path, sqlite_read_only_uri
 
 
 def _issue(code: str, message: str, path: str | None = None) -> Dict[str, str]:
@@ -46,9 +47,10 @@ def verify_backup(backup_dir: str | Path, root: Path | None = None) -> Dict[str,
     else:
         candidate = backup_dir
     backup_path = candidate.resolve()
+    scan_root = native_io_path(backup_path)
     result = _base_result(backup_path)
     issues: List[Dict[str, str]] = result["issues"]
-    if not backup_path.is_dir():
+    if not scan_root.is_dir():
         issues.append(_issue("BACKUP_NOT_FOUND", "Backup directory does not exist."))
         return result
 
@@ -60,8 +62,8 @@ def verify_backup(backup_dir: str | Path, root: Path | None = None) -> Dict[str,
     result["manifest"] = manifest
 
     actual_files: set[str] = set()
-    for item in sorted(backup_path.rglob("*"), key=lambda value: value.as_posix()):
-        relative = item.relative_to(backup_path).as_posix()
+    for item in sorted(scan_root.rglob("*"), key=lambda value: value.as_posix()):
+        relative = item.relative_to(scan_root).as_posix()
         if item.is_symlink():
             issues.append(_issue("BACKUP_SYMLINK_UNSAFE", "Backup payload contains a symbolic link.", relative))
         elif item.is_file() and relative != "manifest.json":
@@ -72,9 +74,9 @@ def verify_backup(backup_dir: str | Path, root: Path | None = None) -> Dict[str,
         issues.append(_issue("BACKUP_UNEXPECTED_FILE", "Unexpected payload file is not in manifest.", unexpected))
     for entry in manifest["files"]:
         relative = entry["path"]
-        file_path = backup_path.joinpath(*relative.split("/"))
+        file_path = scan_root.joinpath(*relative.split("/"))
         try:
-            file_path.resolve().relative_to(backup_path)
+            file_path.resolve().relative_to(scan_root)
         except ValueError:
             issues.append(_issue("BACKUP_PATH_UNSAFE", "Manifest path escapes the backup root.", relative))
             continue
@@ -89,29 +91,37 @@ def verify_backup(backup_dir: str | Path, root: Path | None = None) -> Dict[str,
             issues.append(_issue("BACKUP_HASH_MISMATCH", "Payload hash does not match manifest.", relative))
 
     for required_dir in ("people", "config"):
-        if not (backup_path / required_dir).is_dir():
+        if not (scan_root / required_dir).is_dir():
             issues.append(_issue("BACKUP_COMPONENT_MISSING", f"Required {required_dir} directory is missing.", required_dir))
 
     db_filename = (
         "relationships.db"
-        if (backup_path / "data" / "relationships.db").is_file()
+        if (scan_root / "data" / "relationships.db").is_file()
         else "family.db"
     )
-    database = backup_path / "data" / db_filename
+    database = scan_root / "data" / db_filename
     db_rel_path = f"data/{db_filename}"
     db_integrity = "missing"
     database_schema: int | None = None
+    pragma_schema: int | None = None
     person_count: int | None = None
     if database.is_file() and db_rel_path in actual_files:
         try:
-            connection = sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)
+            connection = sqlite3.connect(sqlite_read_only_uri(database), uri=True)
             try:
                 db_integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
                 person_count = int(connection.execute("SELECT COUNT(*) FROM people").fetchone()[0])
                 row = connection.execute(
                     "SELECT value FROM metadata WHERE key = 'app_schema_version'"
                 ).fetchone()
-                database_schema = int(row[0]) if row else int(connection.execute("PRAGMA user_version").fetchone()[0])
+                metadata_schema = int(row[0]) if row else 0
+                pragma_schema = int(connection.execute("PRAGMA user_version").fetchone()[0])
+                if metadata_schema and pragma_schema and metadata_schema != pragma_schema:
+                    issues.append(_issue("BACKUP_SCHEMA_MISMATCH", "Database metadata schema disagrees with PRAGMA user_version."))
+                database_schema = metadata_schema or pragma_schema
+                foreign_key_violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+                if foreign_key_violations:
+                    issues.append(_issue("BACKUP_FOREIGN_KEY_VIOLATION", f"Backup database has {len(foreign_key_violations)} foreign-key violation(s)."))
             finally:
                 connection.close()
         except Exception as exc:
@@ -126,7 +136,7 @@ def verify_backup(backup_dir: str | Path, root: Path | None = None) -> Dict[str,
     manifest_schema = manifest.get("sqlite_schema_version")
     if database_schema is not None and manifest_schema != database_schema:
         issues.append(_issue("BACKUP_SCHEMA_MISMATCH", "Manifest schema does not match the database schema."))
-    is_canonical = (backup_path / "data" / "relationships.db").is_file()
+    is_canonical = (scan_root / "data" / "relationships.db").is_file()
     max_supported = getattr(config, "CANONICAL_SCHEMA_VERSION", 3) if is_canonical else config.APP_SCHEMA_VERSION
     compatibility_ok = database_schema is not None and 1 <= database_schema <= max_supported
     compatibility_status = "supported" if compatibility_ok else "unknown"
@@ -140,12 +150,16 @@ def verify_backup(backup_dir: str | Path, root: Path | None = None) -> Dict[str,
         "ok": compatibility_ok,
         "status": compatibility_status,
         "backup_schema": database_schema,
-        "current_schema": config.APP_SCHEMA_VERSION,
+        "current_schema": max_supported,
     }
 
     if person_count is not None and person_count != manifest["person_count"]:
         issues.append(_issue("BACKUP_PERSON_COUNT_MISMATCH", "Database person count does not match manifest."))
-    journal_count = sum(1 for path in (backup_path / "people").rglob("journal.md") if path.is_file())
+    journal_count = sum(
+        1
+        for path in (scan_root / "people").rglob("*")
+        if path.is_file() and path.name in ("journal.md", "journal(personal thoughts).md")
+    )
     if journal_count != manifest["journal_count"]:
         issues.append(_issue("BACKUP_JOURNAL_COUNT_MISMATCH", "Journal count does not match manifest."))
 

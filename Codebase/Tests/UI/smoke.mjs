@@ -265,6 +265,10 @@ await page.waitForFunction(() => !document.querySelector(".modal"), { timeout: 1
 await sleep(800);
 await shot("restore-success");
 report("restore-success state rendered", true);
+await Promise.all([
+  page.waitForNavigation({ waitUntil: "networkidle0", timeout: 30000 }),
+  clickText("button", "Reload Restored Data"),
+]);
 
 // 9. Family Mermaid regression.
 await clickText(".nav-item", "Family Tree");

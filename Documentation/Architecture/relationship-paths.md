@@ -9,7 +9,7 @@ screen can render several independently selected paths in React Flow.
 ## Data flow
 
 ```text
-SQLite facts (Database/Main/family.db)
+SQLite facts (Database/relationships.db; legacy roots use Database/Main/family.db before migration)
     |
     v
 Canonical Python family engine (Codebase/App/app/backend/domain/family/;

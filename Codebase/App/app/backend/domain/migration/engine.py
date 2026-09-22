@@ -16,7 +16,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -28,6 +27,7 @@ from ...data_root.errors import DataRootError, DataRootInvalidError, DataRootRea
 from ...data_root.manager import DataRootManager
 from ...data_root.validation import audit_data_root
 from ..backups import BackupCategory, SafetyReason, create_backup, verify_backup
+from ..backups.paths import remove_tree
 from ..canonical.ids import generate_canonical_person_id, is_valid_canonical_person_id
 from ..canonical.template import (
     canonical_facts_filename,
@@ -37,6 +37,14 @@ from ..canonical.template import (
 )
 from ..family import engine as family_engine
 from ..maintenance import MaintenanceLockContext
+
+
+_MIGRATION_FAILPOINT: str | None = None
+
+
+def _check_failpoint(name: str) -> None:
+    if _MIGRATION_FAILPOINT == name:
+        raise RuntimeError(f"Injected canonical migration failure at: {name}")
 
 
 def _utc_now() -> str:
@@ -49,6 +57,41 @@ def _file_sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def _write_operation_marker(path: Path, payload: Dict[str, Any]) -> None:
+    temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(temp, path)
+
+
+def _recover_interrupted_migration(active_root: Path) -> None:
+    """Remove only artifacts named by Mosaic's own Phase-11 marker."""
+    marker = active_root / ".migration_incomplete.json"
+    if not marker.is_file():
+        return
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise DataRootInvalidError(
+            "Migration recovery marker is unreadable; refusing automatic cleanup.",
+            detail={"code": "MIGRATION_MARKER_INVALID", "path": str(marker)},
+        ) from exc
+    if payload.get("kind") != "mosaic-phase11-migration":
+        raise DataRootInvalidError(
+            "Migration recovery marker is not recognized; refusing automatic cleanup.",
+            detail={"code": "MIGRATION_MARKER_INVALID", "path": str(marker)},
+        )
+    target_db = active_root / "Database" / "relationships.db"
+    target_people = active_root / "People"
+    if payload.get("target_db_created") and target_db.is_file():
+        target_db.unlink()
+    if payload.get("target_people_created") and target_people.is_dir():
+        remove_tree(target_people)
+    for path in active_root.glob(".migration_staging_*"):
+        if path.is_dir() and path.resolve().parent == active_root:
+            remove_tree(path)
+    marker.unlink()
 
 
 def detect_migration_status(root: Optional[Path] = None) -> Dict[str, Any]:
@@ -84,8 +127,21 @@ def detect_migration_status(root: Optional[Path] = None) -> Dict[str, Any]:
                     "people_count": p_count,
                     "db_path": str(canonical_db),
                 }
-        except Exception:
-            pass
+        except Exception as exc:
+            return {
+                "status": "corrupt_canonical",
+                "can_migrate": False,
+                "error": str(exc),
+                "db_path": str(canonical_db),
+            }
+
+    if DataRootManager.is_canonical_root(active_root):
+        return {
+            "status": "canonical_repair_required",
+            "can_migrate": False,
+            "error": "Canonical root is missing a valid Database/relationships.db.",
+            "db_path": str(canonical_db),
+        }
 
     if has_legacy:
         try:
@@ -168,11 +224,27 @@ def plan_migration(root: Optional[Path] = None) -> Dict[str, Any]:
         meta_rows = {
             r["key"]: r["value"] for r in con.execute("SELECT key, value FROM metadata")
         }
-        focus_person = meta_rows.get("focus_person", "mohammad_yahya_hussain")
+        focus_person = meta_rows.get("focus_person")
+        people_ids = {row["id"] for row in people_rows}
+        if not focus_person or focus_person not in people_ids:
+            return {
+                "can_migrate": False,
+                "already_migrated": False,
+                "message": "Cannot identify the owner from metadata.focus_person.",
+                "conflicts": ["A valid metadata.focus_person is required; owner identity will not be guessed."],
+                "warnings": [],
+                "mappings": [],
+            }
 
         id_map: Dict[str, str] = {}
         assigned_canonical: set[str] = set()
         person_mappings: List[Dict[str, Any]] = []
+        has_group_tables = all(
+            con.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?", (table,)
+            ).fetchone()
+            for table in ("groups", "person_groups")
+        )
 
         for p in people_rows:
             old_id = p["id"]
@@ -181,8 +253,27 @@ def plan_migration(root: Optional[Path] = None) -> Dict[str, Any]:
             assigned_canonical.add(can_id)
             id_map[old_id] = can_id
 
-            is_owner = (old_id == focus_person) or (name == "Mohammad Yahya Hussain")
+            is_owner = old_id == focus_person
             category = "Me" if is_owner else "Family"
+            aliases = [
+                row[0]
+                for row in con.execute(
+                    "SELECT alias FROM aliases WHERE person_id = ? ORDER BY display_order, alias",
+                    (old_id,),
+                )
+            ]
+            groups = [
+                row[0]
+                for row in con.execute(
+                    """
+                    SELECT g.name FROM groups g
+                    JOIN person_groups pg ON pg.group_id = g.id
+                    WHERE pg.person_id = ?
+                    ORDER BY pg.is_primary DESC, g.display_order, g.name
+                    """,
+                    (old_id,),
+                )
+            ] if has_group_tables else []
 
             person_mappings.append(
                 {
@@ -191,6 +282,10 @@ def plan_migration(root: Optional[Path] = None) -> Dict[str, Any]:
                     "name": name,
                     "category": category,
                     "is_owner": is_owner,
+                    "aliases": aliases,
+                    "groups": groups,
+                    "birth_year": p["birth_year"],
+                    "gender": p["gender"],
                 }
             )
 
@@ -467,6 +562,10 @@ def _populate_canonical_database(
             p_1 = min(p_a, p_b)
             p_2 = max(p_a, p_b)
             d_from = id_map.get(row["direction_from"], row["direction_from"]) if row["direction_from"] else None
+            label_a_to_b = row["label_a_to_b"]
+            label_b_to_a = row["label_b_to_a"]
+            if (p_1, p_2) != (p_a, p_b):
+                label_a_to_b, label_b_to_a = label_b_to_a, label_a_to_b
             target_con.execute(
                 """
                 INSERT INTO general_relationships (
@@ -480,8 +579,8 @@ def _populate_canonical_database(
                     row["type"],
                     row["directionality"],
                     d_from,
-                    row["label_a_to_b"],
-                    row["label_b_to_a"],
+                    label_a_to_b,
+                    label_b_to_a,
                     row["notes"],
                     row["created_at"],
                     row["updated_at"],
@@ -548,6 +647,9 @@ def _populate_canonical_database(
         "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_version', ?)",
         (config.APP_VERSION,),
     )
+    target_con.execute(
+        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('_source_of_truth', 'relationships.db')"
+    )
     target_con.execute(f"PRAGMA user_version = {int(config.CANONICAL_SCHEMA_VERSION)}")
 
     # Verify integrity and foreign keys
@@ -573,6 +675,8 @@ def execute_migration(
     if DataRootManager.is_read_only(active_root):
         raise DataRootReadOnlyError("Data root is read-only; migration is blocked.")
 
+    _recover_interrupted_migration(active_root)
+
     plan = plan_migration(active_root)
     if not plan["can_migrate"]:
         if plan.get("already_migrated"):
@@ -590,8 +694,31 @@ def execute_migration(
     target_db_path = active_root / "Database" / "relationships.db"
     target_people_dir = active_root / "People"
 
+    if target_db_path.exists() or target_people_dir.exists():
+        raise DataRootInvalidError(
+            "Canonical publication targets already exist without a valid completed migration.",
+            detail={
+                "code": "MIGRATION_TARGET_CONFLICT",
+                "database": str(target_db_path),
+                "people": str(target_people_dir),
+            },
+        )
+
     staging_dir = active_root / f".migration_staging_{uuid.uuid4().hex[:8]}"
-    published = False
+    marker_path = active_root / ".migration_incomplete.json"
+    marker_payload: Dict[str, Any] = {
+        "kind": "mosaic-phase11-migration",
+        "state": "preparing",
+        "target_db_created": False,
+        "target_people_created": False,
+    }
+    marker_created = False
+    root_metadata_path = DataRootManager.get_config_dir(active_root) / "data-root.json"
+    state_file = DataRootManager.get_config_dir(active_root) / "state.json"
+    hist_note = active_root / "Database" / "HISTORICAL_FAMILY_DB.md"
+    original_root_metadata = root_metadata_path.read_bytes() if root_metadata_path.is_file() else None
+    original_state = state_file.read_bytes() if state_file.is_file() else None
+    original_hist_note = hist_note.read_bytes() if hist_note.is_file() else None
 
     with MaintenanceLockContext("MIGRATE_CANONICAL_PHASE11"):
         # 1. Pre-migration Safety Backup
@@ -607,6 +734,7 @@ def execute_migration(
             raise DataRootError("Pre-migration safety backup verification failed. Aborting migration without changes.")
 
         try:
+            _check_failpoint("before_db_staging")
             staging_dir.mkdir(parents=True, exist_ok=False)
             staged_db = staging_dir / "relationships.db"
             staged_people = staging_dir / "People"
@@ -620,16 +748,19 @@ def execute_migration(
             target_con.execute("PRAGMA busy_timeout = 5000")
 
             try:
+                _check_failpoint("during_db_migration")
                 _populate_canonical_database(src_con, target_con, id_map, owner_can_id)
             finally:
                 src_con.close()
                 target_con.close()
+            _check_failpoint("after_db_transformation")
 
             # 3. Build canonical filesystem in staging
             (staged_people / "Me").mkdir(parents=True, exist_ok=True)
             (staged_people / "Family").mkdir(parents=True, exist_ok=True)
             (staged_people / "Friends").mkdir(parents=True, exist_ok=True)
             for m in plan["mappings"]:
+                _check_failpoint("during_folder_staging")
                 can_id = m["canonical_id"]
                 old_id = m["old_id"]
                 name = m["name"]
@@ -639,13 +770,15 @@ def execute_migration(
                 folder.mkdir(parents=True, exist_ok=True)
 
                 # Locate old journal if available
-                src_journal_content: Optional[str] = None
+                src_journal_bytes: Optional[bytes] = None
                 move_info = next((f for f in plan["filesystem_moves"] if f["canonical_id" if "canonical_id" in f else "person_id"] == can_id), None)
                 if move_info and move_info.get("source_folder"):
                     src_j_file = Path(move_info["source_folder"]) / "journal.md"
                     if src_j_file.is_file():
+                        _check_failpoint("during_journal_copy")
                         raw_bytes = src_j_file.read_bytes()
-                        src_journal_content = raw_bytes.decode("utf-8")
+                        raw_bytes.decode("utf-8")
+                        src_journal_bytes = raw_bytes
                         # Verify hash matches
                         src_hash = hashlib.sha256(raw_bytes).hexdigest()
                         if move_info.get("journal_sha256") and src_hash != move_info["journal_sha256"]:
@@ -656,21 +789,58 @@ def execute_migration(
                     can_id,
                     name,
                     primary_category=cat,
-                    initial_journal_content=src_journal_content,
+                    initial_journal_bytes=src_journal_bytes,
+                    aliases=m.get("aliases"),
+                    groups=m.get("groups"),
+                    birth_year=m.get("birth_year"),
+                    gender=m.get("gender"),
                 )
 
-            # 4. Atomic Publication
-            target_db_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(staged_db, target_db_path)
+                if src_journal_bytes is not None:
+                    migrated_journal = folder / canonical_journal_filename()
+                    if migrated_journal.read_bytes() != src_journal_bytes:
+                        raise RuntimeError(f"Journal byte mismatch after staging for {old_id}")
 
-            if target_people_dir.exists():
-                # If target People dir already exists, copy tree
-                shutil.copytree(staged_people, target_people_dir, dirs_exist_ok=True)
-            else:
-                shutil.copytree(staged_people, target_people_dir)
+            # Validate the complete staged payload before any publication.
+            staged_con = sqlite3.connect(f"{staged_db.as_uri()}?mode=ro", uri=True)
+            staged_con.row_factory = sqlite3.Row
+            try:
+                if staged_con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise RuntimeError("Staged canonical database failed integrity_check.")
+                if staged_con.execute("PRAGMA foreign_key_check").fetchall():
+                    raise RuntimeError("Staged canonical database failed foreign_key_check.")
+                if db.get_current_schema_version(staged_con) != config.CANONICAL_SCHEMA_VERSION:
+                    raise RuntimeError("Staged canonical database schema version is incoherent.")
+                if staged_con.execute("SELECT COUNT(*) FROM people").fetchone()[0] != len(plan["mappings"]):
+                    raise RuntimeError("Staged canonical database person count is incomplete.")
+            finally:
+                staged_con.close()
+
+            _check_failpoint("after_validation_before_publish")
+
+            # 4. Recoverable publication. The marker makes every runtime path
+            # fail closed until both components and final verification succeed.
+            target_db_path.parent.mkdir(parents=True, exist_ok=True)
+            _write_operation_marker(marker_path, marker_payload)
+            marker_created = True
+
+            staged_people.rename(target_people_dir)
+            marker_payload.update(state="people_published", target_people_created=True)
+            _write_operation_marker(marker_path, marker_payload)
+            _check_failpoint("after_people_publish_before_db_publish")
+
+            os.replace(staged_db, target_db_path)
+            marker_payload.update(state="database_published", target_db_created=True)
+            _write_operation_marker(marker_path, marker_payload)
+            _check_failpoint("during_publication")
+
+            family_engine.rebind_active_root()
+            post_health = audit_data_root(active_root)
+            if not post_health.ok:
+                raise RuntimeError(f"Post-migration audit failed: {post_health.issues}")
+            _check_failpoint("during_final_verification")
 
             # Preserve historical family.db documentation
-            hist_note = active_root / "Database" / "HISTORICAL_FAMILY_DB.md"
             if not hist_note.exists():
                 hist_note.write_text(
                     "# Historical Family Database Note\n\n"
@@ -684,9 +854,22 @@ def execute_migration(
                     encoding="utf-8",
                 )
 
+            root_metadata = DataRootManager.read_root_metadata(active_root)
+            root_metadata.update(
+                {
+                    "format": "people-relationships-data-root",
+                    "version": 1,
+                    "storage_layout": DataRootManager.CANONICAL_LAYOUT,
+                    "canonical_database": "Database/relationships.db",
+                }
+            )
+            root_metadata_path.parent.mkdir(parents=True, exist_ok=True)
+            root_metadata_path.write_text(
+                json.dumps(root_metadata, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
             # Update state.json with canonical perspective
-            config_dir = DataRootManager.get_config_dir(active_root)
-            state_file = config_dir / "state.json"
             if state_file.exists():
                 try:
                     s_data = json.loads(state_file.read_text(encoding="utf-8"))
@@ -700,16 +883,30 @@ def execute_migration(
                 except Exception:
                     pass
 
-            published = True
-
-            # 5. Post-migration Rebind and Validation
+            marker_path.unlink()
+            marker_created = False
+        except Exception:
+            if target_db_path.is_file():
+                target_db_path.unlink()
+            if target_people_dir.is_dir():
+                remove_tree(target_people_dir)
+            for path, original in (
+                (root_metadata_path, original_root_metadata),
+                (state_file, original_state),
+                (hist_note, original_hist_note),
+            ):
+                if original is None:
+                    if path.exists():
+                        path.unlink()
+                else:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(original)
+            if marker_created and marker_path.exists():
+                marker_path.unlink()
             family_engine.rebind_active_root()
-            post_health = audit_data_root(active_root)
-            if not post_health.ok:
-                raise RuntimeError(f"Post-migration audit failed: {post_health.issues}")
-
+            raise
         finally:
-            shutil.rmtree(staging_dir, ignore_errors=True)
+            remove_tree(staging_dir, ignore_errors=True)
 
     return {
         "ok": True,
@@ -734,4 +931,3 @@ class CanonicalMigrationEngine:
 
     def migrate(self) -> Dict[str, Any]:
         return execute_migration(self.root, dry_run=self.dry_run)
-

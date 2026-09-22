@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .ids import is_valid_canonical_person_id, is_valid_unresolved_person_id
+
 FOLDER_TEMPLATE_DIRECTORIES = (
     "Memories(personal history)",
     "Conversations (Social Media chats)",
@@ -64,8 +66,8 @@ def generate_facts_and_about(
     secondary_relationships: Optional[List[str]] = None,
     groups: Optional[List[str]] = None,
     alternative_group_names: Optional[List[str]] = None,
-    contact_status: str = "Active",
-    historical_relationship_status: str = "Active",
+    contact_status: Optional[str] = None,
+    historical_relationship_status: Optional[str] = None,
     identity_link_evidence: Optional[str] = None,
     identity_notes: Optional[str] = None,
     created_at: Optional[str] = None,
@@ -91,18 +93,18 @@ def generate_facts_and_about(
     when_str = when_we_met.strip() if when_we_met else "Unknown"
     how_str = how_we_met.strip() if how_we_met else "Unknown"
 
-    sec_rel_str = ", ".join(secondary_relationships) if secondary_relationships else "None"
-    groups_str = ", ".join(groups) if groups else "None"
+    sec_rel_str = ", ".join(secondary_relationships) if secondary_relationships else "Unknown"
+    groups_str = ", ".join(groups) if groups else "Unknown"
     alt_groups_str = ", ".join(alternative_group_names) if alternative_group_names else "Unknown"
 
-    c_status = contact_status if contact_status else "Active"
-    h_status = historical_relationship_status if historical_relationship_status else "Active"
+    c_status = contact_status if contact_status else "Unknown"
+    h_status = historical_relationship_status if historical_relationship_status else "Unknown"
 
     evidence_str = identity_link_evidence.strip() if identity_link_evidence else "Unknown"
-    notes_str = identity_notes.strip() if identity_notes else "None"
+    notes_str = identity_notes.strip() if identity_notes else "Unknown"
 
-    created = created_at or utc_now_iso()
-    updated = updated_at or created
+    created = created_at or "Unknown"
+    updated = updated_at or "Unknown"
     verified = last_identity_verification or "Unknown"
 
     lines = [
@@ -163,9 +165,19 @@ def initialize_person_folder(
     *,
     primary_category: str = "Family",
     initial_journal_content: Optional[str] = None,
+    initial_journal_bytes: Optional[bytes] = None,
     **facts_kwargs: Any,
 ) -> None:
     """Initialize a canonical person directory with approved template structure."""
+    if not (
+        is_valid_canonical_person_id(person_id)
+        or is_valid_unresolved_person_id(person_id)
+    ):
+        raise ValueError(f"Unsafe or invalid canonical person ID: {person_id!r}")
+    if folder_path.name != person_id:
+        raise ValueError("Canonical person folder name must exactly match person_id.")
+    if initial_journal_content is not None and initial_journal_bytes is not None:
+        raise ValueError("Provide journal content as text or bytes, not both.")
     folder_path.mkdir(parents=True, exist_ok=True)
 
     for sub_name in FOLDER_TEMPLATE_DIRECTORIES:
@@ -183,5 +195,8 @@ def initialize_person_folder(
 
     journal_path = folder_path / canonical_journal_filename()
     if not journal_path.exists():
-        content = initial_journal_content if initial_journal_content is not None else f"# {name}\n\n"
-        journal_path.write_text(content, encoding="utf-8", newline="\n")
+        if initial_journal_bytes is not None:
+            journal_path.write_bytes(initial_journal_bytes)
+        else:
+            content = initial_journal_content if initial_journal_content is not None else f"# {name}\n\n"
+            journal_path.write_text(content, encoding="utf-8", newline="\n")

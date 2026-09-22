@@ -55,7 +55,8 @@ def test_canonical_id_normalization_and_initials():
     assert compute_initials("Sara Khan") == "SK"
     assert compute_initials("Mohammad Yahya Hussain") == "MYH"
     assert compute_initials("Plato") == "P"
-    assert compute_initials("") == "P"
+    with pytest.raises(ValueError):
+        compute_initials("")
 
 
 def test_canonical_person_id_generation_basic():
@@ -144,7 +145,7 @@ def test_initialize_person_folder_structure(tmp_path):
     assert "SK" in data["Aliases / Nicknames"]
     assert data["Date of Birth"] == "1995"
     assert data["Gender"] == "female"
-    assert data["Contact Status"] == "Active"
+    assert data["Contact Status"] == "Unknown"
 
 
 def test_facts_and_about_explicit_unknowns():

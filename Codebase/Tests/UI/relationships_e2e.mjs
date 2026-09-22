@@ -121,6 +121,13 @@ async function main() {
     }
 
     async function searchPick(name) {
+      const searchVisible = await page.$eval(
+        ".connections-search-dock .person-search input",
+        (input) => input.getClientRects().length > 0,
+      ).catch(() => false);
+      if (!searchVisible) {
+        await page.click(".connections-search-trigger");
+      }
       const input = await page.waitForSelector(".connections-search-dock .person-search input", { visible: true, timeout: 12000 });
       await input.click();
       await page.keyboard.down("Control");
