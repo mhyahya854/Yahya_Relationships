@@ -192,8 +192,8 @@ try {
   if (peopleA.people.length !== 1 || peopleA.people[0].name !== "Alice Root A") throw new Error("Fresh owner records incorrect");
   step("Fresh Data Root contains exactly the initial owner");
   const statusA = await api("/api/data-root");
-  if (statusA.schema_version !== 3 || statusA.data_root_format_version !== 1) throw new Error("Fresh versions incorrect");
-  step("Fresh root keeps schema 3 and Data Root format 1");
+  if (statusA.schema_version !== 4 || statusA.data_root_format_version !== 1) throw new Error("Fresh versions incorrect");
+  step("Fresh root keeps schema 4 and Data Root format 1");
   if (JSON.parse(readFileSync(bootstrap, "utf8")).active_root !== rootA) throw new Error("Bootstrap does not point to Root A");
   step("Atomic isolated bootstrap points to the published root");
   await clickText(".nav", "Family");

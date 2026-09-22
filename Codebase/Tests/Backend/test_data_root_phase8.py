@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from app.backend import db
+from app.backend import config, db
 from app.backend.data_root.errors import DataRootDestinationConflictError, DataRootError, DataRootInvalidError
 from app.backend.data_root.manager import DataRootManager
 from app.backend.domain.backups import create_backup
@@ -84,7 +84,7 @@ def test_healthy_root_status_exposes_machine_fields(tmp_path):
     root = make_root(tmp_path, "healthy", "Status Owner")
     status = service.get_data_root_status()
     assert status["state"] == "HEALTHY"
-    assert status["schema_version"] == 3
+    assert status["schema_version"] == config.CANONICAL_SCHEMA_VERSION
     assert status["root_id"]
     assert status["data_root_format_version"] == 1
     assert status["active_root"] == str(root.resolve())
@@ -140,7 +140,7 @@ def test_candidate_inspection_returns_metadata_without_switching(tmp_path):
     assert candidate["can_switch"] is True
     assert candidate["person_count"] == 1
     assert candidate["journal_count"] == 1
-    assert candidate["schema_version"] == 3
+    assert candidate["schema_version"] == config.CANONICAL_SCHEMA_VERSION
     assert candidate["root_id"]
     assert bootstrap_path().read_bytes() == before
 
@@ -201,7 +201,7 @@ def test_create_new_uses_user_owner_and_default_perspective(tmp_path):
         connection.close()
     assert owner == ("amina_example--AE01", "Amina Example", None)
     assert focus == owner[0]
-    assert schema == "3"
+    assert schema == str(config.CANONICAL_SCHEMA_VERSION)
     assert json.loads((root / "Database" / "Config" / "state.json").read_text())["perspective_person_id"] == owner[0]
     owner_folder = root / "People" / "Me" / owner[0]
     assert (owner_folder / "journal(personal thoughts).md").is_file()

@@ -1,7 +1,7 @@
 """Deterministic, failure-atomic migration to Phase 11 Canonical Data Foundation.
 
 Transforms legacy family.db (schema 1/2) and legacy People layout into:
-- Single authoritative SQLite database: Database/relationships.db (schema 3)
+- Single authoritative SQLite database: Database/relationships.db (schema 4)
 - Canonical person IDs: normalized_full_name--INITIALS##
 - Canonical top-level filesystem: People/Me, People/Family, People/Friends
 - Folder template: facts-and-about.md, journal(personal thoughts).md, subdirectories
@@ -362,6 +362,10 @@ def _populate_canonical_database(
     # 2. Schema extensions
     schema_sql = config.SCHEMA_PATH.read_text(encoding="utf-8")
     target_con.executescript(schema_sql)
+    # A legacy-to-canonical migration creates the current forward authority in
+    # one staged database.  Install Phase 12's generic intake tables here;
+    # this is schema-only and does not scan, alter, or import Raw payloads.
+    db._migrate_v3_to_v4_atomic(target_con)
 
     db._ensure_column(target_con, "people", "category", "ALTER TABLE people ADD COLUMN category TEXT")
     db._ensure_column(target_con, "people", "created_at", "ALTER TABLE people ADD COLUMN created_at TEXT")

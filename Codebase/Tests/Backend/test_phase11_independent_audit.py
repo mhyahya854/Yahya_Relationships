@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from app.backend import db
+from app.backend import config, db
 from app.backend.data_root.errors import DataRootNotFoundError
 from app.backend.data_root.manager import DataRootManager
 from app.backend.domain.backups.create import create_backup
@@ -254,7 +254,7 @@ def test_semantic_row_by_row_migration_parity(tmp_path):
             if key == "focus_person":
                 assert target_metadata[key] == id_map[value]
             elif key == "app_schema_version":
-                assert target_metadata[key] == "3"
+                assert target_metadata[key] == str(config.CANONICAL_SCHEMA_VERSION)
             elif key == "_source_of_truth":
                 assert target_metadata[key] == "relationships.db"
             elif key == "app_name":
@@ -380,7 +380,7 @@ def test_canonical_backup_restore_round_trip_and_runtime_authority(tmp_path):
     verification = verify_backup(Path(backup["path"]))
     assert verification["ok"] is True
     assert "source_root" not in verification["manifest"]
-    assert verification["manifest"]["sqlite_schema_version"] == 3
+    assert verification["manifest"]["sqlite_schema_version"] == config.CANONICAL_SCHEMA_VERSION
 
     destination = tmp_path / "restored-canonical"
     destination.mkdir()

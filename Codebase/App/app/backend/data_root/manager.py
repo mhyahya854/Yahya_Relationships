@@ -336,6 +336,9 @@ class DataRootManager:
         (r / "Database" / "Sources").mkdir(parents=True, exist_ok=True)
         (r / "Database" / "Exports" / "Family").mkdir(parents=True, exist_ok=True)
         (r / "Backups").mkdir(parents=True, exist_ok=True)
+        # Raw is deliberately empty at creation time. Its payload is never
+        # inferred, unpacked, or otherwise populated by the application.
+        (r / "Raw").mkdir(parents=True, exist_ok=True)
 
         (r / "Database" / "Logs").mkdir(parents=True, exist_ok=True)
         (r / "Backups" / "Manual").mkdir(parents=True, exist_ok=True)

@@ -6,7 +6,8 @@ Validates:
 3. Canonical person folder template (5 subdirectories, facts file, journal file).
 4. Facts and about generation and deterministic Markdown parsing.
 5. Migration engine dry-run and atomic execution on isolated copies.
-6. Schema v3 invariants, identifier alias resolution, and backward compatibility.
+6. Phase 11 invariants, identifier alias resolution, and backward compatibility
+   after the forward Phase 12 schema migration.
 7. Kinship perspective audit compatibility with canonical store.
 8. Backup verification and restore compatibility with relationships.db.
 """
@@ -169,7 +170,7 @@ def test_facts_and_about_explicit_unknowns():
 
 @pytest.fixture
 def canonical_test_env(tmp_path, monkeypatch):
-    """Sets up a clean canonical test environment with Schema 3 relationships.db."""
+    """Sets up canonical Phase 11 records in the current forward schema."""
     root = tmp_path / "CanonicalDataRoot"
     root.mkdir()
     db_dir = root / "Database"
@@ -185,6 +186,7 @@ def canonical_test_env(tmp_path, monkeypatch):
     conn.row_factory = sqlite3.Row
     db._bootstrap_new_database(conn, target_schema=3)
     db._migrate_v2_to_v3_atomic(conn)
+    db._migrate_v3_to_v4_atomic(conn)
     conn.close()
 
     monkeypatch.setattr(DataRootManager, "resolve_active_root", lambda: root)
@@ -306,13 +308,14 @@ def test_migration_engine_execution_on_isolated_copy(tmp_path):
     # Original family.db preserved untouched
     assert (isolated_root / "Database" / "Main" / "family.db").is_file()
 
-    # Verify schema version 3
+    # Phase 11 migration still preserves all Phase 11 data while the active
+    # application advances it through the explicit Phase 12 schema version.
     conn = sqlite3.connect(str(canon_db_path))
     conn.row_factory = sqlite3.Row
     user_ver = conn.execute("PRAGMA user_version").fetchone()[0]
-    assert user_ver == 3
+    assert user_ver == config.CANONICAL_SCHEMA_VERSION
     s_row = conn.execute("SELECT value FROM metadata WHERE key = 'app_schema_version'").fetchone()
-    assert s_row["value"] == "3"
+    assert s_row["value"] == str(config.CANONICAL_SCHEMA_VERSION)
 
     # Verify table counts match source
     src_conn = sqlite3.connect(str(isolated_root / "Database" / "Main" / "family.db"))
@@ -383,18 +386,18 @@ def test_kinship_audit_on_migrated_store(tmp_path):
 
 
 # ==============================================================================
-# 6. Backup Verification Compatibility with Schema v3
+# 6. Backup Verification Compatibility with the forward canonical schema
 # ==============================================================================
 
-def test_backup_verification_with_schema_3(canonical_test_env):
+def test_backup_verification_with_forward_canonical_schema(canonical_test_env):
     root, rel_db = canonical_test_env
     from app.backend.domain.backups.create import create_backup
     from app.backend.domain.backups.verify import verify_backup
 
-    backup_info = create_backup("Canonical Schema 3 Snapshot", root=root)
+    backup_info = create_backup("Canonical forward schema snapshot", root=root)
     backup_path = Path(backup_info["path"])
 
     result = verify_backup(backup_path)
     assert result["ok"] is True
-    assert result["manifest"]["sqlite_schema_version"] == 3
+    assert result["manifest"]["sqlite_schema_version"] == config.CANONICAL_SCHEMA_VERSION
     assert result["db_integrity"] == "ok"

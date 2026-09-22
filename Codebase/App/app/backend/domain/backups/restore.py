@@ -181,6 +181,7 @@ def restore_backup(
             staged_db = staged_snapshot / "data" / staged_db_filename
             staged_people = staged_snapshot / "people"
             staged_config = staged_snapshot / "config"
+            staged_raw_history = staged_snapshot / "data" / "raw_processing_history.md"
             if canonical_backup:
                 active_db = active_root / "Database" / "relationships.db"
                 active_people = active_root / "People"
@@ -188,6 +189,7 @@ def restore_backup(
                 active_db = active_root / "Database" / "Main" / "family.db"
                 active_people = active_root / "Database" / "People"
             active_config = active_root / "Database" / "Config"
+            active_raw_history = active_root / "Database" / "raw_processing_history.md"
 
             _write_restore_marker(marker_path, canonical=canonical_backup)
 
@@ -207,11 +209,22 @@ def restore_backup(
                         active.rename(rollback)
                         switched.append((active, rollback))
 
-            for active, staged, rollback in (
+            components = [
                 (active_db, staged_db, rollback_dir / "active" / staged_db_filename),
                 (active_people, staged_people, rollback_dir / "active" / "people"),
                 (active_config, staged_config, rollback_dir / "active" / "config"),
-            ):
+            ]
+            if canonical_backup and staged_raw_history.is_file():
+                components.append((active_raw_history, staged_raw_history, rollback_dir / "active" / "raw_processing_history.md"))
+            elif canonical_backup and active_raw_history.exists():
+                # A pre-Phase-12 canonical snapshot has no Raw projection;
+                # retain the old bytes only in the rollback area, never mix
+                # them into the restored generation.
+                obsolete_history = rollback_dir / "obsolete" / "raw_processing_history.md"
+                obsolete_history.parent.mkdir(parents=True, exist_ok=True)
+                active_raw_history.rename(obsolete_history)
+                switched.append((active_raw_history, obsolete_history))
+            for active, staged, rollback in components:
                 _switch_component(active, staged, rollback)
                 switched.append((active, rollback))
 

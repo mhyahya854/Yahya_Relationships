@@ -136,6 +136,8 @@ def verify_backup(backup_dir: str | Path, root: Path | None = None) -> Dict[str,
     manifest_schema = manifest.get("sqlite_schema_version")
     if database_schema is not None and manifest_schema != database_schema:
         issues.append(_issue("BACKUP_SCHEMA_MISMATCH", "Manifest schema does not match the database schema."))
+    if database_schema is not None and database_schema >= 4 and not (scan_root / "data" / "raw_processing_history.md").is_file():
+        issues.append(_issue("BACKUP_COMPONENT_MISSING", "Phase 12 backup is missing data/raw_processing_history.md."))
     is_canonical = (scan_root / "data" / "relationships.db").is_file()
     max_supported = getattr(config, "CANONICAL_SCHEMA_VERSION", 3) if is_canonical else config.APP_SCHEMA_VERSION
     compatibility_ok = database_schema is not None and 1 <= database_schema <= max_supported

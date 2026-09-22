@@ -8,13 +8,14 @@ import { FamilyView } from "./views/FamilyView";
 import { HermesView } from "./views/HermesView";
 import { PeopleView } from "./views/PeopleView";
 import { RelationshipsView } from "./views/RelationshipsView";
+import { RawView } from "./views/RawView";
 import { SearchView } from "./views/SearchView";
 import { RootUnavailableView } from "./features/dataRoot/components/RootUnavailableView";
 import type { DataRootState, DataRootStatus } from "./features/dataRoot/types";
 import { StartupFailureView } from "./features/startupFailure/StartupFailureView";
 import { ThemeProvider, ThemeToggle } from "./theme";
 
-type Screen = "people" | "relationships" | "family" | "search" | "hermes" | "backups";
+type Screen = "people" | "relationships" | "family" | "search" | "raw" | "hermes" | "backups";
 
 type ReturnContext = {
   screen: Screen;
@@ -26,6 +27,7 @@ const NAV: Array<{ id: Screen; label: string }> = [
   { id: "relationships", label: "Connections" },
   { id: "family", label: "Family Tree" },
   { id: "search", label: "Search" },
+  { id: "raw", label: "Raw" },
   { id: "hermes", label: "Hermes" },
   { id: "backups", label: "Backups" },
 ];
@@ -36,6 +38,7 @@ function NavIcon({ screen }: { screen: Screen }) {
     relationships: <><circle cx="5" cy="12" r="2.5" /><circle cx="17" cy="6" r="2.5" /><circle cx="17" cy="18" r="2.5" /><path d="M7.3 10.8 14.6 7M7.3 13.2l7.3 3.8" /></>,
     family: <><circle cx="12" cy="5" r="2.5" /><circle cx="5" cy="18" r="2.5" /><circle cx="19" cy="18" r="2.5" /><path d="M12 7.5v4M5 15.5v-4h14v4" /></>,
     search: <><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 4 4" /></>,
+    raw: <><path d="M4 7h16v12H4zM4 10h16" /><path d="M8 5h5l2 2" /><path d="M8 14h8M8 17h5" /></>,
     hermes: <><path d="M12 3.2 20 8l-8 4.8L4 8 12 3.2Z" /><path d="m4 12 8 4.8 8-4.8M4 16l8 4.8 8-4.8" /></>,
     backups: <><path d="M4 7h16v13H4zM6 4h12v3" /><path d="M8 11h8M8 15h5" /></>,
   };
@@ -347,6 +350,7 @@ function Shell({ rootStatus }: { rootStatus: DataRootStatus }) {
               />
             </div>
           )}
+          {screen === "raw" && <RawView />}
           {screen === "hermes" && <HermesView />}
           {screen === "backups" && <BackupsView />}
         </div>

@@ -214,7 +214,7 @@ export function RootUnavailableView({
     : flow === "restore"
       ? "The backup snapshot and the new active Data Root are two separate locations."
       : flow === "create"
-        ? "Create a fresh schema-v2 Data Root. Existing non-empty folders are never reused or overwritten."
+      ? "Create a fresh schema-v4 Data Root. Existing non-empty folders are never reused or overwritten."
         : subtitle;
   const headerIcon: IconName = flow === "restore" ? "backup" : flow === "create" ? "add" : isFirstRun ? "profile" : state === "MISSING" ? "folder" : "family";
 
@@ -266,7 +266,7 @@ export function RootUnavailableView({
             <div className="recovery-field"><label htmlFor="owner-name" className="small">Your name</label><input className="text-input" id="owner-name" value={ownerName} onChange={(event) => setOwnerName(event.target.value)} disabled={busy} /></div>
             <div className="recovery-field"><label htmlFor="owner-gender" className="small">Gender (optional)</label><select className="select-input" id="owner-gender" value={ownerGender} onChange={(event) => setOwnerGender(event.target.value)} disabled={busy}><option value="">Unspecified</option><option value="unknown">Unknown</option><option value="female">Female</option><option value="male">Male</option></select></div>
             <Button kind="primary" disabled={busy || !destinationPath.trim() || !ownerName.trim()} onClick={() => void reviewDestination()}>Review New Data Root</Button>
-            {candidate && <section aria-label="New Data Root summary" className="info-note" style={{ textAlign: "left" }}><strong>Ready to create</strong><div>{destinationPath}</div><div>Initial owner: {ownerName.trim()}</div><div>Schema: 2 · one owner · default perspective</div></section>}
+            {candidate && <section aria-label="New Data Root summary" className="info-note" style={{ textAlign: "left" }}><strong>Ready to create</strong><div>{destinationPath}</div><div>Initial owner: {ownerName.trim()}</div><div>Schema: 4 · one owner · default perspective</div></section>}
             {candidate && (!candidate.exists || candidate.is_empty) && <Button kind="primary" disabled={busy} onClick={() => void confirmCreate()}>Confirm Create New Data Root</Button>}
           </div>
         )}

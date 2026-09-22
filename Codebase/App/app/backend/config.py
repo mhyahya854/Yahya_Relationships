@@ -54,7 +54,9 @@ if not SCHEMA_PATH.exists() and IS_FROZEN:
 APP_NAME = "Mosaic"
 APP_VERSION = "0.5.0"
 APP_SCHEMA_VERSION = 2
-CANONICAL_SCHEMA_VERSION = 3
+# Phase 12 extends, but does not replace, the Phase 11 canonical authority.
+# ``relationships.db`` remains the only forward structured authority.
+CANONICAL_SCHEMA_VERSION = 4
 CANONICAL_DB_NAME = "relationships.db"
 
 DEFAULT_HOST = "127.0.0.1"

@@ -33,6 +33,7 @@ def get_connection(
     *,
     mode: str = DatabaseOpenMode.OPEN_EXISTING,
     create: bool = False,
+    allow_schema_upgrade: bool = False,
 ) -> sqlite3.Connection:
     """Open the active SQLite connection without silent creation or fallback.
 
@@ -66,7 +67,12 @@ def get_connection(
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA busy_timeout = 5000")
-    if target.exists() and not should_create and target.name == config.CANONICAL_DB_NAME:
+    if (
+        target.exists()
+        and not should_create
+        and not allow_schema_upgrade
+        and target.name == config.CANONICAL_DB_NAME
+    ):
         try:
             schema_version = get_current_schema_version(connection)
             if schema_version != config.CANONICAL_SCHEMA_VERSION:
@@ -183,7 +189,13 @@ def _seed_groups_and_assignments(connection: sqlite3.Connection) -> None:
 
 
 def _bootstrap_new_database(connection: sqlite3.Connection, target_schema: int = 2) -> None:
-    """Initialize a brand-new empty database directly into target schema (v2 for family.db, v3 for relationships.db)."""
+    """Initialize the legacy/application base schema before versioned upgrades.
+
+    Callers creating a canonical database deliberately bootstrap schema 2 and
+    then apply each forward migration.  That keeps every versioned migration
+    independently testable instead of silently treating a new empty database
+    as proof that a migration has run.
+    """
     from .domain.family import engine as build_family
 
     build_family.create_sqlite_schema(connection)
@@ -506,8 +518,7 @@ def _migrate_v2_to_v3_atomic(connection: sqlite3.Connection) -> None:
         )
 
         connection.execute(
-            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_schema_version', ?)",
-            (str(config.CANONICAL_SCHEMA_VERSION),),
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_schema_version', '3')",
         )
         connection.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_name', ?)",
@@ -520,7 +531,7 @@ def _migrate_v2_to_v3_atomic(connection: sqlite3.Connection) -> None:
         connection.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('_source_of_truth', 'relationships.db')"
         )
-        connection.execute(f"PRAGMA user_version = {int(config.CANONICAL_SCHEMA_VERSION)}")
+        connection.execute("PRAGMA user_version = 3")
 
         fk_violations = connection.execute("PRAGMA foreign_key_check").fetchall()
         if fk_violations:
@@ -530,6 +541,226 @@ def _migrate_v2_to_v3_atomic(connection: sqlite3.Connection) -> None:
     except Exception:
         connection.execute("ROLLBACK")
         raise
+
+
+def _migrate_v3_to_v4_atomic(connection: sqlite3.Connection) -> None:
+    """Install Phase 12 Raw-intake authority in one atomic schema migration.
+
+    This migration only adds generic intake, review, and provenance tables. It
+    neither imports Raw payloads nor creates canonical media, social, location,
+    face, or Hermes data.
+    """
+    connection.isolation_level = None
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        _check_migration_failpoint("before_phase12_tables")
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS raw_scan_runs (
+              id TEXT PRIMARY KEY,
+              started_at TEXT NOT NULL,
+              completed_at TEXT,
+              status TEXT NOT NULL CHECK (status IN ('RUNNING', 'COMPLETED', 'COMPLETED_WITH_ERRORS', 'FAILED')),
+              summary_json TEXT NOT NULL DEFAULT '{}',
+              error_message TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS raw_items (
+              id TEXT PRIMARY KEY,
+              original_relative_path TEXT NOT NULL,
+              current_relative_path TEXT,
+              entry_kind TEXT NOT NULL CHECK (entry_kind IN ('file', 'directory', 'archive', 'unknown')),
+              classification TEXT NOT NULL,
+              classification_source TEXT NOT NULL DEFAULT 'deterministic',
+              classification_confidence REAL,
+              extension TEXT,
+              mime_type TEXT,
+              size_bytes INTEGER,
+              sha256 TEXT,
+              hash_algorithm TEXT,
+              fingerprint_json TEXT,
+              availability_state TEXT NOT NULL DEFAULT 'PRESENT',
+              processing_state TEXT NOT NULL DEFAULT 'DISCOVERED',
+              analysis_status TEXT NOT NULL DEFAULT 'not_yet_supported',
+              source_batch_id TEXT,
+              final_relative_path TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              last_observed_at TEXT NOT NULL,
+              missing_since TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS raw_item_paths (
+              id INTEGER PRIMARY KEY,
+              raw_item_id TEXT NOT NULL REFERENCES raw_items(id) ON DELETE CASCADE,
+              relative_path TEXT NOT NULL,
+              observed_at TEXT NOT NULL,
+              path_event TEXT NOT NULL CHECK (path_event IN ('DISCOVERED', 'RENAMED', 'MOVED_WITHIN_RAW', 'MISSING', 'RESTORED')),
+              UNIQUE(raw_item_id, relative_path, path_event)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS raw_archive_inventory (
+              raw_item_id TEXT PRIMARY KEY REFERENCES raw_items(id) ON DELETE CASCADE,
+              member_count INTEGER,
+              compressed_bytes INTEGER,
+              uncompressed_bytes INTEGER,
+              safety_status TEXT NOT NULL,
+              inventory_json TEXT,
+              inspected_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS raw_duplicate_groups (
+              id TEXT PRIMARY KEY,
+              hash_algorithm TEXT NOT NULL,
+              content_hash TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              UNIQUE(hash_algorithm, content_hash)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS raw_duplicate_members (
+              duplicate_group_id TEXT NOT NULL REFERENCES raw_duplicate_groups(id) ON DELETE CASCADE,
+              raw_item_id TEXT NOT NULL REFERENCES raw_items(id) ON DELETE CASCADE,
+              decision TEXT NOT NULL DEFAULT 'UNDECIDED' CHECK (decision IN ('UNDECIDED', 'RETAIN', 'DELETE_AUTHORIZED', 'DELETE_DEFERRED')),
+              PRIMARY KEY (duplicate_group_id, raw_item_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS raw_proposals (
+              id TEXT PRIMARY KEY,
+              raw_item_id TEXT NOT NULL REFERENCES raw_items(id) ON DELETE CASCADE,
+              destination_relative_path TEXT,
+              proposal_state TEXT NOT NULL CHECK (proposal_state IN ('READY', 'BLOCKED_BY_FUTURE_PHASE', 'NEEDS_USER_INPUT', 'CONFLICT', 'UNKNOWN')),
+              reason TEXT NOT NULL,
+              source TEXT NOT NULL,
+              source_fingerprint_json TEXT,
+              stale INTEGER NOT NULL DEFAULT 0 CHECK (stale IN (0, 1)),
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS raw_decisions (
+              id TEXT PRIMARY KEY,
+              raw_item_id TEXT NOT NULL REFERENCES raw_items(id) ON DELETE CASCADE,
+              decision TEXT NOT NULL CHECK (decision IN ('APPROVED', 'REJECTED', 'DEFERRED', 'CORRECTED')),
+              note TEXT,
+              correction_json TEXT,
+              created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS raw_move_operations (
+              id TEXT PRIMARY KEY,
+              raw_item_id TEXT NOT NULL REFERENCES raw_items(id) ON DELETE RESTRICT,
+              source_relative_path TEXT NOT NULL,
+              destination_relative_path TEXT NOT NULL,
+              expected_sha256 TEXT NOT NULL,
+              status TEXT NOT NULL CHECK (status IN ('PREPARED', 'DESTINATION_VERIFIED', 'COMPLETED', 'ERROR')),
+              error_message TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS raw_processing_events (
+              id TEXT PRIMARY KEY,
+              raw_item_id TEXT REFERENCES raw_items(id) ON DELETE SET NULL,
+              event_type TEXT NOT NULL,
+              payload_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              history_written_at TEXT
+            )
+            """
+        )
+        for statement in (
+            "CREATE INDEX IF NOT EXISTS idx_raw_items_current_path ON raw_items(current_relative_path COLLATE NOCASE)",
+            "CREATE INDEX IF NOT EXISTS idx_raw_items_state ON raw_items(processing_state, availability_state)",
+            "CREATE INDEX IF NOT EXISTS idx_raw_items_hash ON raw_items(hash_algorithm, sha256)",
+            "CREATE INDEX IF NOT EXISTS idx_raw_paths_path ON raw_item_paths(relative_path COLLATE NOCASE)",
+            "CREATE INDEX IF NOT EXISTS idx_raw_duplicate_members_item ON raw_duplicate_members(raw_item_id)",
+            "CREATE INDEX IF NOT EXISTS idx_raw_proposals_item ON raw_proposals(raw_item_id, stale)",
+            "CREATE INDEX IF NOT EXISTS idx_raw_decisions_item ON raw_decisions(raw_item_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_raw_events_history ON raw_processing_events(history_written_at, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_raw_moves_status ON raw_move_operations(status, updated_at)",
+        ):
+            connection.execute(statement)
+        _check_migration_failpoint("after_phase12_tables")
+        connection.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_schema_version', '4')",
+        )
+        connection.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_name', ?)",
+            (config.APP_NAME,),
+        )
+        connection.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('app_version', ?)",
+            (config.APP_VERSION,),
+        )
+        connection.execute("PRAGMA user_version = 4")
+        _check_migration_failpoint("after_phase12_version_bookkeeping")
+        foreign_key_violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        if foreign_key_violations:
+            raise RuntimeError(f"Foreign key violation after v3->v4 migration: {foreign_key_violations}")
+        connection.execute("COMMIT")
+    except Exception:
+        connection.execute("ROLLBACK")
+        raise
+
+
+def _create_phase12_pre_upgrade_backup(database_path: Path) -> None:
+    """Snapshot a real canonical v3 root before adding Phase 12 tables.
+
+    This deliberately does not run for isolated SQLite fixtures or fresh data
+    roots.  A failed safety snapshot is a hard stop: the schema must remain at
+    v3 rather than advancing without a recoverable pre-upgrade state.
+    """
+    resolved = database_path.resolve()
+    root = resolved.parent.parent
+    if (
+        resolved.name != config.CANONICAL_DB_NAME
+        or resolved.parent.name != "Database"
+        or not (root / "People").is_dir()
+        or (root / "Database" / config.CANONICAL_DB_NAME).resolve() != resolved
+    ):
+        return
+
+    from .domain.backups.create import BackupCategory, SafetyReason, create_backup
+
+    try:
+        create_backup(
+            "Before Phase 12 schema upgrade",
+            category=BackupCategory.SAFETY,
+            safety_reason=SafetyReason.PRE_UPGRADE,
+            root=root,
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "Refusing the Phase 12 schema upgrade because the required "
+            "pre-upgrade safety snapshot could not be created."
+        ) from exc
 
 
 def migrate(
@@ -544,26 +775,37 @@ def migrate(
     If the database file does not exist, refuses to create a blank database
     unless explicit initialisation is requested (create=True or mode=INITIALIZE_NEW).
     """
-    connection = get_connection(db_path, mode=mode, create=create)
+    connection = get_connection(
+        db_path,
+        mode=mode,
+        create=create,
+        allow_schema_upgrade=True,
+    )
     try:
         table_count = connection.execute(
             "SELECT count(*) FROM sqlite_master WHERE type='table'"
         ).fetchone()[0]
 
-        resolved_db = db_path if db_path else DataRootManager.get_database_path()
-        target_ver = 3 if resolved_db.name == "relationships.db" else 2
+        resolved_db = Path(db_path) if db_path else DataRootManager.get_database_path()
+        target_ver = config.CANONICAL_SCHEMA_VERSION if resolved_db.name == config.CANONICAL_DB_NAME else 2
 
         if table_count == 0:
-            _bootstrap_new_database(connection, target_schema=target_ver)
-            if target_ver == 3:
+            _bootstrap_new_database(connection, target_schema=2)
+            if target_ver >= 3:
                 _migrate_v2_to_v3_atomic(connection)
+            if target_ver >= 4:
+                _migrate_v3_to_v4_atomic(connection)
             return
 
         # EXISTING DATABASE:
         # Pre-validation: detect schema-version mismatch BEFORE any mutation
         current_ver = get_current_schema_version(connection)
 
-        if current_ver >= target_ver:
+        if current_ver > target_ver:
+            raise SchemaVersionMismatchError(
+                f"Database schema {current_ver} is newer than supported schema {target_ver}."
+            )
+        if current_ver == target_ver:
             # Idempotent: already at target version, no destructive work
             return
 
@@ -571,8 +813,16 @@ def migrate(
             _migrate_v1_to_v2_atomic(connection)
             current_ver = 2
 
-        if current_ver < target_ver and target_ver == 3:
+        if current_ver < 3 and target_ver >= 3:
             _migrate_v2_to_v3_atomic(connection)
+            current_ver = 3
+
+        if current_ver < 4 and target_ver >= 4:
+            # A production v3 root gets an independently verified snapshot
+            # before any Phase 12 DDL.  Bare test databases do not satisfy the
+            # canonical Data Root layout and therefore remain side-effect free.
+            _create_phase12_pre_upgrade_backup(resolved_db)
+            _migrate_v3_to_v4_atomic(connection)
     finally:
         connection.close()
 

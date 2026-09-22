@@ -150,6 +150,27 @@ def create_backup(
                 db_source,
                 staging_dir / "data" / db_source.name,
             )
+            # Phase 12 history is a projection of database events. Flush it
+            # before snapshotting and copy it beside the SQLite payload, while
+            # deliberately excluding Raw binary source material from backups.
+            snapshot_schema = 0
+            if db_source.name == "relationships.db":
+                schema_connection = sqlite3.connect(str(db_source))
+                try:
+                    schema_row = schema_connection.execute(
+                        "SELECT value FROM metadata WHERE key='app_schema_version'"
+                    ).fetchone()
+                    snapshot_schema = int(schema_row[0]) if schema_row else int(schema_connection.execute("PRAGMA user_version").fetchone()[0])
+                finally:
+                    schema_connection.close()
+            if db_source.name == "relationships.db" and snapshot_schema >= 4:
+                from ..raw_intake import ensure_history_file, flush_history
+
+                ensure_history_file(active_root)
+                flush_history(active_root)
+                history_source = active_root / "Database" / "raw_processing_history.md"
+                if history_source.is_file():
+                    shutil.copy2(history_source, staging_dir / "data" / "raw_processing_history.md")
             people_source = DataRootManager.get_people_dir(active_root)
             if not people_source.is_dir():
                 raise BackupError("The active People directory is missing.", code="BACKUP_PEOPLE_MISSING")

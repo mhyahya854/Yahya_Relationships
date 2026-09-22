@@ -419,6 +419,23 @@ export const api = {
       }),
   },
 
+  raw: {
+    list: (filter?: string, query?: string) => {
+      const params = new URLSearchParams();
+      if (filter && filter !== "all") params.set("filter", filter);
+      if (query) params.set("query", query);
+      const suffix = params.toString() ? `?${params.toString()}` : "";
+      return request<unknown>(`/api/raw${suffix}`);
+    },
+    scan: () => request<unknown>("/api/raw/scan", { method: "POST" }),
+    get: (id: string) => request<unknown>(`/api/raw/${encodeURIComponent(id)}`),
+    rehash: (id: string) => request<unknown>(`/api/raw/${encodeURIComponent(id)}/rehash`, { method: "POST" }),
+    correct: (id: string, payload: Record<string, unknown>) => request<unknown>(`/api/raw/${encodeURIComponent(id)}/correct`, { method: "POST", body: JSON.stringify(payload) }),
+    decision: (id: string, decision: string, note?: string) => request<unknown>(`/api/raw/${encodeURIComponent(id)}/decision`, { method: "POST", body: JSON.stringify({ decision, note: note ?? null }) }),
+    move: (id: string) => request<unknown>(`/api/raw/${encodeURIComponent(id)}/move`, { method: "POST" }),
+    recover: () => request<unknown>("/api/raw/recover", { method: "POST" }),
+  },
+
   hermes: {
     tools: () =>
       request<{ ok: boolean; tools: HermesToolDef[] }>("/api/hermes/tools"),

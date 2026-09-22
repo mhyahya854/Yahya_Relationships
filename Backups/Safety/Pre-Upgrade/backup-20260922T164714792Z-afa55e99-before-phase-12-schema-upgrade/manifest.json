@@ -1,0 +1,379 @@
+{
+  "app_version": "0.5.0",
+  "backup_format_version": 1,
+  "category": "safety",
+  "created_at": "2026-09-22T16:47:14Z",
+  "data_root_format_version": 1,
+  "file_count": 72,
+  "files": [
+    {
+      "path": "config/data-root.json",
+      "sha256": "b9052683b52732883950b658a5329a0270a493cdd476ad9d14979761a778540e",
+      "size_bytes": 251
+    },
+    {
+      "path": "data/relationships.db",
+      "sha256": "bbeb2054ebba0cf4b0c370e340c951ed171ab8182bf8bbfea2812a3bf70a0835",
+      "size_bytes": 266240
+    },
+    {
+      "path": "people/Family/abdul_rafey--AR01/abdul_rafey--AR01(facts and about).md",
+      "sha256": "c46e974a2025cacbfafee94dec0955ee47514c648098eeeb76f963ea3c398f6f",
+      "size_bytes": 819
+    },
+    {
+      "path": "people/Family/abdul_rafey--AR01/journal(personal thoughts).md",
+      "sha256": "65293d93ca54c89f9185ccac5fea62fa4ae6be1d1a6df3f86c2c88958160bfc5",
+      "size_bytes": 15
+    },
+    {
+      "path": "people/Family/abrar_hussain--AH01/abrar_hussain--AH01(facts and about).md",
+      "sha256": "5f002ba949b57437905728856bce2ad1c85a8d2c08b16b7e806d7ff14cbf55d6",
+      "size_bytes": 828
+    },
+    {
+      "path": "people/Family/abrar_hussain--AH01/journal(personal thoughts).md",
+      "sha256": "c1d691e6ff1dfc12915be3e56c387357c95745a9bf74395bd509256beb6fafe0",
+      "size_bytes": 17
+    },
+    {
+      "path": "people/Family/adeel_ahmad--AA01/adeel_ahmad--AA01(facts and about).md",
+      "sha256": "8b0dcb698e387585cae765e729dc7414e4badffd41e62285e969cdb5f700a0f8",
+      "size_bytes": 822
+    },
+    {
+      "path": "people/Family/adeel_ahmad--AA01/journal(personal thoughts).md",
+      "sha256": "4d62cb5765d312ff178a1690ddb13aeda54cc794658f57f42a4f3c9abccafe8b",
+      "size_bytes": 15
+    },
+    {
+      "path": "people/Family/afshan--A01/afshan--A01(facts and about).md",
+      "sha256": "80c21a6fda81866a6319046d8a3bed7397eed7df63fdd1cc7c059a0cb6763972",
+      "size_bytes": 808
+    },
+    {
+      "path": "people/Family/afshan--A01/journal(personal thoughts).md",
+      "sha256": "8fccee775ca83350ea7950c7ac775379772fe1d1a1101611d3de1f7076b5a6c0",
+      "size_bytes": 10
+    },
+    {
+      "path": "people/Family/aresha_zubair--AZ01/aresha_zubair--AZ01(facts and about).md",
+      "sha256": "6d3d4cdd07904f2a77afcdddf8eb431dcf55e7a8783b3a90353a577feef47c36",
+      "size_bytes": 830
+    },
+    {
+      "path": "people/Family/aresha_zubair--AZ01/journal(personal thoughts).md",
+      "sha256": "8b03852aa8d21b41f3e32c6ad7a1795672ef390fb82fd2424edc17258d178e67",
+      "size_bytes": 17
+    },
+    {
+      "path": "people/Family/arsalan_israr--AI01/arsalan_israr--AI01(facts and about).md",
+      "sha256": "1ae0b73867abf718b79ceb1c301f1c0b0bd3486827ecdf29e0f5d71ae5faffe5",
+      "size_bytes": 828
+    },
+    {
+      "path": "people/Family/arsalan_israr--AI01/journal(personal thoughts).md",
+      "sha256": "1a76c460429df3f5c2b9c1367db110b64754b0db4581b1e5936740915e874be6",
+      "size_bytes": 17
+    },
+    {
+      "path": "people/Family/asif_qamar--AQ01/asif_qamar--AQ01(facts and about).md",
+      "sha256": "c20bf4ba13a93adac47b7782509da381654db85d63fd15bee04e01de088a9fa6",
+      "size_bytes": 819
+    },
+    {
+      "path": "people/Family/asif_qamar--AQ01/journal(personal thoughts).md",
+      "sha256": "52ab4472523cd37c33c3c53434a85a7dc95a7746ad2b1cc73338ce374ec27c4e",
+      "size_bytes": 14
+    },
+    {
+      "path": "people/Family/ayesha_naeem--AN01/ayesha_naeem--AN01(facts and about).md",
+      "sha256": "e695b9c0b47eb243af78fd6d2176a68dc4978dc07ccba579604a841bfd4255bb",
+      "size_bytes": 827
+    },
+    {
+      "path": "people/Family/ayesha_naeem--AN01/journal(personal thoughts).md",
+      "sha256": "bca69edbc8cfc9614397e3bba672147ce5e92d683dfde7c8280e806d5e1d729c",
+      "size_bytes": 16
+    },
+    {
+      "path": "people/Family/barirah--B01/barirah--B01(facts and about).md",
+      "sha256": "e136967c7728bbaa7fc42193f5636dcf4ea572dff595d7b580a6217681a2b192",
+      "size_bytes": 808
+    },
+    {
+      "path": "people/Family/barirah--B01/journal(personal thoughts).md",
+      "sha256": "81cdbf940e1ba0a7594ac1bd0a1f870c046b3f907a729cc4c2d66ac09a223351",
+      "size_bytes": 11
+    },
+    {
+      "path": "people/Family/ezan_asif--EA01/ezan_asif--EA01(facts and about).md",
+      "sha256": "d12ce95ef6f9c2c366063deb708dab4014fcbf7ed17d18f8f15c31a297e4e83d",
+      "size_bytes": 813
+    },
+    {
+      "path": "people/Family/ezan_asif--EA01/journal(personal thoughts).md",
+      "sha256": "52b83c25e57f0291ab9967cbe35c6a9ce0eccec5fa4cb33271cf73148ffa2308",
+      "size_bytes": 13
+    },
+    {
+      "path": "people/Family/fakhir_asif--FA01/fakhir_asif--FA01(facts and about).md",
+      "sha256": "ed5728fe6ba40a72151e8f88a92513cc1f02ab5804e8f864400a4effabbd93c2",
+      "size_bytes": 819
+    },
+    {
+      "path": "people/Family/fakhir_asif--FA01/journal(personal thoughts).md",
+      "sha256": "41aba4906b6efd0f259440b4786e1e3bdb3eae7f6474965d66d70ef3da5c8c9f",
+      "size_bytes": 15
+    },
+    {
+      "path": "people/Family/falak_naz--FN01/falak_naz--FN01(facts and about).md",
+      "sha256": "47d9f040eadf21c5f85fadef8ddc6816f0a5c4fa6349bca73ced9b37ec8a7d98",
+      "size_bytes": 818
+    },
+    {
+      "path": "people/Family/falak_naz--FN01/journal(personal thoughts).md",
+      "sha256": "57e96ff6c9afd7f7f1ac15e8fb24f97041827663585441644c41d34a1fa71dab",
+      "size_bytes": 13
+    },
+    {
+      "path": "people/Family/fizza_zubair--FZ01/fizza_zubair--FZ01(facts and about).md",
+      "sha256": "b66a9fc48c6944635c634f16280c8a4313ce07e9eeda8fcf425ebe313ca13de4",
+      "size_bytes": 827
+    },
+    {
+      "path": "people/Family/fizza_zubair--FZ01/journal(personal thoughts).md",
+      "sha256": "e86b84643652321a1984d5da9083a737e3f3a963b1b5ca66973c0f8e76b2bce3",
+      "size_bytes": 16
+    },
+    {
+      "path": "people/Family/hina--H01/hina--H01(facts and about).md",
+      "sha256": "f6a5af835461fb5ae63095f48cbfb85542a3023c22e6f76cd2088e8c9d7aaff2",
+      "size_bytes": 802
+    },
+    {
+      "path": "people/Family/hina--H01/journal(personal thoughts).md",
+      "sha256": "599c60fcae4d962d64a814b6abd81730eb7e08901fb0059da89204a81e3cd323",
+      "size_bytes": 8
+    },
+    {
+      "path": "people/Family/irsa_naz--IN01/irsa_naz--IN01(facts and about).md",
+      "sha256": "756941736f1f7d14879603ebf2f357340581ad42d610d26cd56417a658c20126",
+      "size_bytes": 815
+    },
+    {
+      "path": "people/Family/irsa_naz--IN01/journal(personal thoughts).md",
+      "sha256": "5edaf8d217d35c38b987c28139b264fe5913d3cf8746d9ca615cd024a4dd09a5",
+      "size_bytes": 12
+    },
+    {
+      "path": "people/Family/israr_hussain--IH01/israr_hussain--IH01(facts and about).md",
+      "sha256": "afc7824e509431d95841a1894a718c246c2965308c91f4925e0fd5da3cf6c3ba",
+      "size_bytes": 828
+    },
+    {
+      "path": "people/Family/israr_hussain--IH01/journal(personal thoughts).md",
+      "sha256": "0da1d5f39c2680777142718428aeed4ed78c8da5d98d57d2b00fedfe0015b91f",
+      "size_bytes": 17
+    },
+    {
+      "path": "people/Family/maham_mansoor--MM01/journal(personal thoughts).md",
+      "sha256": "afe2ee162badfcfe2d3e518df1fb2cd9e1be095b20fcbe0af52d79cfe8f058cf",
+      "size_bytes": 17
+    },
+    {
+      "path": "people/Family/maham_mansoor--MM01/maham_mansoor--MM01(facts and about).md",
+      "sha256": "b55a2e965b1bb83b1e037161b2a7c28bd3e0cba229c436c5d5ced54f828214c7",
+      "size_bytes": 827
+    },
+    {
+      "path": "people/Family/mansoor_hussain--MH01/journal(personal thoughts).md",
+      "sha256": "4f3def3079420ff1b6dfa7cf90377b578819c78acfbe8f603352cd464861ea92",
+      "size_bytes": 19
+    },
+    {
+      "path": "people/Family/mansoor_hussain--MH01/mansoor_hussain--MH01(facts and about).md",
+      "sha256": "8a2658dbdb2e220ee1015cd14aa7b949f2213d8c8467ec9c9a353e91c4040b2a",
+      "size_bytes": 834
+    },
+    {
+      "path": "people/Family/moiz--M01/journal(personal thoughts).md",
+      "sha256": "412b979b258f297503396cb1b84cc23bb5d6c9d6c06467fe3947a7b7faed6348",
+      "size_bytes": 8
+    },
+    {
+      "path": "people/Family/moiz--M01/moiz--M01(facts and about).md",
+      "sha256": "d230d0c5d4a6c72e347361eed1c04a415bfb22aeaf4f3b6cd351ddda08690727",
+      "size_bytes": 800
+    },
+    {
+      "path": "people/Family/muaaz--M01/journal(personal thoughts).md",
+      "sha256": "064ff55348fe986f8d0e749508829ae01f64d6deff7e1a69b94a588af2002971",
+      "size_bytes": 9
+    },
+    {
+      "path": "people/Family/muaaz--M01/muaaz--M01(facts and about).md",
+      "sha256": "059950e6a2365d6091de7f1a62cf13aca5d68c4c61953ad341c6c4e7434e436e",
+      "size_bytes": 797
+    },
+    {
+      "path": "people/Family/musa--M01/journal(personal thoughts).md",
+      "sha256": "19033ac93e7ba21bf4127ae787097a5017bc1ec778bb9ef5df7a7b65b12a1def",
+      "size_bytes": 8
+    },
+    {
+      "path": "people/Family/musa--M01/musa--M01(facts and about).md",
+      "sha256": "4006c6c1f6dd8fb7e84feaddd48043669e67ce148e2ebd8ec7927f9f7613a1e9",
+      "size_bytes": 800
+    },
+    {
+      "path": "people/Family/musabiha--M01/journal(personal thoughts).md",
+      "sha256": "921a2ec87fd1f12215a1a9e8acacd3513c9375085d218248fcfcc3bf02ee8650",
+      "size_bytes": 12
+    },
+    {
+      "path": "people/Family/musabiha--M01/musabiha--M01(facts and about).md",
+      "sha256": "a6ff13494936aaf0d557ac23d98d72cea733610dc14b5c94425f29b7d9cf02fb",
+      "size_bytes": 814
+    },
+    {
+      "path": "people/Family/owais--O01/journal(personal thoughts).md",
+      "sha256": "1890610d134df329d32c9e6c362a05c06e9dc6a8eb5c31e89c0a2e7f4e424145",
+      "size_bytes": 9
+    },
+    {
+      "path": "people/Family/owais--O01/owais--O01(facts and about).md",
+      "sha256": "97bbe174263fe05e9534b73165f93eb3282619fa0870eb0bd0acdb8ab8da9204",
+      "size_bytes": 803
+    },
+    {
+      "path": "people/Family/rubinna--R01/journal(personal thoughts).md",
+      "sha256": "161fb9af3be2c84f3c5d556511d348ba5ada3c5726549dfd7071a000a9551f47",
+      "size_bytes": 11
+    },
+    {
+      "path": "people/Family/rubinna--R01/rubinna--R01(facts and about).md",
+      "sha256": "577abfd4a3f84ba4953a149aec37b5a4bdc61ae2177355ea24b01195bae89a92",
+      "size_bytes": 811
+    },
+    {
+      "path": "people/Family/sadia_asif--SA01/journal(personal thoughts).md",
+      "sha256": "cc4b0124966d2a4bb694e251931aaf15f5f00274c82f0ab911a9c108bd36d7b0",
+      "size_bytes": 14
+    },
+    {
+      "path": "people/Family/sadia_asif--SA01/sadia_asif--SA01(facts and about).md",
+      "sha256": "9beaaa5679da3c07bf06d0ac46099866de98b146de48c86df107fa5aa4406c3f",
+      "size_bytes": 821
+    },
+    {
+      "path": "people/Family/sajjad--S01/journal(personal thoughts).md",
+      "sha256": "b3f891bf2c82441f638447d073b59cdb1972dc9e3f03e53e30ffbf10e7c870ab",
+      "size_bytes": 10
+    },
+    {
+      "path": "people/Family/sajjad--S01/sajjad--S01(facts and about).md",
+      "sha256": "e5b7ebda0aed26b695e1dd5824e40296978d18d4b2e39ca88d6f2748bb8e7b65",
+      "size_bytes": 806
+    },
+    {
+      "path": "people/Family/sana--S01/journal(personal thoughts).md",
+      "sha256": "0ab742eac4edac66b855cfe2b5aa1728fd3fbbd6f09aefa06f841552350b2c30",
+      "size_bytes": 8
+    },
+    {
+      "path": "people/Family/sana--S01/sana--S01(facts and about).md",
+      "sha256": "7f69c30fc933376c61d46a4cba484a80558e63aeb0a972a5ff9971323aef942e",
+      "size_bytes": 802
+    },
+    {
+      "path": "people/Family/shaheen_abrar--SA01/journal(personal thoughts).md",
+      "sha256": "711ac023848a810f1dce498f4488638401870a82cfab740a1766d7580207c8b0",
+      "size_bytes": 17
+    },
+    {
+      "path": "people/Family/shaheen_abrar--SA01/shaheen_abrar--SA01(facts and about).md",
+      "sha256": "2ffa0f7b0bf480c8bf158f3771b1687661dba79480cc6a7723179beadd805ecc",
+      "size_bytes": 830
+    },
+    {
+      "path": "people/Family/shahnaz_israr--SI01/journal(personal thoughts).md",
+      "sha256": "fcdd8f3a85128cc43e105f1fa2f1dc088f2738fb2f1a580e3c10d745fa5e7dae",
+      "size_bytes": 17
+    },
+    {
+      "path": "people/Family/shahnaz_israr--SI01/shahnaz_israr--SI01(facts and about).md",
+      "sha256": "7e7242205af344b462e164b2dce203d8533e249be6a8c5e08506aa59a2ec705c",
+      "size_bytes": 830
+    },
+    {
+      "path": "people/Family/sohaib_hussain--SH01/journal(personal thoughts).md",
+      "sha256": "922aa3a67201867c56a78f64cfa6468ac2f61a54dba3b64f55247aab8d143aef",
+      "size_bytes": 18
+    },
+    {
+      "path": "people/Family/sohaib_hussain--SH01/sohaib_hussain--SH01(facts and about).md",
+      "sha256": "163e42a10a1ebbe92155e38df361fbff71094dcfb33f32ea761f0bd5b21b43e0",
+      "size_bytes": 831
+    },
+    {
+      "path": "people/Family/unnamed_daughter_a--UDA01/journal(personal thoughts).md",
+      "sha256": "6b853875f27d2c0f3df1716a1c8eb9006f6743a279eee7da05ffaa0d5427ec4c",
+      "size_bytes": 22
+    },
+    {
+      "path": "people/Family/unnamed_daughter_a--UDA01/unnamed_daughter_a--UDA01(facts and about).md",
+      "sha256": "11470eb101eea3490dc485eb944d4370e0f0c874ba5ab18e3ebbd8005a568e34",
+      "size_bytes": 846
+    },
+    {
+      "path": "people/Family/unnamed_daughter_b--UDB01/journal(personal thoughts).md",
+      "sha256": "14698c808511764e0638698509adb536294e300af8d476fa55c0e874c5fcbcfc",
+      "size_bytes": 22
+    },
+    {
+      "path": "people/Family/unnamed_daughter_b--UDB01/unnamed_daughter_b--UDB01(facts and about).md",
+      "sha256": "6725c70038b45387404d36dd27c90aef18db05fe107a271e63f8175550162681",
+      "size_bytes": 846
+    },
+    {
+      "path": "people/Family/wahaj--W01/journal(personal thoughts).md",
+      "sha256": "2a914f08cffb3631a20878d9113542badd42cd512e26ca80b7893f7cddb52a34",
+      "size_bytes": 9
+    },
+    {
+      "path": "people/Family/wahaj--W01/wahaj--W01(facts and about).md",
+      "sha256": "34edcecade080420484da479d1adfaadef72b3a1cb6c32d6229d0c74785605a6",
+      "size_bytes": 803
+    },
+    {
+      "path": "people/Family/zubair--Z01/journal(personal thoughts).md",
+      "sha256": "9fb6d386aa6aa33dcdfa186c4ed09b85e9bf1ae89008041430e059e76866fa2f",
+      "size_bytes": 10
+    },
+    {
+      "path": "people/Family/zubair--Z01/zubair--Z01(facts and about).md",
+      "sha256": "c20628ff3dc1253bdde7ab7a2603c2d9b85ed403ee99ee8bf5bdab8ce2b8a478",
+      "size_bytes": 806
+    },
+    {
+      "path": "people/Me/mohammad_yahya_hussain--MYH01/journal(personal thoughts).md",
+      "sha256": "72560059173ab653420815ac08b3012a4e2a224120c941db75bc6d88e16f96f8",
+      "size_bytes": 26
+    },
+    {
+      "path": "people/Me/mohammad_yahya_hussain--MYH01/mohammad_yahya_hussain--MYH01(facts and about).md",
+      "sha256": "5c31615753d5a8f9407d1fb2976f749c364847dae3f7d468bfbc225b64ae9b6e",
+      "size_bytes": 849
+    }
+  ],
+  "journal_count": 35,
+  "kind": "people-relationships-backup",
+  "label": "Before Phase 12 schema upgrade",
+  "person_count": 35,
+  "safety_reason": "pre_upgrade",
+  "schema_version": 3,
+  "source_root_id": "9d2f7f0f85e549c89cf054a00e468c9c",
+  "sqlite_schema_version": 3,
+  "total_size_bytes": 295650
+}

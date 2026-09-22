@@ -65,7 +65,8 @@ Full handoff and verification reports:
 - [Phase 11 Independent Audit](Documentation/Testing/phase11-independent-audit.md)
 - [Phase 11 Canonical Data Verification](Documentation/Testing/phase11-canonical-data-verification.md)
 
-- Phase 12 — Raw Intake, Provenance & Organization — **NOT STARTED**
+- Phase 12 — Raw Intake, Provenance & Organization — **PROVISIONALLY IMPLEMENTED**
+  **INDEPENDENT AUDIT REQUIRED BEFORE FREEZE**
 - Phase 13 — Media, Documents & Gallery
 - Phase 14 — Events, Memories & Flashbacks
 - Phase 15 — Conversations & Social Media Archive
@@ -117,7 +118,7 @@ required V1 phase.
 - **Guided Backup Restore**: Full human-facing restore flow with strict manifest/path/hash/size/count/schema verification, mandatory verified `Safety/Pre-Restore` snapshots, reversible staged DB/People/Config switching, exact rollback, and post-restore health checks.
 - **Data Root Health Audit**: Deterministic, non-destructive audit (`audit_data_root()`) checking SQLite integrity and filesystem alignment (detects missing folders, missing journals, orphan folders, and archived-active mismatches). Includes `safe_repair_data_root()` for safe repairs.
 - **Atomic Data Root Onboarding**: Create New stages a schema-2 root with a user-provided owner, validates it, publishes it, and atomically commits the OS-local pointer last. Existing nonempty locations are never reused or overwritten.
-- **Data Root Relocation & Switching**: Existing roots are inspected and confirmed before atomic switching. Move creates a verified safety backup and copies only runtime `Database/` and `Backups/` payload with exact inventory verification; source `Codebase/` and `Documentation/` trees are excluded and the old root is retained.
+- **Data Root Relocation & Switching**: Existing roots are inspected and confirmed before atomic switching. Move creates a verified safety backup and copies runtime `Database/`, `People/`, `Backups/`, and untouched `Raw/` payload with exact streaming-hash inventory verification; source `Codebase/` and `Documentation/` trees are excluded and the old root is retained.
 - **First-Run Restore**: A verified backup source is restored into a separately selected empty destination through staging, then activated pointer-last; the backup source remains unchanged.
 - **Disconnected / Invalid Location Recovery**: Reachable backend plus missing, malformed, or invalid root opens the appropriate recovery flow, while actual backend failure alone opens service-failure UX. Empty databases are never created silently.
 
@@ -196,9 +197,11 @@ Database/
 
 Phase 11 establishes identity, identifier history, family/general relationship,
 group, provenance, unresolved-person, platform-identity, place, and event
-foundations in schema 3. The remaining logical domains named below belong to
-their roadmap phases and must arrive through later versioned migrations; the
-Phase 11 freeze does not require empty speculative tables for Phase 12–17.
+foundations in schema 3. Phase 12 adds only generic Raw intake/review state in
+schema 4 through an explicit transactional migration. The remaining logical
+domains belong to their roadmap phases and must arrive through later versioned
+migrations; the Phase 11 freeze does not require empty speculative tables for
+Phases 13–17.
 
 It has logically separated tables for people, relationships and their
 aliases/statuses, groups and memberships, places, events, memories/indexes,
@@ -310,6 +313,35 @@ duplicate finding, extraction, proposed and final destinations, user decision,
 move/deletion date, corrections, and provenance. Identical duplicates may be
 detected automatically but are deleted only after explicit authorization and a
 preserved history record.
+
+### Phase 12 implementation boundary — PROVISIONAL
+
+Phase 12 implements a generic Raw review foundation at schema 4. It creates an
+empty `Raw/` directory for a new Data Root, recursively scans it without
+following links, streams SHA-256 with before/after file checks, records separate
+stable item IDs and path history, groups only exact verified duplicates, and
+records deterministic coarse classifications. ZIP inspection lists metadata
+only and rejects unsafe member paths or suspicious containers; it never
+extracts payloads.
+
+The current Raw screen keeps machine detection visibly provisional and supports
+rescan/rehash, filters, provenance, corrections, explicit approve/reject/defer,
+and an explicit file move only for a human-selected path under the existing
+`Database/Sources/` provenance area. Media, event, social, location, face, OCR,
+transcription, and Hermes destinations are marked blocked for their later
+phases. A move refuses stale approval, path traversal, links, overwrite/case
+collisions, and hash mismatches; it verifies a staged destination before the
+source leaves Raw and leaves recoverable state if interrupted. Duplicate
+deletion is deliberately deferred: there is no automatic or physical deletion
+workflow in Phase 12.
+
+`relationships.db` remains the structured authority. Its Raw event outbox is
+atomically projected to `Database/raw_processing_history.md`, making a failed
+Markdown write recoverable without event duplication. Backups include schema-4
+Raw metadata and this history projection but intentionally exclude Raw binary
+payloads; a restore without those payloads preserves records and reports their
+sources as missing when next scanned. See the [Phase 12 verification report](Documentation/Testing/phase12-raw-intake-verification.md)
+and [independent-audit handoff](Documentation/Planning/phase12-audit-handoff.md).
 
 ### Ordinary media, events, sidecars, and documents — LOCKED
 
@@ -625,8 +657,13 @@ Legacy). Automatic is a supported category, but scheduling is not configured in
 V1. Each new folder has a collision-safe timestamp/UUID/label ID:
 
 - one same-generation canonical database snapshot
-- canonical person/context and other integrity-required metadata/files
+- canonical person/context and other integrity-required metadata/files,
+  including `Database/raw_processing_history.md` for schema-4 snapshots
 - `manifest.json` — app/schema version, file list with sizes and SHA-256
+
+Raw binary payloads are intentionally excluded from backups under the deferred
+large-media policy. A metadata backup is never represented as a copy of Raw
+source material.
 
 Snapshots are fully verified before publication and before restore. Restore first
 creates a verified `Safety/Pre-Restore` snapshot, then reversibly switches the

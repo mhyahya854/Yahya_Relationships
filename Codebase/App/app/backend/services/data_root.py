@@ -28,6 +28,7 @@ _RUNTIME_NAMES = (
     "Database",
     "People",
     "Backups",
+    "Raw",
     "family.db",
     "people",
     "config",
@@ -379,12 +380,20 @@ def switch_data_root(target_path: str) -> Dict[str, Any]:
 
 def _is_transient(relative: Path) -> bool:
     name = relative.name
-    transient_prefixes = (".backup_staging_", ".restore_staging_", ".restore_rollback_", ".bootstrap-", ".journal-")
+    transient_prefixes = (".backup_staging_", ".restore_staging_", ".restore_rollback_", ".raw_move_staging_", ".bootstrap-", ".journal-")
     return (
         "__pycache__" in relative.parts
         or name.endswith((".tmp", "-wal", "-shm"))
         or any(part.startswith(transient_prefixes) for part in relative.parts)
     )
+
+
+def _sha256_stream(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _runtime_inventory(root: Path) -> list[Dict[str, Any]]:
@@ -408,7 +417,7 @@ def _runtime_inventory(root: Path) -> list[Dict[str, Any]]:
                     {
                         "path": relative.as_posix(),
                         "size": item.stat().st_size,
-                        "sha256": hashlib.sha256(item.read_bytes()).hexdigest(),
+                        "sha256": _sha256_stream(item),
                     }
                 )
     return rows

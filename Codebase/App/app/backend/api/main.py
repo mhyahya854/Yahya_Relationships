@@ -44,7 +44,7 @@ from ..services import (  # noqa: E402
     state,
 )
 
-from ..api.routes import backups as backups_router, data_root as data_root_router
+from ..api.routes import backups as backups_router, data_root as data_root_router, raw as raw_router
 from ..data_root.errors import DataRootError
 
 @asynccontextmanager
@@ -97,6 +97,7 @@ async def data_root_error_handler(request: Request, exc: DataRootError):
 
 app.include_router(data_root_router.router)
 app.include_router(backups_router.router)
+app.include_router(raw_router.router)
 
 
 # ---------------------------------------------------------------------------
