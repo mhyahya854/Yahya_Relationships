@@ -294,9 +294,14 @@ class DataRootManager:
     @classmethod
     def get_backups_dir(cls, root: Path | None = None) -> Path:
         r = root.resolve() if root else cls.resolve_active_root()
-        legacy_backups = r / "backups"
-        if legacy_backups.exists():
-            return legacy_backups
+        try:
+            names = set(os.listdir(r))
+        except OSError:
+            names = set()
+        if "Backups" in names:
+            return r / "Backups"
+        if "backups" in names:
+            return r / "backups"
         return r / "Backups"
 
     @classmethod

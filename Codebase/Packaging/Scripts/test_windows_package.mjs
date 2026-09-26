@@ -24,6 +24,17 @@ const bundleDir = join(process.env.CARGO_TARGET_DIR || join(codebaseDir, "Deskto
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+async function waitForHealth(port) {
+  for (let i = 0; i < 40; i++) {
+    await sleep(400);
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/health`);
+      if (res.ok) return true;
+    } catch {}
+  }
+  return false;
+}
+
 async function main() {
   console.log("=== Windows Installed Package Automated Verification ===");
 
@@ -97,17 +108,7 @@ async function main() {
   console.log(
     `\n[Step 3/6] Polling backend health on 127.0.0.1:${testPort}...`,
   );
-  let healthy = false;
-  for (let i = 0; i < 40; i++) {
-    await sleep(400);
-    try {
-      const res = await fetch(`http://127.0.0.1:${testPort}/api/health`);
-      if (res.ok) {
-        healthy = true;
-        break;
-      }
-    } catch {}
-  }
+  const healthy = await waitForHealth(testPort);
 
   if (!healthy) {
     try {
@@ -180,7 +181,9 @@ async function main() {
     env,
     stdio: "ignore",
   });
-  await sleep(2500);
+  if (!(await waitForHealth(testPort))) {
+    throw new Error(`Restarted backend readiness timed out on port ${testPort}!`);
+  }
 
   const persistRes = await fetch(`http://127.0.0.1:${testPort}/api/people`);
   if (!persistRes.ok) {

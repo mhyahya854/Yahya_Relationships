@@ -48,6 +48,13 @@ def test_explicit_root_getters_use_canonical_layout(tmp_path):
     assert DataRootManager.get_exports_dir(root) == root / "Database" / "Exports"
 
 
+@pytest.mark.parametrize("folder", ["Backups", "backups"])
+def test_backup_root_preserves_on_disk_case(tmp_path, folder):
+    root = tmp_path / "root"
+    (root / folder).mkdir(parents=True)
+    assert DataRootManager.get_backups_dir(root) == root / folder
+
+
 def test_empty_source_like_root_getters(tmp_path, monkeypatch):
     """An empty source-like directory has only expected paths, never real data."""
     monkeypatch.chdir(tmp_path)
@@ -116,7 +123,7 @@ def test_missing_configured_root_never_falls_back_or_creates_db(tmp_path, monkey
 
 
 def test_disconnected_drive_simulation_and_api_health(tmp_path, monkeypatch):
-    """Simulate a disconnected external drive (e.g. D:\\) configured as active root:
+    """Simulate a disconnected external root on every host platform:
     - FastAPI /api/health must return structured DATA_ROOT_NOT_FOUND error.
     - No replacement database must be initialized or created.
     """
@@ -126,7 +133,7 @@ def test_disconnected_drive_simulation_and_api_health(tmp_path, monkeypatch):
 
     DataRootManager.set_override_root(None)
 
-    disconnected_drive_root = Path("D:/DisconnectedDrive_Simulation_Test/People_Relationships")
+    disconnected_drive_root = tmp_path / "disconnected-root" / "People_Relationships"
     bootstrap_file = tmp_path / "bootstrap_disc.json"
     bootstrap_file.write_text(
         json.dumps({"active_root": str(disconnected_drive_root)}),

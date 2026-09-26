@@ -144,6 +144,13 @@ def test_hash_detects_changed_during_read_and_streams(tmp_path: Path, monkeypatc
         raw_intake.hash_file(path)
 
 
+def test_claim_identity_allows_only_posix_rename_ctime_change():
+    approved = {"size_bytes": 7, "mtime_ns": 11, "ctime_ns": 13, "device": 17, "inode": 19}
+    renamed = {**approved, "ctime_ns": 23}
+    assert raw_intake._matches_approved_claim(renamed, approved) is (os.name != "nt")
+    assert not raw_intake._matches_approved_claim({**renamed, "inode": 29}, approved)
+
+
 def test_duplicate_membership_tracks_current_hash_and_ambiguous_rename_does_not_merge(tmp_path: Path):
     root = _new_root(tmp_path)
     raw = root / "Raw"

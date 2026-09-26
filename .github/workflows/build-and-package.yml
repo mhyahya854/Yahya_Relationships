@@ -123,10 +123,14 @@ jobs:
           cargo check --manifest-path Codebase/Desktop/Tauri/Cargo.toml
 
       - name: Package Desktop Application
+        env:
+          MOSAIC_PRIVACY_HMAC_KEY: ${{ secrets.MOSAIC_PRIVACY_HMAC_KEY }}
         run: |
           node Codebase/Packaging/Scripts/package.mjs --skip-sidecar
 
       - name: Mandatory Privacy & Security Audit
+        env:
+          MOSAIC_PRIVACY_HMAC_KEY: ${{ secrets.MOSAIC_PRIVACY_HMAC_KEY }}
         run: |
           python Codebase/Packaging/Scripts/audit_package.py Codebase/Desktop/Tauri/target/release/bundle
 

@@ -28,7 +28,7 @@ from app.backend.services import people, family, general
 
 def test_data_root_manager_resolution(isolated):
     assert DataRootManager.resolve_active_root() == isolated
-    assert DataRootManager.get_people_dir() in (isolated / "Database" / "People", isolated / "people")
+    assert DataRootManager.get_people_dir() == isolated / "People"
     assert DataRootManager.get_backups_dir() in (isolated / "Backups", isolated / "backups")
     assert DataRootManager.get_config_dir() in (isolated / "Database" / "Config", isolated / "config")
 

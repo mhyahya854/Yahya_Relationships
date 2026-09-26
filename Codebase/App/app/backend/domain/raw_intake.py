@@ -1264,8 +1264,15 @@ def _sync_directory(directory: Path) -> None:
         os.close(descriptor)
 
 
+def _matches_approved_claim(actual: dict[str, Any], expected: dict[str, Any]) -> bool:
+    """A POSIX rename changes ctime without changing the claimed file identity."""
+    stable = ("size_bytes", "mtime_ns", "device", "inode")
+    return (all(actual.get(key) == expected.get(key) for key in stable)
+            and (os.name != "nt" or actual.get("ctime_ns") == expected.get("ctime_ns")))
+
+
 def _claim_raw_source(root: Path, source: Path, operation_id: str,
-                      expected_hash: str, expected_fingerprint: dict[str, Any]) -> Path:
+                      expected_hash: str, expected_fingerprint: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
     claimed = _quarantine_payload(root, operation_id)
     claimed.parent.mkdir(parents=True, exist_ok=False)
     _ensure_no_link_ancestors(root, claimed)
@@ -1280,9 +1287,9 @@ def _claim_raw_source(root: Path, source: Path, operation_id: str,
     if _is_link_like(claimed):
         raise SourceChangedError("Claimed Raw object is a link; it was retained in quarantine.")
     actual_hash, actual_fingerprint = hash_file(claimed)
-    if actual_hash != expected_hash or actual_fingerprint != expected_fingerprint:
+    if actual_hash != expected_hash or not _matches_approved_claim(actual_fingerprint, expected_fingerprint):
         raise SourceChangedError("Claimed Raw object differs from approval; it was retained in quarantine.")
-    return claimed
+    return claimed, actual_fingerprint
 
 
 def _remove_verified_source(source: Path, expected_hash: str, expected_fingerprint: dict[str, Any]) -> None:
@@ -1401,7 +1408,7 @@ def move_approved_item(item_id: str, root: Path | None = None) -> dict[str, Any]
             connection.execute("UPDATE raw_items SET processing_state='MOVING', updated_at=? WHERE id=?", (now, item_id))
             _event(connection, item_id, "MOVE_PREPARED", {"current_path": item["current_relative_path"], "final_path": proposal["destination_relative_path"], "sha256": digest})
             connection.commit()
-            claimed = _claim_raw_source(active_root, source, operation_id, digest, source_fingerprint)
+            claimed, claimed_fingerprint = _claim_raw_source(active_root, source, operation_id, digest, source_fingerprint)
             staging_dir = active_root / "Database" / f"{RAW_STAGING_PREFIX}{operation_id}"
             temporary = staging_dir / "payload"
             copied_hash = _copy_verified(claimed, temporary)
@@ -1429,11 +1436,11 @@ def move_approved_item(item_id: str, root: Path | None = None) -> dict[str, Any]
             _failpoint("move_after_destination_verified")
             _failpoint("move_before_source_removal")
             current_digest, current_fingerprint = hash_file(claimed)
-            if current_digest != digest or current_fingerprint != source_fingerprint:
+            if current_digest != digest or current_fingerprint != claimed_fingerprint:
                 raise SourceChangedError("Claimed source changed after publication; both paths were retained.")
             _failpoint("move_before_verified_remove_open")
             if _supports_identity_bound_cleanup():
-                _remove_verified_source(claimed, digest, source_fingerprint)
+                _remove_verified_source(claimed, digest, claimed_fingerprint)
             else:
                 connection.execute("BEGIN IMMEDIATE")
                 connection.execute("UPDATE raw_move_operations SET error_message='CLEANUP_PENDING', updated_at=? WHERE id=?", (utc_now(), operation_id))
@@ -1509,7 +1516,7 @@ def recover_pending_moves(root: Path | None = None) -> dict[str, Any]:
                         connection.execute("UPDATE raw_move_operations SET status='ERROR', error_message=?, updated_at=? WHERE id=?", ("Quarantine object is unsafe; retained for review.", utc_now(), operation["id"]))
                         continue
                     claim_hash, claim_fingerprint = hash_file(claimed)
-                    if claim_hash != operation["expected_sha256"] or claim_fingerprint != approval.get("reviewed_fingerprint"):
+                    if claim_hash != operation["expected_sha256"] or not _matches_approved_claim(claim_fingerprint, approval.get("reviewed_fingerprint", {})):
                         connection.execute("UPDATE raw_move_operations SET status='ERROR', error_message=?, updated_at=? WHERE id=?", ("Quarantine object changed; retained for review.", utc_now(), operation["id"]))
                         continue
                 destination = _destination_path_for_existing(active_root, operation["destination_relative_path"])

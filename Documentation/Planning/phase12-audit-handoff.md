@@ -43,7 +43,7 @@ Private verification evidence is retained outside public source. The final whole
 
 Terra independently found that completed cleanup-pending quarantine on macOS and Linux blocked Data Root relocation. The repair verifies and copies the retained operation-owned payload during relocation. Luna independently found that dangling Windows junctions could escape relocation preflight; both nested and top-level runtime links now fail closed before safety-backup creation. Both findings were reproduced with disposable synthetic roots, repaired, and independently rechecked.
 
-The final local regression collected 595 backend tests (592 passed, 3 platform skips); all 12 UI suites passed, including 50 Data Root, 5 Raw, 18 Navigation, and 110 visual checks. A data-free export passed the same backend suite. Windows desktop check/test, installer build, installed-app persistence and uninstall checks, package audit, and the keyed current-tree privacy gate passed. The private verification record remains outside public Git.
+The final local regression collected 599 backend tests (596 passed, 3 platform skips); all 12 UI suites passed, including 50 Data Root, 5 Raw, 18 Navigation, and 110 visual checks. A data-free export passed the backend suite and the affected repair tests. Windows desktop check/test, installer build, installed-app persistence and uninstall checks, package audit, and the keyed current-tree privacy gate passed. The private verification record remains outside public Git.
 
 ## Topics for the later final system audit
 
