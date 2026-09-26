@@ -48,27 +48,17 @@ def test_explicit_root_getters_use_canonical_layout(tmp_path):
     assert DataRootManager.get_exports_dir(root) == root / "Database" / "Exports"
 
 
-def test_real_project_root_getters(tmp_path, monkeypatch):
-    """The real project root resolves to the canonical layout from any cwd."""
+def test_empty_source_like_root_getters(tmp_path, monkeypatch):
+    """An empty source-like directory has only expected paths, never real data."""
     monkeypatch.chdir(tmp_path)
-    root = PROJECT_ROOT
-    if (root / "Database" / "relationships.db").exists():
-        assert (
-            DataRootManager.get_database_path(root)
-            == root / "Database" / "relationships.db"
-        )
-    else:
-        assert (
-            DataRootManager.get_database_path(root)
-            == root / "Database" / "Main" / "family.db"
-        )
-    if (root / "People").exists():
-        assert DataRootManager.get_people_dir(root) == root / "People"
-    else:
-        assert DataRootManager.get_people_dir(root) == root / "Database" / "People"
+    root = tmp_path / "public-source"
+    root.mkdir()
+    assert DataRootManager.get_database_path(root) == root / "Database" / "Main" / "family.db"
+    assert DataRootManager.get_people_dir(root) == root / "People"
     assert DataRootManager.get_backups_dir(root) == root / "Backups"
     assert DataRootManager.get_config_dir(root) == root / "Database" / "Config"
     assert DataRootManager.get_exports_dir(root) == root / "Database" / "Exports"
+    assert list(root.iterdir()) == []
 
 
 def test_missing_configured_root_never_falls_back_or_creates_db(tmp_path, monkeypatch):
@@ -183,4 +173,3 @@ def test_db_open_modes_existing_vs_initialize(tmp_path):
         assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     finally:
         conn.close()
-

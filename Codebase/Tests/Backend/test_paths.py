@@ -1,7 +1,8 @@
-"""Relationship-path extraction, graph-neighbour and Hermes path tests."""
+"""Relationship paths and graph behavior against the fictional Mosaic family."""
 
 import pytest
 
+from app.backend.domain.canonical.ids import generate_canonical_person_id as person_id
 from app.backend.domain.relationships import graph as graph_service
 from app.backend.domain.relationships import path_service
 from app.backend.hermes import tools as hermes
@@ -9,158 +10,102 @@ from app.backend.services import errors, general, people, relationship
 
 
 pytestmark = pytest.mark.usefixtures("isolated")
+MIRA = person_id("Mira Rahim")
+AIKA = person_id("Aika Calder-Rahim")
+ELIAS = person_id("Elias Calder")
+SALMA = person_id("Salma Rahim")
+SAMI = person_id("Sami Calder")
+DARYA = person_id("Darya Sol")
+LAYLA = person_id("Layla Rahim")
 
 
-def labels_of(payload):
+def _labels(payload):
     return {(path["label_en"] or "").casefold() for path in payload["paths"]}
 
 
-def test_aresha_two_paths_are_distinct():
-    payload = path_service.get_relationship_paths(
-        "mohammad_yahya_hussain", "aresha_zubair"
-    )
-    path_labels = labels_of(payload)
-    assert "paternal first cousin" in path_labels
-    assert "maternal second cousin" in path_labels
+def test_double_cousin_paths_are_distinct():
+    payload = path_service.get_relationship_paths(MIRA, AIKA)
+    assert _labels(payload) == {"maternal first cousin", "paternal first cousin"}
     paths = payload["paths"]
-    assert len(paths) == 2
-    assert paths[0]["side"] == "paternal"
-    assert paths[1]["side"] == "maternal"
-    node_sets = [tuple(node["id"] for node in path["nodes"]) for path in paths]
-    assert node_sets[0] != node_sets[1]
-    assert len({path["id"] for path in paths}) == 2
+    assert [p["side"] for p in paths] == ["maternal", "paternal"]
+    assert len({p["id"] for p in paths}) == 2
+    assert len({tuple(n["id"] for n in p["nodes"]) for p in paths}) == 2
+    for path in paths:
+        assert path["degree"] == 1
+        assert path["removal"] == 0
+        assert path["distance"] == 4
 
 
-def test_ezan_paths_preserve_engine_semantics():
-    payload = path_service.get_relationship_paths(
-        "mohammad_yahya_hussain", "ezan_asif"
-    )
-    by_label = {path["label_en"].casefold(): path for path in payload["paths"]}
-    assert "maternal first cousin" in by_label
-    assert "paternal second cousin" in by_label
-    maternal = by_label["maternal first cousin"]
-    assert maternal["degree"] == 1
-    assert maternal["removal"] == 0
-    assert maternal["side"] == "maternal"
-    assert [node["name"] for node in maternal["nodes"]] == [
-        "Mohammad Yahya Hussain",
-        "Irsa Naz",
-        "Shahnaz Israr",
-        "Sadia Asif",
-        "Ezan Asif",
+def test_maternal_and_paternal_routes_use_fictional_ancestors():
+    paths = path_service.get_relationship_paths(MIRA, AIKA)["paths"]
+    by_side = {path["side"]: [n["name"] for n in path["nodes"]] for path in paths}
+    assert by_side["maternal"] == [
+        "Mira Rahim", "Salma Rahim", "Qadir Rahim", "Layla Rahim", "Aika Calder-Rahim"
+    ]
+    assert by_side["paternal"] == [
+        "Mira Rahim", "Elias Calder", "Adnan Calder", "Kamal Calder", "Aika Calder-Rahim"
     ]
 
 
-def test_direct_parent_child_and_spouse_paths():
-    father = path_service.get_relationship_paths(
-        "mohammad_yahya_hussain", "mansoor_hussain"
-    )["paths"]
-    assert father[0]["label_en"].casefold() == "father"
-    assert father[0]["distance"] == 1
-    assert father[0]["edges"][0]["type"] == "parent_child"
-    assert father[0]["edges"][0]["role"] == "is child of"
-    assert father[0]["derived"] is False
+def test_parent_child_spouse_and_sibling_paths():
+    father = path_service.get_relationship_paths(MIRA, ELIAS)["paths"][0]
+    assert father["label_en"].casefold() == "father"
+    assert father["distance"] == 1
+    assert father["edges"][0]["type"] == "parent_child"
+    assert father["derived"] is False
 
-    son = path_service.get_relationship_paths(
-        "mansoor_hussain", "mohammad_yahya_hussain"
-    )["paths"]
-    assert son[0]["label_en"].casefold() == "son"
-    assert son[0]["edges"][0]["role"] == "is parent of"
+    daughter = path_service.get_relationship_paths(ELIAS, MIRA)["paths"][0]
+    assert daughter["label_en"].casefold() == "daughter"
+    assert daughter["edges"][0]["role"] == "is parent of"
 
-    spouse = path_service.get_relationship_paths("irsa_naz", "mansoor_hussain")[
-        "paths"
-    ]
-    assert spouse[0]["label_en"].casefold() == "husband"
-    assert spouse[0]["edges"][0]["type"] == "marriage"
+    spouse = path_service.get_relationship_paths(SALMA, ELIAS)["paths"][0]
+    assert spouse["label_en"].casefold() == "husband"
+    assert spouse["edges"][0]["type"] == "marriage"
+
+    sibling = path_service.get_relationship_paths(MIRA, SAMI)["paths"][0]
+    assert sibling["label_en"].casefold() == "full brother"
+    assert sibling["distance"] == 2
+    assert {a["id"] for a in sibling["common_ancestors"]} == {ELIAS, SALMA}
 
 
-def test_sibling_path_uses_shared_parent():
-    payload = path_service.get_relationship_paths(
-        "mohammad_yahya_hussain", "maham_mansoor"
-    )
-    path = payload["paths"][0]
-    assert path["label_en"].casefold() == "sister"
-    assert path["distance"] == 2
-    assert [node["id"] for node in path["nodes"]][1] in (
-        "irsa_naz",
-        "mansoor_hussain",
-    )
-    assert {ancestor["id"] for ancestor in path["common_ancestors"]} == {
-        "irsa_naz",
-        "mansoor_hussain",
-    }
+def test_reverse_perspective_changes_direction():
+    toward_aunt = path_service.get_relationship_paths(MIRA, LAYLA)
+    toward_niece = path_service.get_relationship_paths(LAYLA, MIRA)
+    assert any("aunt" in label for label in _labels(toward_aunt))
+    assert any("niece" in label for label in _labels(toward_niece))
 
 
-def test_reverse_perspective_directionality():
-    a = path_service.get_relationship_paths("ezan_asif", "irsa_naz")["paths"]
-    b = path_service.get_relationship_paths("irsa_naz", "ezan_asif")["paths"]
-    assert any(path["label_en"].casefold() == "maternal aunt" for path in a)
-    assert any(path["label_en"].casefold() == "nephew" for path in b)
-
-
-def test_no_loops_and_unique_ids():
-    for first, second in (
-        ("mohammad_yahya_hussain", "aresha_zubair"),
-        ("mohammad_yahya_hussain", "ezan_asif"),
-        ("irsa_naz", "ezan_asif"),
-    ):
-        payload = path_service.get_relationship_paths(
-            first, second, max_depth=20, max_paths=30
-        )
-        ids = []
+def test_no_loops_and_stable_unique_path_ids():
+    for first, second in ((MIRA, AIKA), (MIRA, SAMI), (SALMA, AIKA)):
+        payload = path_service.get_relationship_paths(first, second, max_depth=20, max_paths=30)
+        ids = [path["id"] for path in payload["paths"]]
+        assert len(ids) == len(set(ids))
         for path in payload["paths"]:
             node_ids = [node["id"] for node in path["nodes"]]
             assert len(node_ids) == len(set(node_ids))
-            ids.append(path["id"])
-        assert len(ids) == len(set(ids))
+        assert ids == [path["id"] for path in path_service.get_relationship_paths(
+            first, second, max_depth=20, max_paths=30
+        )["paths"]]
 
 
-def test_limit_validation():
+def test_limits_and_missing_people():
+    for kwargs, code in (({"max_depth": 0}, "INVALID_MAX_DEPTH"),
+                         ({"max_paths": 51}, "INVALID_MAX_PATHS")):
+        with pytest.raises(errors.AppError) as exc:
+            path_service.get_relationship_paths(MIRA, AIKA, **kwargs)
+        assert exc.value.code == code
     with pytest.raises(errors.AppError) as exc:
-        path_service.get_relationship_paths(
-            "mohammad_yahya_hussain", "aresha_zubair", max_depth=0
-        )
-    assert exc.value.code == "INVALID_MAX_DEPTH"
-    with pytest.raises(errors.AppError) as exc:
-        path_service.get_relationship_paths(
-            "mohammad_yahya_hussain", "aresha_zubair", max_paths=51
-        )
-    assert exc.value.code == "INVALID_MAX_PATHS"
-
-
-def test_max_depth_and_max_paths_bounds():
-    with pytest.raises(errors.AppError) as exc:
-        path_service.get_relationship_paths(
-            "mohammad_yahya_hussain", "aresha_zubair", max_depth=3
-        )
+        path_service.get_relationship_paths(MIRA, AIKA, max_depth=3)
     assert exc.value.code == "NO_RELATIONSHIP_PATH"
-
-    payload = path_service.get_relationship_paths(
-        "mohammad_yahya_hussain", "aresha_zubair", max_paths=1
-    )
-    assert len(payload["paths"]) == 1
-    assert payload["truncated"] is True
-
-
-def test_unknown_person_errors():
+    one = path_service.get_relationship_paths(MIRA, AIKA, max_paths=1)
+    assert len(one["paths"]) == 1 and one["truncated"] is True
     with pytest.raises(errors.AppError) as exc:
-        path_service.get_relationship_paths("missing_person", "irsa_naz")
+        path_service.get_relationship_paths("missing_person", MIRA)
     assert exc.value.code == "NOT_FOUND"
 
 
-def test_label_coverage_across_family_pairs():
-    sample = [
-        "mohammad_yahya_hussain",
-        "maham_mansoor",
-        "irsa_naz",
-        "mansoor_hussain",
-        "ezan_asif",
-        "aresha_zubair",
-        "abdul_rafey",
-        "muaaz",
-        "sohaib_hussain",
-        "shahnaz_israr",
-    ]
+def test_path_labels_match_relationship_service():
+    sample = [MIRA, AIKA, ELIAS, SALMA, SAMI, LAYLA]
     for first in sample:
         for second in sample:
             if first == second:
@@ -170,181 +115,67 @@ def test_label_coverage_across_family_pairs():
                 (item["label_en"] or "").casefold()
                 for item in result["primary"] + result["additional"]
             }
-            if not expected:
-                continue
-            payload = path_service.get_relationship_paths(
-                first, second, max_depth=30, max_paths=50
-            )
-            actual = {
-                (item["label_en"] or "").casefold()
-                for item in payload["paths"]
-            }
-            assert actual == expected, f"{first} -> {second}"
+            if expected:
+                assert _labels(path_service.get_relationship_paths(
+                    first, second, max_depth=30, max_paths=50
+                )) == expected
 
 
-def test_general_connection_routes_do_not_create_transitive_inference(isolated):
+def test_general_connection_is_display_only():
     a = people.create_person(name="Alex Friend")
     b = people.create_person(name="Bo Friend")
     c = people.create_person(name="Cy Friend")
-    mentor = people.create_person(name="Mentor Lead")
-    general.add_general_relationship(
-        person_a=a["id"], person_b=b["id"], type="friend"
-    )
-    general.add_general_relationship(
-        person_a=b["id"], person_b=c["id"], type="friend"
-    )
-    general.add_general_relationship(
-        person_a=mentor["id"],
-        person_b=b["id"],
-        type="mentor",
-        directionality="directional",
-        label_a_to_b="Mentor",
-        label_b_to_a="Mentee",
-    )
-
-    friend_path = path_service.get_relationship_paths(a["id"], b["id"])
-    assert friend_path["paths"][0]["domain"] == "general"
-    assert friend_path["paths"][0]["label_en"] == "Friend"
-    assert friend_path["paths"][0]["derived"] is False
-    assert all(path["domain"] != "connection" for path in friend_path["paths"])
-
-    # The explorer may show a recorded A → B → C route on request, but the
-    # query-only route must never become a stored/derived "Friend" label.
-    connection_route = path_service.get_relationship_paths(a["id"], c["id"])
-    assert connection_route["paths"][0]["domain"] == "connection"
-    assert connection_route["paths"][0]["label_en"] == "Recorded connection route"
-    assert [edge["type"] for edge in connection_route["paths"][0]["edges"]] == [
-        "general",
-        "general",
-    ]
-    endpoint_relationship = relationship.get_relationship(a["id"], c["id"])
-    assert endpoint_relationship["primary"] == []
-    assert endpoint_relationship["additional"] == []
-
-    mentor_path = path_service.get_relationship_paths(mentor["id"], b["id"])
-    assert mentor_path["paths"][0]["label_en"] == "Mentor"
-    mentee_path = path_service.get_relationship_paths(b["id"], mentor["id"])
-    assert mentee_path["paths"][0]["label_en"] == "Mentee"
+    general.add_general_relationship(person_a=a["id"], person_b=b["id"], type="friend")
+    general.add_general_relationship(person_a=b["id"], person_b=c["id"], type="friend")
+    direct = path_service.get_relationship_paths(a["id"], b["id"])["paths"][0]
+    assert direct["domain"] == "general" and direct["derived"] is False
+    route = path_service.get_relationship_paths(a["id"], c["id"])["paths"][0]
+    assert route["domain"] == "connection"
+    assert [edge["type"] for edge in route["edges"]] == ["general", "general"]
+    endpoint = relationship.get_relationship(a["id"], c["id"])
+    assert endpoint["primary"] == endpoint["additional"] == []
 
 
-def test_mixed_recorded_general_and_family_route_is_display_only(isolated):
+def test_mixed_general_and_family_route_is_display_only():
     outsider = people.create_person(name="Synthetic Route Outsider")
-    general.add_general_relationship(
-        person_a=outsider["id"],
-        person_b="mohammad_yahya_hussain",
-        type="friend",
-    )
-
-    payload = path_service.get_relationship_paths(outsider["id"], "mansoor_hussain")
+    general.add_general_relationship(person_a=outsider["id"], person_b=MIRA, type="friend")
+    payload = path_service.get_relationship_paths(outsider["id"], ELIAS)
     mixed = next(path for path in payload["paths"] if path["domain"] == "connection")
-    assert [edge["type"] for edge in mixed["edges"]] == [
-        "general",
-        "parent_child",
-    ]
-    endpoint_relationship = relationship.get_relationship(outsider["id"], "mansoor_hussain")
-    assert endpoint_relationship["primary"] == []
-    assert endpoint_relationship["additional"] == []
+    assert [edge["type"] for edge in mixed["edges"]] == ["general", "parent_child"]
+    endpoint = relationship.get_relationship(outsider["id"], ELIAS)
+    assert endpoint["primary"] == endpoint["additional"] == []
 
 
-def test_graph_neighbors_filters():
-    parents = graph_service.get_graph_neighbors(
-        "mohammad_yahya_hussain", filters=["parents"]
-    )
-    parent_ids = {node["id"] for node in parents["nodes"]}
-    assert parent_ids == {
-        "mohammad_yahya_hussain",
-        "irsa_naz",
-        "mansoor_hussain",
-    }
-    assert {"irsa_naz", "mansoor_hussain"} <= {
-        node["id"] for node in parents["nodes"]
-    }
-    edge_types = {edge["type"] for edge in parents["edges"]}
-    assert edge_types == {"parent_child", "marriage"}
-
-    siblings = graph_service.get_graph_neighbors(
-        "mohammad_yahya_hussain", filters=["siblings"]
-    )
-    assert {"maham_mansoor"} <= {
-        node["id"] for node in siblings["nodes"]
-    }
-
-    general_result = graph_service.get_graph_neighbors(
-        "mohammad_yahya_hussain", filters=["general"]
-    )
-    assert len(general_result["nodes"]) == 1
-
-
-def test_graph_neighbors_general_after_add(isolated):
+def test_graph_neighbor_filters_and_added_general_edge():
+    parents = graph_service.get_graph_neighbors(MIRA, filters=["parents"])
+    assert {node["id"] for node in parents["nodes"]} == {MIRA, ELIAS, SALMA}
+    assert {edge["type"] for edge in parents["edges"]} == {"parent_child", "marriage"}
+    siblings = graph_service.get_graph_neighbors(MIRA, filters=["siblings"])
+    assert SAMI in {node["id"] for node in siblings["nodes"]}
+    general_nodes = graph_service.get_graph_neighbors(MIRA, filters=["general"])["nodes"]
+    assert DARYA in {node["id"] for node in general_nodes}
     friend = people.create_person(name="Graph Friend")
-    general.add_general_relationship(
-        person_a="mohammad_yahya_hussain",
-        person_b=friend["id"],
-        type="close_friend",
-    )
-    result = graph_service.get_graph_neighbors(
-        "mohammad_yahya_hussain",
-        perspective_id="mohammad_yahya_hussain",
-        filters=["general"],
-    )
+    general.add_general_relationship(person_a=MIRA, person_b=friend["id"], type="close_friend")
+    result = graph_service.get_graph_neighbors(MIRA, perspective_id=MIRA, filters=["general"])
     assert friend["id"] in {node["id"] for node in result["nodes"]}
-    general_edges = [
-        edge for edge in result["edges"] if edge["type"] == "general"
-    ]
-    assert len(general_edges) == 1
-    assert general_edges[0]["subtype"] == "close_friend"
-
-
-def test_invalid_filter_error():
+    assert any(edge["subtype"] == "close_friend" for edge in result["edges"] if edge["type"] == "general")
     with pytest.raises(errors.AppError) as exc:
-        graph_service.get_graph_neighbors(
-            "mohammad_yahya_hussain", filters=["parents", "ancestors"]
-        )
+        graph_service.get_graph_neighbors(MIRA, filters=["parents", "ancestors"])
     assert exc.value.code == "INVALID_FILTER"
 
 
-def test_hermes_path_tool_structured():
-    result = hermes.run_tool(
-        "get_relationship_paths",
-        {
-            "perspective": "mohammad_yahya_hussain",
-            "target": "aresha_zubair",
-            "max_depth": 10,
-            "max_paths": 10,
-        },
-    )
+def test_hermes_path_and_neighbor_tools():
+    result = hermes.run_tool("get_relationship_paths", {
+        "perspective": MIRA, "target": AIKA, "max_depth": 10, "max_paths": 10
+    })
     assert result["ok"] is True
-    assert len(result["paths"]) == 2
-    assert result["paths"][0]["label_en"] == "paternal first cousin"
-    assert "nodes" in result["paths"][0]
-    assert "edges" in result["paths"][0]
-
-
-def test_hermes_path_tool_errors():
-    bounded = hermes.run_tool(
-        "get_relationship_paths",
-        {
-            "perspective": "mohammad_yahya_hussain",
-            "target": "aresha_zubair",
-            "max_depth": 99,
-        },
-    )
+    assert _labels(result) == {"maternal first cousin", "paternal first cousin"}
+    assert all("nodes" in path and "edges" in path for path in result["paths"])
+    bounded = hermes.run_tool("get_relationship_paths", {
+        "perspective": MIRA, "target": AIKA, "max_depth": 99
+    })
     assert bounded["ok"] is False
     assert bounded["error"]["code"] == "INVALID_MAX_DEPTH"
-
-    ambiguous = hermes.run_tool(
-        "get_relationship_paths",
-        {"perspective": "a", "target": "b"},
-    )
-    assert ambiguous["ok"] is False
-    assert ambiguous["error"]["code"] in ("PERSON_AMBIGUOUS", "NOT_FOUND")
-
-
-def test_hermes_neighbor_tool():
-    result = hermes.run_tool(
-        "get_neighbors",
-        {"person": "mansoor_hussain", "filters": ["parents", "siblings"]},
-    )
-    assert result["ok"] is True
-    ids = {node["id"] for node in result["nodes"]}
-    assert {"abrar_hussain", "shaheen_abrar", "hina", "sana", "afshan"} <= ids
+    neighbors = hermes.run_tool("get_neighbors", {"person": MIRA, "filters": ["parents", "siblings"]})
+    assert neighbors["ok"] is True
+    assert {ELIAS, SALMA, SAMI} <= {node["id"] for node in neighbors["nodes"]}

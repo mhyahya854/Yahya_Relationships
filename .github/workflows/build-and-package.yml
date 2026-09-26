@@ -41,6 +41,11 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: Public source privacy gate
+        env:
+          MOSAIC_PRIVACY_HMAC_KEY: ${{ secrets.MOSAIC_PRIVACY_HMAC_KEY }}
+        run: python Codebase/Scripts/privacy_gate.py
+
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
@@ -81,9 +86,9 @@ jobs:
         run: |
           pytest Codebase/Tests/Backend -v
 
-      - name: Run Legacy Kinship & Perspective Audit
+      - name: Run Synthetic Kinship & Perspective Audit
         run: |
-          python Codebase/Scripts/build_family.py --check
+          python Codebase/Scripts/check_family_synthetic.py
 
       - name: Run Frontend Typecheck & Build
         run: |
@@ -91,7 +96,10 @@ jobs:
           npm --prefix Codebase/App/Frontend run build
 
       - name: Build Native Python Backend Sidecar
+        env:
+          MOSAIC_PRIVACY_HMAC_KEY: ${{ secrets.MOSAIC_PRIVACY_HMAC_KEY }}
         run: |
+          python Codebase/Scripts/privacy_gate.py
           python Codebase/Packaging/Scripts/build_backend.py --triple ${{ matrix.target_triple }}
 
       - name: Verify Expected Backend Sidecar Exists

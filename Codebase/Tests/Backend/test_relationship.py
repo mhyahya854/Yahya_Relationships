@@ -2,52 +2,58 @@
 generic relationships and no transitive inference."""
 
 from app.backend.services import general, people, relationship
+from app.backend.domain.canonical.ids import generate_canonical_person_id
+
+MIRA = generate_canonical_person_id("Mira Rahim")
+AIKA = generate_canonical_person_id("Aika Calder-Rahim")
+ELIAS = generate_canonical_person_id("Elias Calder")
+SALMA = generate_canonical_person_id("Salma Rahim")
+SAMI = generate_canonical_person_id("Sami Calder")
+LAYLA = generate_canonical_person_id("Layla Rahim")
+NOOR = generate_canonical_person_id("Noor Rahim")
 
 
 def test_reversal_is_directional():
-    a = relationship.get_relationship("irsa_naz", "ezan_asif")
-    b = relationship.get_relationship("ezan_asif", "irsa_naz")
-    assert [x["label_en"] for x in a["primary"]] == ["Nephew"]
+    a = relationship.get_relationship(SALMA, NOOR)
+    b = relationship.get_relationship(NOOR, SALMA)
+    assert [x["label_en"] for x in a["primary"]] == ["Niece"]
     assert [x["label_en"] for x in b["primary"]] == ["Maternal aunt"]
 
 
 def test_multiple_simultaneous_paths_are_preserved():
     result = relationship.get_relationship(
-        "mohammad_yahya_hussain", "ezan_asif"
+        MIRA, AIKA
     )
     primary = {x["label_en"] for x in result["primary"]}
     additional = {x["label_en"] for x in result["additional"]}
     assert "maternal first cousin" in primary
-    assert "paternal second cousin" in additional
+    assert "paternal first cousin" in additional
 
     result = relationship.get_relationship(
-        "mohammad_yahya_hussain", "aresha_zubair"
+        AIKA, MIRA
     )
     primary = {x["label_en"] for x in result["primary"]}
     additional = {x["label_en"] for x in result["additional"]}
-    assert "paternal first cousin" in primary
-    assert "maternal second cousin" in additional
+    assert {"paternal first cousin", "maternal first cousin"} == primary | additional
+    assert primary and additional
 
 
 def test_direct_and_cousin_paths_on_compare():
-    comparison = relationship.compare_people("irsa_naz", "aresha_zubair")
-    assert comparison["a_to_b"]["primary"][0]["label_en"] == (
-        "paternal first cousin once removed"
-    )
-    assert comparison["b_to_a"]["primary"][0]["label_en"] == (
-        "maternal first cousin once removed"
-    )
+    comparison = relationship.compare_people(MIRA, AIKA)
+    for direction in ("a_to_b", "b_to_a"):
+        paths = comparison[direction]["primary"] + comparison[direction]["additional"]
+        assert {"paternal first cousin", "maternal first cousin"} <= {p["label_en"] for p in paths}
 
 
 def test_self_relationship():
     result = relationship.get_relationship(
-        "mohammad_yahya_hussain", "mohammad_yahya_hussain"
+        MIRA, MIRA
     )
     assert result["primary"][0]["relationship_type"] == "self"
 
 
 def test_compare_arbitrary_people_without_owner():
-    comparison = relationship.compare_people("irsa_naz", "mansoor_hussain")
+    comparison = relationship.compare_people(SALMA, ELIAS)
     assert [x["label_en"] for x in comparison["a_to_b"]["primary"]] == ["Husband"]
     assert [x["label_en"] for x in comparison["b_to_a"]["primary"]] == ["Wife"]
 
@@ -96,12 +102,12 @@ def test_no_transitive_friend_inference(isolated):
 
 
 def test_list_relationships_from(isolated):
-    rows = relationship.list_relationships_from("mohammad_yahya_hussain")
+    rows = relationship.list_relationships_from(MIRA)
     by_id = {row["target"]["id"]: row for row in rows}
-    assert "maham_mansoor" in by_id
+    assert SAMI in by_id
     assert any(
-        x["label_en"] == "Sister" for x in by_id["maham_mansoor"]["primary"]
+        x["label_en"] == "Full brother" for x in by_id[SAMI]["primary"]
     )
     assert any(
-        x["label_en"] == "Maternal uncle" for x in by_id["sohaib_hussain"]["primary"]
+        x["label_en"] == "Maternal aunt" for x in by_id[LAYLA]["primary"]
     )

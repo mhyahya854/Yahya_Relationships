@@ -21,8 +21,8 @@ Exhaustively covers:
 18. Migration foreign_key_check passes.
 19. Migration integrity_check passes.
 20. Schema-version mismatch behavior raises SchemaVersionMismatchError.
-21. Current 35-person ordered-pair audit passes.
-22. Canonical multipath example (Yahya <-> Aresha) preserved.
+21. Synthetic ordered-pair audit passes.
+22. Fictional double-cousin paths are preserved.
 """
 
 from __future__ import annotations
@@ -839,12 +839,12 @@ def test_explicit_named_parent_child_cases(isolated):
 def test_sibling_stored_vs_derived_matrix(isolated):
     """Test explicit full group, explicit default group, inferred biological, and inferred half."""
     # Case 1 people
-    p_sib1 = people.create_person(name="Full Sib 1", gender="male")["id"]
-    p_sib2 = people.create_person(name="Full Sib 2", gender="female")["id"]
+    p_sib1 = people.create_person(name="Full Sib One", gender="male")["id"]
+    p_sib2 = people.create_person(name="Full Sib Two", gender="female")["id"]
 
     # Case 2 people
-    p_def1 = people.create_person(name="Def Sib 1", gender="male")["id"]
-    p_def2 = people.create_person(name="Def Sib 2", gender="female")["id"]
+    p_def1 = people.create_person(name="Def Sib One", gender="male")["id"]
+    p_def2 = people.create_person(name="Def Sib Two", gender="female")["id"]
 
     # Insert explicit groups
     con = db.get_connection()
@@ -879,8 +879,8 @@ def test_sibling_stored_vs_derived_matrix(isolated):
     # Case 3: Biological sibling inferred from shared parent-child facts (NO explicit group) -> derived=True
     dad_bio = people.create_person(name="Dad Bio", gender="male")["id"]
     mom_bio = people.create_person(name="Mom Bio", gender="female")["id"]
-    p_bio1 = people.create_person(name="Bio Sib 1", gender="male")["id"]
-    p_bio2 = people.create_person(name="Bio Sib 2", gender="female")["id"]
+    p_bio1 = people.create_person(name="Bio Sib One", gender="male")["id"]
+    p_bio2 = people.create_person(name="Bio Sib Two", gender="female")["id"]
     family.add_parent_child(parent_id=dad_bio, child_id=p_bio1, role="father", kind="biological")
     family.add_parent_child(parent_id=mom_bio, child_id=p_bio1, role="mother", kind="biological")
     family.add_parent_child(parent_id=dad_bio, child_id=p_bio2, role="father", kind="biological")
@@ -888,8 +888,8 @@ def test_sibling_stored_vs_derived_matrix(isolated):
 
     # Case 4: Half sibling inferred from one shared biological parent (NO explicit group) -> derived=True
     dad_half = people.create_person(name="Dad Half", gender="male")["id"]
-    p_half1 = people.create_person(name="Half Sib 1", gender="male")["id"]
-    p_half2 = people.create_person(name="Half Sib 2", gender="female")["id"]
+    p_half1 = people.create_person(name="Half Sib One", gender="male")["id"]
+    p_half2 = people.create_person(name="Half Sib Two", gender="female")["id"]
     family.add_parent_child(parent_id=dad_half, child_id=p_half1, role="father", kind="biological")
     family.add_parent_child(parent_id=dad_half, child_id=p_half2, role="father", kind="biological")
 
@@ -955,13 +955,12 @@ def test_sibling_stored_vs_derived_matrix(isolated):
     assert all(edge["type"] == "parent_child" for edge in half_path_rev["edges"])
 
 
-def test_temporary_copy_of_production_db_migration(tmp_path):
-    """Copy current Database/Main/family.db to temp location, run migration, verify data and baseline."""
-    real_db = config.PROJECT_ROOT / "Database" / "Main" / "family.db"
-    assert real_db.exists()
+def test_temporary_copy_of_synthetic_db_migration(tmp_path, isolated):
+    """Copy the generated canonical database, run migration, and verify data."""
+    fixture_db = isolated / "Database" / "relationships.db"
 
-    temp_copy = tmp_path / "temp_family_copy.db"
-    shutil.copy2(real_db, temp_copy)
+    temp_copy = tmp_path / "relationships.db"
+    shutil.copy2(fixture_db, temp_copy)
 
     # Run migration on the copy
     db.migrate(temp_copy)
@@ -971,22 +970,22 @@ def test_temporary_copy_of_production_db_migration(tmp_path):
         assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert len(con.execute("PRAGMA foreign_key_check").fetchall()) == 0
 
-        # Verify family baseline numbers
+        # Verify fictional family fixture counts.
         p_count = con.execute("SELECT COUNT(*) FROM people").fetchone()[0]
         pc_count = con.execute("SELECT COUNT(*) FROM parent_child").fetchone()[0]
         m_count = con.execute("SELECT COUNT(*) FROM marriages").fetchone()[0]
         sg_count = con.execute("SELECT COUNT(*) FROM sibling_groups").fetchone()[0]
 
-        assert p_count == 35, f"Expected 35 people, got {p_count}"
-        assert pc_count == 44, f"Expected 44 parent_child, got {pc_count}"
-        assert m_count == 12, f"Expected 12 marriages, got {m_count}"
-        assert sg_count == 10, f"Expected 10 sibling_groups, got {sg_count}"
+        assert p_count == 15
+        assert pc_count == 16
+        assert m_count == 4
+        assert sg_count == 3
 
-        # Schema version must be 2
+        # The canonical fixture uses the current schema.
         meta_ver = con.execute("SELECT value FROM metadata WHERE key = 'app_schema_version'").fetchone()[0]
         user_ver = con.execute("PRAGMA user_version").fetchone()[0]
-        assert meta_ver == "2"
-        assert user_ver == 2
+        assert meta_ver == "4"
+        assert user_ver == 4
     finally:
         con.close()
         temp_copy.unlink(missing_ok=True)
@@ -998,12 +997,12 @@ def test_temporary_copy_of_production_db_migration(tmp_path):
 
 def test_update_marriage_status(isolated):
     """Update marriage status (married -> divorced) persists in DB."""
-    res = family.update_marriage("abrar_hussain", "shaheen_abrar", status="divorced")
+    res = family.update_marriage("qadir_rahim--QR01", "mahira_rahim--MR01", status="divorced")
     assert res["status"] == "divorced"
     con = db.get_connection()
     try:
         row = con.execute(
-            "SELECT status FROM marriages WHERE (spouse_a = 'abrar_hussain' AND spouse_b = 'shaheen_abrar') OR (spouse_a = 'shaheen_abrar' AND spouse_b = 'abrar_hussain')"
+            "SELECT status FROM marriages WHERE (spouse_a = 'qadir_rahim--QR01' AND spouse_b = 'mahira_rahim--MR01') OR (spouse_a = 'mahira_rahim--MR01' AND spouse_b = 'qadir_rahim--QR01')"
         ).fetchone()
         assert row["status"] == "divorced"
     finally:
@@ -1012,12 +1011,12 @@ def test_update_marriage_status(isolated):
 
 def test_update_marriage_year(isolated):
     """Update marriage year persists in DB."""
-    res = family.update_marriage("abrar_hussain", "shaheen_abrar", year=1988)
+    res = family.update_marriage("qadir_rahim--QR01", "mahira_rahim--MR01", year=1988)
     assert res["year"] == 1988
     con = db.get_connection()
     try:
         row = con.execute(
-            "SELECT year FROM marriages WHERE (spouse_a = 'abrar_hussain' AND spouse_b = 'shaheen_abrar') OR (spouse_a = 'shaheen_abrar' AND spouse_b = 'abrar_hussain')"
+            "SELECT year FROM marriages WHERE (spouse_a = 'qadir_rahim--QR01' AND spouse_b = 'mahira_rahim--MR01') OR (spouse_a = 'mahira_rahim--MR01' AND spouse_b = 'qadir_rahim--QR01')"
         ).fetchone()
         assert row["year"] == 1988
     finally:
@@ -1047,18 +1046,18 @@ def test_update_marriage_invalid_rollback(isolated):
     con = db.get_connection()
     try:
         before = dict(con.execute(
-            "SELECT * FROM marriages WHERE (spouse_a = 'abrar_hussain' AND spouse_b = 'shaheen_abrar') OR (spouse_a = 'shaheen_abrar' AND spouse_b = 'abrar_hussain')"
+            "SELECT * FROM marriages WHERE (spouse_a = 'qadir_rahim--QR01' AND spouse_b = 'mahira_rahim--MR01') OR (spouse_a = 'mahira_rahim--MR01' AND spouse_b = 'qadir_rahim--QR01')"
         ).fetchone())
     finally:
         con.close()
 
     with pytest.raises(errors.ValidationError):
-        family.update_marriage("abrar_hussain", "shaheen_abrar", status="invalid_status_xyz")
+        family.update_marriage("qadir_rahim--QR01", "mahira_rahim--MR01", status="invalid_status_xyz")
 
     con = db.get_connection()
     try:
         after = dict(con.execute(
-            "SELECT * FROM marriages WHERE (spouse_a = 'abrar_hussain' AND spouse_b = 'shaheen_abrar') OR (spouse_a = 'shaheen_abrar' AND spouse_b = 'abrar_hussain')"
+            "SELECT * FROM marriages WHERE (spouse_a = 'qadir_rahim--QR01' AND spouse_b = 'mahira_rahim--MR01') OR (spouse_a = 'mahira_rahim--MR01' AND spouse_b = 'qadir_rahim--QR01')"
         ).fetchone())
         assert before == after
     finally:
@@ -1070,18 +1069,18 @@ def test_update_marriage_undo_restores(isolated):
     con = db.get_connection()
     try:
         orig = dict(con.execute(
-            "SELECT * FROM marriages WHERE (spouse_a = 'abrar_hussain' AND spouse_b = 'shaheen_abrar') OR (spouse_a = 'shaheen_abrar' AND spouse_b = 'abrar_hussain')"
+            "SELECT * FROM marriages WHERE (spouse_a = 'qadir_rahim--QR01' AND spouse_b = 'mahira_rahim--MR01') OR (spouse_a = 'mahira_rahim--MR01' AND spouse_b = 'qadir_rahim--QR01')"
         ).fetchone())
     finally:
         con.close()
 
-    family.update_marriage("abrar_hussain", "shaheen_abrar", status="widowed", year=1995, children_status="unknown")
+    family.update_marriage("qadir_rahim--QR01", "mahira_rahim--MR01", status="widowed", year=1995, children_status="unknown")
     history.undo_last_mutation()
 
     con = db.get_connection()
     try:
         restored = dict(con.execute(
-            "SELECT * FROM marriages WHERE (spouse_a = 'abrar_hussain' AND spouse_b = 'shaheen_abrar') OR (spouse_a = 'shaheen_abrar' AND spouse_b = 'abrar_hussain')"
+            "SELECT * FROM marriages WHERE (spouse_a = 'qadir_rahim--QR01' AND spouse_b = 'mahira_rahim--MR01') OR (spouse_a = 'mahira_rahim--MR01' AND spouse_b = 'qadir_rahim--QR01')"
         ).fetchone())
         assert restored["status"] == orig["status"]
         assert restored["year"] == orig["year"]
@@ -1159,8 +1158,8 @@ def test_explicit_sibling_group_delete_undo(isolated):
 
 def test_update_sibling_group_type(isolated):
     """Update sibling group type persists and updates correctly."""
-    p1 = people.create_person(name="Sib Person 1", gender="male")["id"]
-    p2 = people.create_person(name="Sib Person 2", gender="female")["id"]
+    p1 = people.create_person(name="Sib Person One", gender="male")["id"]
+    p2 = people.create_person(name="Sib Person Two", gender="female")["id"]
     added = family.add_sibling_group(member_ids=[p1, p2], type_=None, ordered=False)
     gid = added["id"]
 
@@ -1180,8 +1179,8 @@ def test_update_sibling_group_type(isolated):
 
 def test_update_sibling_group_ordered(isolated):
     """Update sibling group ordered flag assigns or clears member order."""
-    p1 = people.create_person(name="Sib Order 1", gender="male")["id"]
-    p2 = people.create_person(name="Sib Order 2", gender="female")["id"]
+    p1 = people.create_person(name="Sib Order One", gender="male")["id"]
+    p2 = people.create_person(name="Sib Order Two", gender="female")["id"]
     added = family.add_sibling_group(member_ids=[p1, p2], type_=None, ordered=False)
     gid = added["id"]
 
@@ -1208,9 +1207,9 @@ def test_update_sibling_group_ordered(isolated):
 
 def test_update_sibling_group_invalid_rollback(isolated):
     """Invalid sibling group update raises ValidationError and rolls back."""
-    p1 = people.create_person(name="Sib Tri 1", gender="male")["id"]
-    p2 = people.create_person(name="Sib Tri 2", gender="male")["id"]
-    p3 = people.create_person(name="Sib Tri 3", gender="male")["id"]
+    p1 = people.create_person(name="Sib Tri One", gender="male")["id"]
+    p2 = people.create_person(name="Sib Tri Two", gender="male")["id"]
+    p3 = people.create_person(name="Sib Tri Three", gender="male")["id"]
     added = family.add_sibling_group(member_ids=[p1, p2, p3], type_=None, ordered=False)
     gid = added["id"]
 
@@ -1227,9 +1226,9 @@ def test_update_sibling_group_invalid_rollback(isolated):
 
 def test_update_sibling_group_failed_no_phantom_undo(isolated):
     """Failed sibling update does not leave an extra undo snapshot."""
-    p1 = people.create_person(name="Sib Stack 1", gender="male")["id"]
-    p2 = people.create_person(name="Sib Stack 2", gender="male")["id"]
-    p3 = people.create_person(name="Sib Stack 3", gender="male")["id"]
+    p1 = people.create_person(name="Sib Stack One", gender="male")["id"]
+    p2 = people.create_person(name="Sib Stack Two", gender="male")["id"]
+    p3 = people.create_person(name="Sib Stack Three", gender="male")["id"]
     added = family.add_sibling_group(member_ids=[p1, p2, p3], type_=None)
     gid = added["id"]
 
@@ -1242,8 +1241,8 @@ def test_update_sibling_group_failed_no_phantom_undo(isolated):
 
 def test_edit_general_type(isolated):
     """Editing general relationship type updates DB."""
-    p1 = people.create_person(name="Gen Person 1", gender="male")["id"]
-    p2 = people.create_person(name="Gen Person 2", gender="female")["id"]
+    p1 = people.create_person(name="Gen Person One", gender="male")["id"]
+    p2 = people.create_person(name="Gen Person Two", gender="female")["id"]
     rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
     rid = rel["id"]
 
@@ -1259,8 +1258,8 @@ def test_edit_general_type(isolated):
 
 def test_edit_general_labels(isolated):
     """Editing general relationship labels updates DB."""
-    p1 = people.create_person(name="Gen Lab 1", gender="male")["id"]
-    p2 = people.create_person(name="Gen Lab 2", gender="female")["id"]
+    p1 = people.create_person(name="Gen Lab One", gender="male")["id"]
+    p2 = people.create_person(name="Gen Lab Two", gender="female")["id"]
     rel = general.add_general_relationship(person_a=p1, person_b=p2, type="mentor", directionality="directional", label_a_to_b="Mentor", label_b_to_a="Mentee")
     rid = rel["id"]
 
@@ -1271,8 +1270,8 @@ def test_edit_general_labels(isolated):
 
 def test_edit_general_notes(isolated):
     """Editing general relationship notes updates DB."""
-    p1 = people.create_person(name="Gen Notes 1", gender="male")["id"]
-    p2 = people.create_person(name="Gen Notes 2", gender="female")["id"]
+    p1 = people.create_person(name="Gen Notes One", gender="male")["id"]
+    p2 = people.create_person(name="Gen Notes Two", gender="female")["id"]
     rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend", notes="Initial note")
     rid = rel["id"]
 
@@ -1282,8 +1281,8 @@ def test_edit_general_notes(isolated):
 
 def test_edit_general_directionality(isolated):
     """Switching general relationship between symmetric and directional works cleanly."""
-    p1 = people.create_person(name="Gen Dir 1", gender="male")["id"]
-    p2 = people.create_person(name="Gen Dir 2", gender="female")["id"]
+    p1 = people.create_person(name="Gen Dir One", gender="male")["id"]
+    p2 = people.create_person(name="Gen Dir Two", gender="female")["id"]
     rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend", directionality="symmetric")
     rid = rel["id"]
 
@@ -1300,8 +1299,8 @@ def test_edit_general_directionality(isolated):
 
 def test_edit_general_custom_labels(isolated):
     """Editing custom relationship labels works cleanly."""
-    p1 = people.create_person(name="Gen Cust 1", gender="male")["id"]
-    p2 = people.create_person(name="Gen Cust 2", gender="female")["id"]
+    p1 = people.create_person(name="Gen Cust One", gender="male")["id"]
+    p2 = people.create_person(name="Gen Cust Two", gender="female")["id"]
     rel = general.add_general_relationship(person_a=p1, person_b=p2, type="custom", label_a_to_b="Research Lead", label_b_to_a="Analyst")
     rid = rel["id"]
 
@@ -1312,8 +1311,8 @@ def test_edit_general_custom_labels(isolated):
 
 def test_edit_general_duplicate_rejected(isolated):
     """Attempting an edit that would collide with another existing general relationship is rejected."""
-    p1 = people.create_person(name="Gen Dup 1", gender="male")["id"]
-    p2 = people.create_person(name="Gen Dup 2", gender="female")["id"]
+    p1 = people.create_person(name="Gen Dup One", gender="male")["id"]
+    p2 = people.create_person(name="Gen Dup Two", gender="female")["id"]
     rel1 = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
     rel2 = general.add_general_relationship(person_a=p1, person_b=p2, type="colleague")
 
@@ -1325,8 +1324,8 @@ def test_edit_general_duplicate_rejected(isolated):
 
 def test_edit_general_failed_preserves_old_row(isolated):
     """A failed general relationship edit leaves the existing DB row completely intact."""
-    p1 = people.create_person(name="Gen Fail 1", gender="male")["id"]
-    p2 = people.create_person(name="Gen Fail 2", gender="female")["id"]
+    p1 = people.create_person(name="Gen Fail One", gender="male")["id"]
+    p2 = people.create_person(name="Gen Fail Two", gender="female")["id"]
     rel1 = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
     rel2 = general.add_general_relationship(person_a=p1, person_b=p2, type="colleague")
     con = db.get_connection()
@@ -1348,8 +1347,8 @@ def test_edit_general_failed_preserves_old_row(isolated):
 
 def test_edit_general_undo_restores_exact_fact(isolated):
     """Undo restores exact general relationship before edit."""
-    p1 = people.create_person(name="Gen Undo 1", gender="male")["id"]
-    p2 = people.create_person(name="Gen Undo 2", gender="female")["id"]
+    p1 = people.create_person(name="Gen Undo One", gender="male")["id"]
+    p2 = people.create_person(name="Gen Undo Two", gender="female")["id"]
     rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend", notes="First note")
     rid = rel["id"]
 
@@ -1367,8 +1366,8 @@ def test_edit_general_undo_restores_exact_fact(isolated):
 
 def test_edit_general_id_remains_stable(isolated):
     """General relationship ID remains identical across edits."""
-    p1 = people.create_person(name="Gen Stable 1", gender="male")["id"]
-    p2 = people.create_person(name="Gen Stable 2", gender="female")["id"]
+    p1 = people.create_person(name="Gen Stable One", gender="male")["id"]
+    p2 = people.create_person(name="Gen Stable Two", gender="female")["id"]
     rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
     rid = rel["id"]
 
@@ -1378,8 +1377,8 @@ def test_edit_general_id_remains_stable(isolated):
 
 def test_edit_general_stored_fact_id_stable(isolated):
     """The stored_fact_id and general_relationship_id in relationship view remain stable across edits."""
-    p1 = people.create_person(name="Gen Sem 1", gender="male")["id"]
-    p2 = people.create_person(name="Gen Sem 2", gender="female")["id"]
+    p1 = people.create_person(name="Gen Sem One", gender="male")["id"]
+    p2 = people.create_person(name="Gen Sem Two", gender="female")["id"]
     rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
     rid = rel["id"]
 
@@ -1814,8 +1813,8 @@ def test_changing_direction_from_reorients_saved_labels_correctly(isolated):
 
 def test_directional_to_symmetric_normalizes_labels(isolated):
     """Section 8: Transitioning directional to symmetric normalizes labels and clears direction_from."""
-    p1 = people.create_person(name="Symmetric Norm 1", gender="male")["id"]
-    p2 = people.create_person(name="Symmetric Norm 2", gender="female")["id"]
+    p1 = people.create_person(name="Symmetric Norm One", gender="male")["id"]
+    p2 = people.create_person(name="Symmetric Norm Two", gender="female")["id"]
     rel = general.add_general_relationship(
         person_a=p1,
         person_b=p2,
@@ -1866,8 +1865,8 @@ def test_directional_to_symmetric_normalizes_labels(isolated):
 
 def test_symmetric_to_directional_stores_labels_in_selected_direction(isolated):
     """Converting symmetric relationship to directional stores labels in selected direction."""
-    p1 = people.create_person(name="SymToDir 1", gender="male")["id"]
-    p2 = people.create_person(name="SymToDir 2", gender="female")["id"]
+    p1 = people.create_person(name="SymToDir One", gender="male")["id"]
+    p2 = people.create_person(name="SymToDir Two", gender="female")["id"]
     rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
     rid = rel["id"]
 
@@ -1887,8 +1886,8 @@ def test_symmetric_to_directional_stores_labels_in_selected_direction(isolated):
 
 def test_failed_directional_edit_does_not_corrupt_original_fact(isolated):
     """Validation failure during directional edit preserves original fact."""
-    p1 = people.create_person(name="FailDir 1", gender="male")["id"]
-    p2 = people.create_person(name="FailDir 2", gender="female")["id"]
+    p1 = people.create_person(name="FailDir One", gender="male")["id"]
+    p2 = people.create_person(name="FailDir Two", gender="female")["id"]
     rel = general.add_general_relationship(
         person_a=p1,
         person_b=p2,
@@ -1919,8 +1918,8 @@ def test_failed_directional_edit_does_not_corrupt_original_fact(isolated):
 
 def test_failed_directional_edit_leaves_no_phantom_undo_snapshot(isolated):
     """Failed directional edit leaves no phantom undo snapshot on the history stack."""
-    p1 = people.create_person(name="Phantom 1", gender="male")["id"]
-    p2 = people.create_person(name="Phantom 2", gender="female")["id"]
+    p1 = people.create_person(name="Phantom One", gender="male")["id"]
+    p2 = people.create_person(name="Phantom Two", gender="female")["id"]
     rel = general.add_general_relationship(person_a=p1, person_b=p2, type="friend")
     rid = rel["id"]
 
@@ -1935,8 +1934,8 @@ def test_failed_directional_edit_leaves_no_phantom_undo_snapshot(isolated):
 
 def test_general_relationship_id_stable_after_reverse_perspective_edit(isolated):
     """Editing general relationship preserves its general_relationship_id."""
-    p1 = people.create_person(name="StableId 1", gender="male")["id"]
-    p2 = people.create_person(name="StableId 2", gender="female")["id"]
+    p1 = people.create_person(name="StableId One", gender="male")["id"]
+    p2 = people.create_person(name="StableId Two", gender="female")["id"]
     rel = general.add_general_relationship(
         person_a=p1,
         person_b=p2,
@@ -1953,8 +1952,8 @@ def test_general_relationship_id_stable_after_reverse_perspective_edit(isolated)
 
 def test_stored_fact_id_stable_after_reverse_perspective_edit(isolated):
     """Stored fact ID is stable across reverse perspective edits."""
-    p1 = people.create_person(name="FactId 1", gender="male")["id"]
-    p2 = people.create_person(name="FactId 2", gender="female")["id"]
+    p1 = people.create_person(name="FactId One", gender="male")["id"]
+    p2 = people.create_person(name="FactId Two", gender="female")["id"]
     rel = general.add_general_relationship(
         person_a=p1,
         person_b=p2,

@@ -5,7 +5,9 @@ batch). Historical evidence stays in `Database/Sources/`.
 
 ## 1. Data authority
 
-- `Database/relationships.db` (SQLite schema 3) is the authoritative structured data store.
+- The public source checkout contains application code and synthetic fixtures only. It is never a live Data Root.
+- The user-selected private Data Root owns every logical path below; the OS-local pointer selects it.
+- `Database/relationships.db` (SQLite schema 4; Phase 11 foundation was schema 3) is the authoritative structured data store.
 - `Database/Main/family.db` is preserved historical provenance and compatibility material; runtime code must never treat it as a competing authority after canonical migration.
 - `build_family.py` is the only writer of `family.md` and `family.html`.
 - The standalone `family.html` is a generated view; it is never imported back
@@ -87,17 +89,16 @@ batch). Historical evidence stays in `Database/Sources/`.
 
 ## 11. Layout
 
-- Current master view: maternal generally left, core center, paternal
-  generally right; Irsa + Mansoor form the central bridge.
-- This is the current master preference, not a universal law for every future
-  cross-marriage.
+- Maternal and paternal branch shading may be used when the perspective and
+  family facts support it. A cross-branch marriage uses a neutral grouping.
 - Same-generation people stay in the same general band when possible.
 - Space is not a constraint; readability wins.
 
 ## 12. Colors
 
 - Maternal units: subtle pink shades. Paternal units: subtle blue shades.
-- Irsa pink, Mansoor blue, neutral shared couple grouping.
+- Branch color follows the derived perspective; cross-branch couples use a
+  neutral shared grouping.
 - Secondary cross-relations: neutral gray.
 - Color is never the only way to understand a relationship.
 - Pink and blue are side-context shading, not relationship types. Marriage,
@@ -124,7 +125,7 @@ batch). Historical evidence stays in `Database/Sources/`.
 
 ## 15. Perspective mode
 
-- `canonical_focus_person` = Mohammad Yahya Hussain.
+- `canonical_focus_person` is the owner selected in the private Data Root.
 - `selected_perspective` is temporary UI state; changing it never changes the
   database or the master graph geometry.
 - In Connections, the selected perspective is the central person and any
@@ -162,3 +163,19 @@ batch). Historical evidence stays in `Database/Sources/`.
   workflow, followed by canonical validation and rebuild. UI layout,
   perspective, sidebar, theme, and path-selection preferences never mutate
   relationship truth.
+
+## 21. Development and release gates
+
+- For each implementation phase, Sol implements and runs the normal tests.
+  Terra and Luna then independently test and attack the actual candidate.
+  Sol fixes valid findings, both testers recheck the final repairs, and the
+  full regression and privacy gates pass before commit, normal push, and
+  remote verification.
+- A phase passing this in-phase gate is **IMPLEMENTED — FINAL SYSTEM AUDIT
+  PENDING**. It is not permanently certified by the phase tests. A separate
+  independent audit after every phase is not required.
+- The whole-app QA and pre-release stages use a repeated adversarial loop:
+  break the complete application, report and fix the failures, and repeat
+  until release quality is reached. That loop does not run after each feature
+  phase.
+- Phase 11 remains frozen. Phase 13 begins only after explicit authorization.

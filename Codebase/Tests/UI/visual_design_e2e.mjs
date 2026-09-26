@@ -6,6 +6,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -15,19 +16,15 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(HERE, "../..");
-const REPO = resolve(ROOT, "..");
+const ROOT = realpathSync.native(resolve(HERE, "../.."));
 const REVIEW_DIR = process.env.PHASE10_SCREENSHOT_DIR
   ? resolve(process.env.PHASE10_SCREENSHOT_DIR)
-  : resolve(REPO, "Documentation/UI-Screenshots/Phase10-Final-Review");
+  : resolve(tmpdir(), `mosaic-phase10-synthetic-shots-${process.pid}`);
 const BASELINE_ONLY = process.env.PHASE10_BASELINE === "1";
 const KEEP_FIXTURE = process.env.PHASE10_KEEP_FIXTURE === "1";
 const EDGE = existsSync("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe")
   ? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
   : "C:/Program Files/Microsoft/Edge/Application/msedge.exe";
-const PROD_DB = resolve(REPO, "Database/Main/family.db");
-const PROD_PEOPLE = resolve(REPO, "Database/People");
-const PROD_BACKUPS = resolve(REPO, "Backups");
 const REAL_BOOTSTRAP = process.env.APPDATA
   ? join(process.env.APPDATA, "people-relationships", "bootstrap.json")
   : null;
@@ -56,9 +53,6 @@ function collectFiles(root) {
 }
 
 const production = {
-  db: { bytes: statSync(PROD_DB).size, hash: sha256(PROD_DB) },
-  journals: collectFiles(PROD_PEOPLE).filter((row) => row.path.endsWith("/journal.md")),
-  backups: collectFiles(PROD_BACKUPS),
   bootstrap: REAL_BOOTSTRAP && existsSync(REAL_BOOTSTRAP)
     ? { exists: true, bytes: statSync(REAL_BOOTSTRAP).size, hash: sha256(REAL_BOOTSTRAP) }
     : { exists: false },
@@ -122,16 +116,13 @@ function stop(child) {
     try { child.kill("SIGKILL"); } catch {}
   }
 }
-function verifyProduction() {
+function verifyRealBootstrap() {
   const current = {
-    db: { bytes: statSync(PROD_DB).size, hash: sha256(PROD_DB) },
-    journals: collectFiles(PROD_PEOPLE).filter((row) => row.path.endsWith("/journal.md")),
-    backups: collectFiles(PROD_BACKUPS),
     bootstrap: REAL_BOOTSTRAP && existsSync(REAL_BOOTSTRAP)
       ? { exists: true, bytes: statSync(REAL_BOOTSTRAP).size, hash: sha256(REAL_BOOTSTRAP) }
       : { exists: false },
   };
-  if (JSON.stringify(current) !== JSON.stringify(production)) throw new Error("Production integrity changed");
+  if (JSON.stringify(current) !== JSON.stringify(production)) throw new Error("Real bootstrap changed");
 }
 
 let browser;
@@ -219,10 +210,15 @@ async function waitForVisibleGraphNodes(selector, minimum, label) {
   check((await visibleGraphNodeCount(selector)) >= minimum, label);
 }
 async function clickText(scope, text) {
-  await page.waitForFunction((selector, expected) => [...document.querySelectorAll(`${selector} button`)].some((button) => {
-    const box = button.getBoundingClientRect();
-    return button.textContent?.includes(expected) && !button.disabled && box.width > 0 && box.height > 0;
-  }), { timeout: 20_000 }, scope, text);
+  try {
+    await page.waitForFunction((selector, expected) => [...document.querySelectorAll(`${selector} button`)].some((button) => {
+      const box = button.getBoundingClientRect();
+      return button.textContent?.includes(expected) && !button.disabled && box.width > 0 && box.height > 0;
+    }), { timeout: 20_000 }, scope, text);
+  } catch (error) {
+    const labels = await page.$$eval(`${scope} button`, (buttons) => buttons.map((button) => ({ text: button.textContent?.trim(), disabled: button.disabled })));
+    throw new Error(`Button ${JSON.stringify(text)} was unavailable in ${scope}: ${JSON.stringify(labels)}`, { cause: error });
+  }
   await page.evaluate((selector, expected) => [...document.querySelectorAll(`${selector} button`)].find((button) => {
     const box = button.getBoundingClientRect();
     return button.textContent?.includes(expected) && !button.disabled && box.width > 0 && box.height > 0;
@@ -413,7 +409,7 @@ async function writeReviewArtifacts() {
   while (readme.at(-1) === "") readme.pop();
   await writeTextWithRetry(join(REVIEW_DIR, "README.md"), `${readme.join("\n")}\n`);
 
-  const manifestPath = resolve(REPO, "Documentation/Testing/ui-control-screenshot-manifest.md");
+  const manifestPath = join(REVIEW_DIR, "ui-control-screenshot-manifest.md");
   mkdirSync(dirname(manifestPath), { recursive: true });
   const rows = [
     "# UI Control Screenshot Manifest",
@@ -434,7 +430,7 @@ async function writeReviewArtifacts() {
     if (isCovered) covered += 1;
     const before = evidence?.before ?? row.screenshot;
     const after = evidence?.after ?? row.screenshot;
-    rows.push(`| ${escapeTable(row.screen)} | ${escapeTable(evidence?.theme ?? row.theme)} | ${escapeTable(evidence?.state ?? row.state)} | ${escapeTable(row.control)} | ${escapeTable(row.type)} | ${escapeTable(evidence?.action ?? (stateOnly ? "Verify disabled semantics" : "Not exercised"))} | [before](../UI-Screenshots/Phase10-Final-Review/${before}) | [after](../UI-Screenshots/Phase10-Final-Review/${after}) | ${isCovered ? (stateOnly ? "PASS — disabled state verified" : "PASS — interaction event observed") : "SKIPPED — visible only"} | ${isCovered ? "YES" : "NO"} | ${stateOnly ? "State evidence only; the disabled control was intentionally not activated." : evidence ? "Event-backed synthetic-fixture evidence." : "Requires an explicit interaction before completion can be claimed."} |`);
+    rows.push(`| ${escapeTable(row.screen)} | ${escapeTable(evidence?.theme ?? row.theme)} | ${escapeTable(evidence?.state ?? row.state)} | ${escapeTable(row.control)} | ${escapeTable(row.type)} | ${escapeTable(evidence?.action ?? (stateOnly ? "Verify disabled semantics" : "Not exercised"))} | [before](${before}) | [after](${after}) | ${isCovered ? (stateOnly ? "PASS — disabled state verified" : "PASS — interaction event observed") : "SKIPPED — visible only"} | ${isCovered ? "YES" : "NO"} | ${stateOnly ? "State evidence only; the disabled control was intentionally not activated." : evidence ? "Event-backed synthetic-fixture evidence." : "Requires an explicit interaction before completion can be claimed."} |`);
   }
   const discovered = discoveredControls.size;
   const skipped = discovered - covered;
@@ -682,7 +678,7 @@ async function writeJournal(person, content) {
 }
 
 async function seedFixture() {
-  await post("/api/data-root/initialize", {
+  const initialized = await post("/api/data-root/initialize", {
     target_path: dataRoot,
     owner_name: "Mira Rahim",
     owner_gender: "female",
@@ -697,7 +693,7 @@ async function seedFixture() {
     const group = (await post("/api/groups", { name })).group;
     groups[name] = group.id;
   }
-  const people = { mira: (await api("/api/people/mira_rahim")).person };
+  const people = { mira: (await api(`/api/people/${initialized.owner_id}`)).person };
   for (const [key, name, gender, birth_year, aliases] of PERSON_SPECS) {
     const communityOnly = ["darya", "maeve", "oren", "sage", "quinn"].includes(key);
     const group_ids = communityOnly
@@ -716,7 +712,7 @@ async function seedFixture() {
   const familyFacts = certifiedFamilyFixture(people);
   const certification = JSON.parse(execFileSync(
     python,
-    [resolve(HERE, "phase10_synthetic_fixture.py"), join(dataRoot, "Database", "Main", "family.db")],
+    [resolve(HERE, "phase10_synthetic_fixture.py"), join(dataRoot, "Database", "relationships.db")],
     { env, input: JSON.stringify(familyFacts), encoding: "utf8", stdio: ["pipe", "pipe", "inherit"] },
   ).trim());
   check(certification.people === 52, "canonical Python engine validates all 52 synthetic people");
@@ -797,6 +793,8 @@ async function captureDarkMajorStates(fixture) {
   await nav("Connections");
   await page.waitForSelector(".relationships-graph-area .react-flow", { timeout: 30_000 });
   await shot("15-dark-mode/connections-canvas.png", "Full Connections canvas in Dark mode with the persistent Relationship Builder.", "FROM; TO; search; zoom; fit; fullscreen");
+  await page.click(".connections-search-trigger");
+  await page.waitForSelector(".connections-search-dock .person-search input", { visible: true });
   await page.focus(".connections-search-dock .person-search input");
   await shot("15-dark-mode/connections-search.png", "Connections search in Dark mode.", "Search input; Set as FROM; Add to TO");
   await setValue(".connections-search-dock .person-search input", fixture.people.darya.name);
@@ -820,11 +818,11 @@ async function captureDarkMajorStates(fixture) {
   await page.click("[aria-label='Show Family Tree legend']");
   await shot("15-dark-mode/family-tree-legend.png", "Family Tree legend in Dark mode with semantic branch colors.", "Legend; maternal; paternal; marriage; sibling");
   await page.click("[aria-label='Hide Family Tree legend']");
-  const selected = await page.evaluate((id) => {
-    const node = document.querySelector(`.family-canvas g.node.clickable-node[id*="p_${id}"]`);
+  const selected = await page.evaluate(() => {
+    const node = document.querySelector(".family-diagram g.node.clickable-node");
     node?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     return Boolean(node);
-  }, fixture.people.zayan.id);
+  });
   check(selected, "Dark Family Tree person node remains interactive");
   await page.waitForSelector(".family-side");
   await shot("15-dark-mode/family-tree-selected.png", "Dark Family Tree selected-person inspector.", "Make Family Focus; Profile; Connections; Journal; fact actions");
@@ -872,7 +870,7 @@ async function captureDarkMajorStates(fixture) {
 }
 
 try {
-  check(production.db.bytes > 0 && production.db.hash.length === 64, "live production baseline captured before isolated testing");
+  check(bootstrap.startsWith(sandbox), "visual review uses an isolated synthetic bootstrap");
   await waitForUrl("http://127.0.0.1:8765/api/health");
   await waitForUrl("http://localhost:1420");
   browser = await puppeteer.launch({
@@ -1099,6 +1097,8 @@ try {
   await page.click("[aria-label='Fit graph to viewport']");
   await shot("03-connections/fit-view-result.png", "Connections graph restored with Fit View.", "Fit View");
 
+  await page.click(".connections-search-trigger");
+  await page.waitForSelector(".connections-search-dock .person-search input", { visible: true });
   await page.focus(".connections-search-dock .person-search input");
   await shot("03-connections/search-open.png", "Connections search remains available beside the direct-context canvas.", "Search field; FROM/TO actions");
   await setValue(".connections-search-dock .person-search input", fixture.people.darya.name);
@@ -1115,6 +1115,8 @@ try {
   await shot("03-connections/person-selected.png", "Darya selected as an additive TO target with canonical route cards.", "TO target; canonical paths; surrounding context");
 
   const centralBeforeTargets = await page.$eval(".builder-from-zone", (node) => node.textContent);
+  await page.click(".connections-search-trigger");
+  await page.waitForSelector(".connections-search-dock .person-search input", { visible: true });
   await setValue(".connections-search-dock .person-search input", fixture.people.maeve.name);
   await page.waitForSelector(".connections-search-dock .person-search-row", { visible: true });
   await page.$eval(".connections-search-dock .person-search-row", (row) => row.click());
@@ -1286,11 +1288,12 @@ try {
   await clickText(".family-focus-bar", "Return to My Family View");
   await page.waitForFunction((name) => document.querySelector(".family-focus-current")?.textContent?.includes(name), {}, fixture.people.mira.name);
 
-  const clicked = await page.evaluate((id) => {
-    const node = document.querySelector(`.family-canvas g.node.clickable-node[id*="p_${id}"]`);
+  const clicked = await page.evaluate((name) => {
+    const node = [...document.querySelectorAll(".family-diagram g.node.clickable-node")]
+      .find((element) => element.textContent?.includes(name));
     node?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     return Boolean(node);
-  }, fixture.people.zayan.id);
+  }, fixture.people.zayan.name);
   check(clicked, "Family person node can be selected");
   await page.waitForFunction(() => document.querySelector(".family-side")?.textContent?.includes("Zayan Noor"));
   check(await page.$eval(".family-side", (node) => node.getBoundingClientRect().right <= innerWidth), "Family side panel fits the viewport");
@@ -1457,8 +1460,8 @@ try {
   if (errors.length) console.error("Unexpected browser errors:", JSON.stringify(errors, null, 2));
   check(errors.length === 0, "no unexpected console or page errors");
   check(!(await page.evaluate(() => Boolean(document.querySelector("script[data-user-content], .journal-view img")))), "hostile fixture content did not create active elements");
-  verifyProduction();
-  check(true, "production DB, Journals, Backups, and bootstrap remain byte-identical");
+  verifyRealBootstrap();
+  check(true, "real bootstrap remains byte-identical");
   if (!BASELINE_ONLY) {
     check(screenshotIndex.length >= 50, "exhaustive screenshot package contains at least 50 meaningful states");
     check(discoveredControls.size >= 50, "visual pass inventories rendered controls across captured states");
@@ -1473,5 +1476,5 @@ try {
   await sleep(600);
   if (KEEP_FIXTURE) console.log(`Synthetic fixture retained at ${sandbox}`);
   else rmSync(sandbox, { recursive: true, force: true });
-  verifyProduction();
+  verifyRealBootstrap();
 }

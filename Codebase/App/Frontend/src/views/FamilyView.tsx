@@ -194,8 +194,9 @@ export function FamilyView({
     container.querySelectorAll(".family-highlight").forEach((node) => {
       node.classList.remove("family-highlight");
     });
+    const renderedId = personId.replace(/-/g, "_");
     const node = container.querySelector<SVGElement>(
-      `g.node[id*="-flowchart-p_${personId}-"], g.node[id*="p_${personId}"]`,
+      `g.node[id*="-flowchart-p_${renderedId}-"], g.node[id*="p_${renderedId}"]`,
     );
     if (!node) return;
     node.classList.add("family-highlight");
@@ -294,20 +295,19 @@ export function FamilyView({
         });
 
         container.querySelectorAll<SVGElement>('g.node[id*="-flowchart-p_"], g.node[id*="p_"]').forEach((node) => {
-          const match = node.id.match(/-flowchart-p_([a-zA-Z0-9_]+)-\d+$/) || node.id.match(/p_([a-zA-Z0-9_]+)(?:-\d+)?$/);
+          const match = node.id.match(/-flowchart-(p_[a-zA-Z0-9_]+)-\d+$/) || node.id.match(/(p_[a-zA-Z0-9_]+)(?:-\d+)?$/);
           if (!match) return;
-          const personId = match[1];
+          const matches = people.filter((entry) => `p_${entry.id.replace(/-/g, "_")}` === match[1]);
+          if (matches.length !== 1) return;
+          const personId = matches[0].id;
           node.classList.add("clickable-node");
           node.setAttribute("tabindex", "0");
           node.setAttribute("role", "button");
           node.setAttribute("aria-label", `Family member card: ${personId}`);
 
           const handleSelect = () => {
-            const person = people.find((entry) => entry.id === personId);
-            if (person) {
-              handleSelectPerson(person);
-              highlightNode(container, personId);
-            }
+            handleSelectPerson(matches[0]);
+            highlightNode(container, personId);
           };
 
           node.addEventListener("click", handleSelect);
@@ -319,10 +319,7 @@ export function FamilyView({
           });
 
           node.addEventListener("dblclick", () => {
-            const person = people.find((entry) => entry.id === personId);
-            if (person) {
-              handleFocusChange(person.id);
-            }
+            handleFocusChange(personId);
           });
         });
 

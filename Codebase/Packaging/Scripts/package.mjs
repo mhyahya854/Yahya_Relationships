@@ -4,6 +4,7 @@
 import { execSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -105,9 +106,14 @@ async function main() {
   // 3. Build Tauri Desktop Package
   console.log(`\n[3/5] Building Native Tauri Desktop Package...`);
   const runTauriCmd = resolve(codebaseDir, "Scripts/run_tauri.mjs");
+  const remap = `--remap-path-prefix=${homedir()}=/mosaic-build`;
   const tauriBuild = spawnSync(process.execPath, [runTauriCmd, "build"], {
     cwd: codebaseDir,
     stdio: "inherit",
+    env: {
+      ...process.env,
+      RUSTFLAGS: [process.env.RUSTFLAGS, remap].filter(Boolean).join(" "),
+    },
   });
   if (tauriBuild.status !== 0) {
     console.error("Tauri build failed!");
@@ -116,14 +122,15 @@ async function main() {
 
   // 4. Scan and Audit Package Contents
   console.log(`\n[4/5] Running Package Content Security & Privacy Audit...`);
-  const bundleBase = join(tauriDir, "target/release/bundle");
+  const bundleBase = join(process.env.CARGO_TARGET_DIR || join(tauriDir, "target"), "release", "bundle");
   if (!existsSync(bundleBase)) {
     console.error(`Bundle directory not found at: ${bundleBase}`);
     process.exit(1);
   }
 
   const auditCmd = resolve(codebaseDir, "Scripts/run-py.mjs");
-  const auditResult = spawnSync(process.execPath, [auditCmd, "Packaging/Scripts/audit_package.py", bundleBase], {
+  const nativeBinary = join(process.env.CARGO_TARGET_DIR || join(tauriDir, "target"), "release", `people-relationships${host === "windows" ? ".exe" : ""}`);
+  const auditResult = spawnSync(process.execPath, [auditCmd, "Packaging/Scripts/audit_package.py", bundleBase, nativeBinary], {
     cwd: codebaseDir,
     stdio: "inherit",
   });

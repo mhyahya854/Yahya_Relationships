@@ -1,7 +1,7 @@
 import puppeteer from "puppeteer-core";
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -9,11 +9,10 @@ import { fileURLToPath } from "node:url";
 import { CONNECTIONS_FIXTURE_EXPECTED_PEOPLE, seedConnectionsRedesignFixture } from "./connections_redesign_fixture.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const CODEBASE = resolve(HERE, "../..");
-const REPO = resolve(CODEBASE, "..");
+const CODEBASE = realpathSync.native(resolve(HERE, "../.."));
 const OUT = process.env.CONNECTIONS_REDESIGN_SCREENSHOT_DIR
   ? resolve(process.env.CONNECTIONS_REDESIGN_SCREENSHOT_DIR)
-  : resolve(REPO, "Documentation/UI-Screenshots/Connections-Final-Polish");
+  : resolve(tmpdir(), `mosaic-connections-synthetic-shots-${process.pid}`);
 const EDGE = existsSync("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe")
   ? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
   : "C:/Program Files/Microsoft/Edge/Application/msedge.exe";
@@ -30,8 +29,6 @@ const syntheticRuntimeRoot = requestedSyntheticRoot
   : resolve(tmpdir(), `connections-redesign-synthetic-${process.pid}`);
 const syntheticRoot = requestedSyntheticRoot || join(syntheticRuntimeRoot, "Synthetic Connections Data");
 const bootstrap = join(syntheticRuntimeRoot, "settings", "bootstrap.json");
-const productionDb = resolve(REPO, "Database/Main/family.db");
-const productionHash = createHash("sha256").update(readFileSync(productionDb)).digest("hex");
 const shots = [];
 const errors = [];
 
@@ -350,7 +347,7 @@ try {
     const name = match.querySelector(".person-node-name");
     return { width: match.getBoundingClientRect().width, clamp: name ? getComputedStyle(name).webkitLineClamp : "" };
   });
-  assert(Boolean(longNameCheck && longNameCheck.width <= 224.5 && longNameCheck.clamp === "2"), "Long-name node handling must stay fixed-width and two-line clamped.");
+  assert(Boolean(longNameCheck && longNameCheck.width <= 224.5 && longNameCheck.clamp === "2"), `Long-name node handling must stay fixed-width and two-line clamped: ${JSON.stringify(longNameCheck)}`);
   await shot("connections-one-direct-to", { screen: "Connections", state: "one direct friend target", theme: "light", from: "Mira Rahim", to: "Darya Sol", verify: "Direct TO remains strong while context stays mounted" });
   await shot("connections-greyed-context", { screen: "Connections", state: "active direct route with context", theme: "light", from: "Mira Rahim", to: "Darya Sol", verify: "Unrelated nodes stay mounted and visibly greyed" });
   assert((await page.$$(".react-flow__node.rf-dim")).length > 0, "Unrelated graph context was not greyed while a TO route is active.");
@@ -378,9 +375,11 @@ try {
   assert(maevePathOptions >= 2, "Expected multiple canonical paths for the synthetic multipath target.");
   await page.evaluate(() => {
     const card = [...document.querySelectorAll(".relationship-target-card")].find((item) => item.textContent?.includes("Maeve Rowan"));
-    const input = card?.querySelectorAll("input[type='checkbox']")[1];
-    if (!(input instanceof HTMLInputElement)) throw new Error("Second Maeve route option was unavailable.");
-    input.click();
+    const inputs = [...(card?.querySelectorAll("input[type='checkbox']") ?? [])];
+    if (inputs.length < 2) throw new Error("Multiple Maeve route options were unavailable.");
+    for (const input of inputs.slice(1)) {
+      if (input.checked) input.click();
+    }
   });
   await page.waitForFunction(() => document.querySelectorAll(".relationship-target-card input[type='checkbox']:checked").length === 1, { timeout: 12000 });
   await page.waitForFunction(() => document.querySelectorAll(".rf-edge-path-active").length > 0
@@ -404,8 +403,6 @@ try {
   await shot("connections-collapsed-navigation", { screen: "Connections", state: "collapsed navigation", theme: "dark", from: "Mira Rahim", to: "Maeve Rowan; Darya Sol; Mila Rahal-Calder", verify: "Builder and graph survive shell navigation collapse" });
 
   assert(errors.length === 0, `Browser/backend console errors: ${errors.join("\n")}`);
-  const finalHash = createHash("sha256").update(readFileSync(productionDb)).digest("hex");
-  assert(finalHash === productionHash, "Production relationship database changed during synthetic screenshot capture.");
   writeFileSync(join(OUT, "MANIFEST.md"), manifest(), "utf8");
   console.log(JSON.stringify({ screenshots: shots.length, output: OUT, syntheticRoot, people: CONNECTIONS_FIXTURE_EXPECTED_PEOPLE }, null, 2));
 } finally {

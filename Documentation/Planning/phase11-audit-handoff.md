@@ -8,7 +8,7 @@
 
 - Phase 10 baseline: `5e7c75551cd0513e68d6a304050bf508162da4f3`
 - Provisional Phase 11 implementation: `666e5640eec797fa8123b341cd606b1654f55475`
-- Final audit evidence: [phase11-independent-audit.md](../Testing/phase11-independent-audit.md)
+- Historical audit evidence is retained in the private local preparation archive; the public source records the frozen invariants below.
 - Forward structured authority: `Database/relationships.db` at schema 3
 - Historical provenance: `Database/Main/family.db`, retained byte-for-byte and never used as a canonical fallback
 
@@ -31,7 +31,7 @@
 
 ## Continuation boundary
 
-Phase 12 is not started. Later domain tables and features must be introduced by
-explicitly versioned migrations that preserve the Phase 11 invariants. No Raw
-ingestion, media organization, conversation import, face recognition, or
-expanded Hermes work is included in this freeze.
+At the Phase 11 freeze, Phase 12 had not started. Later domain tables and
+features require explicitly versioned migrations that preserve the Phase 11
+invariants. This freeze includes no Raw ingestion, media organization,
+conversation import, face recognition, or expanded Hermes work.

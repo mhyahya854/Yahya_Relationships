@@ -5,10 +5,9 @@
 ## Master architecture authority
 
 This README is the repository's authoritative Master Plan. The consolidated
-people, media, memories, conversations, and location architecture below is an
-approved **documentation authority update only**: it does not authorize an
-implementation, data migration, UI redesign, automatic organization, or any
-change to application behavior.
+people, media, memories, conversations, and location architecture below is
+the approved forward authority. Implementation changes are tracked by their
+phase state and verification evidence.
 
 The application remains single-user, local-first, human-readable wherever
 practical, deterministic for derivable facts, and easy for both people and
@@ -16,11 +15,17 @@ coding agents to navigate. Its governing design principle is:
 
 > **Minimal physical architecture, rich logical structure.**
 
-The current checkout contains implementation-era paths and compatibility
-details. Those are historical/current-state notes only where identified as
-such; they do not override the locked forward architecture in this Master
-Plan. In particular, no database, file, or source material is moved by this
-documentation update.
+The public checkout contains the application. The user-selected private Data
+Root contains the database, people, journals, Raw intake, media, and backups.
+Paths below are relative to that private root unless labeled as source paths.
+
+For each phase, Sol implements and tests; Terra and Luna independently attack
+the candidate; Sol fixes valid findings; both testers recheck the repairs; and
+the full regression and privacy gates pass before commit, normal push, and
+remote verification. Passing this in-phase gate gives the status
+**IMPLEMENTED — FINAL SYSTEM AUDIT PENDING**. A separate audit after each
+phase is not required. Repeated whole-app adversarial testing belongs to the
+whole-app QA and pre-release stages. See [the project rules](HARD_RULES.md).
 
 **Mosaic** answers one question from **any selected person's
 perspective**: *who is connected to whom, how are they related, and what does
@@ -28,8 +33,7 @@ that relationship look like from this person's side?*
 
 Mosaic is a private, single-user, local-first system for people,
 relationships, memories, conversations, media, events, and places. The
-application is built around the pre-existing SQLite + Python kinship engine (35 people, 44 parent-child facts, 12
-marriages in the current data). That engine is preserved and remains the only
+application is built around the SQLite + Python kinship engine. That engine is preserved and remains the only
 place where genealogy is calculated. React only displays; FastAPI + Python
 understand relationships; SQLite stores structured facts; Markdown stores
 journal prose; Hermes calls tiny deterministic tools.
@@ -60,14 +64,15 @@ phases may add explicitly versioned, verified schema migrations, but may not
 silently change canonical identifiers, reintroduce a second runtime database,
 or bypass migration and recovery guarantees.
 
-Full handoff and verification reports:
-- [Phase 11 Audit Handoff](Documentation/Planning/phase11-audit-handoff.md)
-- [Phase 11 Independent Audit](Documentation/Testing/phase11-independent-audit.md)
-- [Phase 11 Canonical Data Verification](Documentation/Testing/phase11-canonical-data-verification.md)
+The [Phase 11 audit handoff](Documentation/Planning/phase11-audit-handoff.md)
+records the frozen invariants. Private historical verification records are
+retained locally outside the public source history.
 
-- Phase 12 — Raw Intake, Provenance & Organization — **PROVISIONALLY IMPLEMENTED**
-  **INDEPENDENT AUDIT REQUIRED BEFORE FREEZE**
-- Phase 13 — Media, Documents & Gallery
+- Phase 12 — Raw Intake, Provenance & Organization — **IMPLEMENTED — FINAL SYSTEM AUDIT PENDING**.
+  The current branch tip separates public source from private data and passed
+  the Sol, Terra, and Luna in-phase verification gate. Historical public commits still require a
+  dedicated privacy cleanup. See the [Phase 12 handoff](Documentation/Planning/phase12-audit-handoff.md).
+- Phase 13 — Media, Documents & Gallery — **NOT STARTED**
 - Phase 14 — Events, Memories & Flashbacks
 - Phase 15 — Conversations & Social Media Archive
 - Phase 16 — Places, Location History & Travel
@@ -138,11 +143,11 @@ FastAPI local backend (Codebase/App/app/backend)
         +---- People/<group>/<person-id>/... (locked Markdown/context hierarchy)
 ```
 
-Repository layout (the repo root is also the personal-data root):
+Source repository and private Data Root are separate:
 
 ```text
-<Existing Data Root>/    # e.g. an existing Family Relationships/ folder; no rename required
-  Codebase/              application source, tests, scripts and packaging
+<Public source checkout>/
+  Codebase/              application source, synthetic tests, scripts and packaging
     App/app/backend/     FastAPI + services + Hermes tools
       domain/family/     canonical engine + engine-aligned path extraction
       domain/relationships/ path service + graph neighbour model
@@ -150,9 +155,12 @@ Repository layout (the repo root is also the personal-data root):
       src/features/relationships/ diagram-first React Flow feature
     Desktop/Tauri/       Tauri 2 desktop shell
     Scripts/             dev / verify helpers + build_family.py CLI wrapper
-    Tests/Backend/       pytest suite (93 tests)
+    Tests/Backend/       pytest suite using generated temporary data
     Tests/UI/            headless Edge smoke test
     Resources/Vendor/    bundled third-party assets (mermaid.min.js)
+  Documentation/         public architecture, API, and development documentation
+
+<User-selected private Data Root>/
   Database/
     relationships.db     authoritative canonical SQLite store
     raw_processing_history.md
@@ -160,10 +168,15 @@ Repository layout (the repo root is also the personal-data root):
     Exports/Family/      family.html / family.md (still generated)
   People/                locked person records and person-specific context
   Media/                 locked ordinary event-based media hierarchy
-  Raw/                   locked open intake; source material remains untouched
+  Raw/                   private intake; reviewed moves claim source into quarantine first
+  .mosaic-quarantine/    private, recoverable move state; excluded from ordinary backups
   Backups/<Category>/<backup-id>/  full snapshots + manifest.json
-  Documentation/         architecture, API, database, testing docs + archive
 ```
+
+The active path is stored only in OS-local bootstrap state or an environment
+override. It must be outside the source checkout. A fresh clone starts
+`UNCONFIGURED` and can create a blank Data Root, use an existing one, or
+restore a backup. The development fixture is fictional and disposable.
 
 ## Consolidated people, media, memories, conversations, and location architecture
 
@@ -212,8 +225,7 @@ cross-references use canonical IDs. No separate `me`, `family`, `friends`,
 `other`, `core`, `context`, or `index` database is approved.
 
 Known people have permanent readable IDs of the form
-`normalized_full_name--INITIALS##`, for example `sara_khan--SK01` or
-`mohammad_yahya_hussain--MYH01`. The normalized portion is lowercase with
+`normalized_full_name--INITIALS##`, for example `sara_khan--SK01`. The normalized portion is lowercase with
 underscores; initials are uppercase for every full-name part; the two-digit
 counter separates identical normalized names. Aliases, nicknames, and later
 display-name changes never change the canonical ID. The owner uses an ordinary
@@ -314,7 +326,7 @@ move/deletion date, corrections, and provenance. Identical duplicates may be
 detected automatically but are deleted only after explicit authorization and a
 preserved history record.
 
-### Phase 12 implementation boundary — PROVISIONAL
+### Phase 12 implementation boundary — IN-PHASE VERIFICATION
 
 Phase 12 implements a generic Raw review foundation at schema 4. It creates an
 empty `Raw/` directory for a new Data Root, recursively scans it without
@@ -333,15 +345,17 @@ phases. A move refuses stale approval, path traversal, links, overwrite/case
 collisions, and hash mismatches; it verifies a staged destination before the
 source leaves Raw and leaves recoverable state if interrupted. Duplicate
 deletion is deliberately deferred: there is no automatic or physical deletion
-workflow in Phase 12.
+workflow in Phase 12. Windows source removal is bound to a verified file
+handle; on non-Windows systems the removal step currently fails closed pending
+an equivalent safe protocol.
 
 `relationships.db` remains the structured authority. Its Raw event outbox is
-atomically projected to `Database/raw_processing_history.md`, making a failed
-Markdown write recoverable without event duplication. Backups include schema-4
+committed in SQLite and then projected to `Database/raw_processing_history.md`,
+making a failed Markdown write recoverable without event duplication. Backups include schema-4
 Raw metadata and this history projection but intentionally exclude Raw binary
 payloads; a restore without those payloads preserves records and reports their
-sources as missing when next scanned. See the [Phase 12 verification report](Documentation/Testing/phase12-raw-intake-verification.md)
-and [independent-audit handoff](Documentation/Planning/phase12-audit-handoff.md).
+sources as missing. See the [Phase 12 audit handoff](Documentation/Planning/phase12-audit-handoff.md)
+and [synthetic test guide](Documentation/Development/synthetic-tests-and-privacy.md).
 
 ### Ordinary media, events, sidecars, and documents — LOCKED
 
@@ -583,7 +597,7 @@ logic. The UI never computes family relationships itself.
 The whole UI is interpreted from a `perspective_person_id`:
 
 1. Default = the configured owner/focus person referenced by the single
-   canonical database (`mohammad_yahya_hussain`).
+   canonical database.
 2. The top bar always shows **Viewing relationships from: [Person]** and a
    **Return to My Perspective** action when a different person is selected.
 3. Every person card/modal offers **View from this person**.
@@ -875,10 +889,7 @@ npm run legacy:check  # legacy builder audit for the current compatibility datas
 
 For in-depth architectural and testing documentation, see:
 - [Phase 11 Audit Handoff](Documentation/Planning/phase11-audit-handoff.md)
-- [Phase 11 Independent Audit](Documentation/Testing/phase11-independent-audit.md)
-- [Phase 11 Canonical Data Verification](Documentation/Testing/phase11-canonical-data-verification.md)
 - [Cross-Platform Packaging Architecture](Documentation/Architecture/cross-platform-packaging.md)
-- [Platform Compatibility Matrix](Documentation/Testing/platform-compatibility.md)
 - [Data Root Architecture & Safety](Documentation/Architecture/data-root.md)
 - [Backup and Restore Design](Documentation/Architecture/backup-restore.md)
 - [Relationship Paths & Invariants](Documentation/Architecture/relationship-paths.md)

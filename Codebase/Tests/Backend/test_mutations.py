@@ -1,26 +1,29 @@
 """Backend test suite for human-editing mutation features, consequence preview engine, and undo system."""
 
 import pytest
+from app.backend.domain.canonical.ids import generate_canonical_person_id
+
+ELIAS = generate_canonical_person_id("Elias Calder")
 
 
 def test_duplicate_person_check(client):
     response = client.post(
         "/api/people/check-duplicate",
-        json={"name": "Yahya", "aliases": ["Yahya Bhai"]},
+        json={"name": "Mira", "aliases": ["Mira Fictional"]},
     )
     assert response.status_code == 200
     data = response.json()
     assert data["ok"] is True
     assert len(data["candidates"]) > 0
     candidate_names = [c["name"] for c in data["candidates"]]
-    assert any("Yahya" in name for name in candidate_names)
+    assert any("Mira" in name for name in candidate_names)
 
 
 def test_preview_mutation_add_parent_child_and_non_mutation(client):
     # Record baseline state
     facts_before = client.get("/api/family/facts").json()
 
-    # Preview adding a parent-child fact (e.g. mansoor_hussain -> temporary child)
+    # Preview adding a fictional parent's second child.
     # First create temporary test person
     created_res = client.post(
         "/api/people",
@@ -33,7 +36,7 @@ def test_preview_mutation_add_parent_child_and_non_mutation(client):
         json={
             "action": "add_parent_child",
             "params": {
-                "parent_id": "mansoor_hussain",
+                "parent_id": ELIAS,
                 "child_id": child_id,
                 "role": "father",
                 "kind": "biological",
@@ -58,7 +61,7 @@ def test_preview_invalid_self_parent(client):
         "/api/mutations/preview",
         json={
             "action": "add_parent_child",
-            "params": {"parent_id": "mansoor_hussain", "child_id": "mansoor_hussain"},
+            "params": {"parent_id": ELIAS, "child_id": ELIAS},
         },
     ).json()
     assert preview_res["ok"] is True
@@ -71,7 +74,7 @@ def test_preview_invalid_self_marriage(client):
         "/api/mutations/preview",
         json={
             "action": "add_marriage",
-            "params": {"person_a": "mansoor_hussain", "person_b": "mansoor_hussain"},
+            "params": {"person_a": ELIAS, "person_b": ELIAS},
         },
     ).json()
     assert preview_res["ok"] is True

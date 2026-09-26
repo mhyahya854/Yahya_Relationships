@@ -1,15 +1,14 @@
 import puppeteer from "puppeteer-core";
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(HERE, "../..");
-const REPO = resolve(ROOT, "..");
-const SHOTS = resolve(REPO, "Documentation/UI-Screenshots/Phase12-Raw");
+const ROOT = realpathSync.native(resolve(HERE, "../.."));
+const SHOTS = resolve(process.env.MOSAIC_RAW_UI_SHOTS ?? resolve(tmpdir(), `mosaic-raw-synthetic-shots-${process.pid}`));
 const EDGE = existsSync("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe")
   ? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
   : "C:/Program Files/Microsoft/Edge/Application/msedge.exe";
@@ -37,23 +36,11 @@ function inventory(root) {
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-const productionBefore = {
-  database: inventory(resolve(REPO, "Database")),
-  people: inventory(resolve(REPO, "People")),
-  backups: inventory(resolve(REPO, "Backups")),
-  raw: inventory(resolve(REPO, "Raw")),
-  bootstrap: existsSync(realBootstrap) ? { bytes: statSync(realBootstrap).size, sha256: sha256(realBootstrap) } : null,
-};
+const bootstrapBefore = existsSync(realBootstrap) ? { bytes: statSync(realBootstrap).size, sha256: sha256(realBootstrap) } : null;
 
-function assertProductionUntouched() {
-  const after = {
-    database: inventory(resolve(REPO, "Database")),
-    people: inventory(resolve(REPO, "People")),
-    backups: inventory(resolve(REPO, "Backups")),
-    raw: inventory(resolve(REPO, "Raw")),
-    bootstrap: existsSync(realBootstrap) ? { bytes: statSync(realBootstrap).size, sha256: sha256(realBootstrap) } : null,
-  };
-  if (JSON.stringify(after) !== JSON.stringify(productionBefore)) throw new Error("Phase 12 UI E2E changed production data.");
+function assertRealBootstrapUntouched() {
+  const after = existsSync(realBootstrap) ? { bytes: statSync(realBootstrap).size, sha256: sha256(realBootstrap) } : null;
+  if (JSON.stringify(after) !== JSON.stringify(bootstrapBefore)) throw new Error("Raw UI E2E changed the real bootstrap pointer.");
 }
 
 const sleep = (milliseconds) => new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
@@ -173,13 +160,14 @@ try {
   step("Media remains visibly blocked for a later phase and cannot be moved through this flow");
 
   await selectRaw("fixture-report.pdf");
+  await page.select(".raw-detail select", "provenance_source");
   await setValue(".raw-detail input", "Database/Sources/ui-evidence/fixture-report.pdf");
   await page.$eval(".raw-detail textarea", (element) => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(element, "Synthetic review evidence only.");
     element.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await clickText(".raw-detail", "Save correction");
-  await page.waitForFunction(() => document.querySelector(".raw-detail")?.textContent?.includes("Human-selected generic provenance destination"));
+  await page.waitForFunction(() => document.querySelector(".raw-detail")?.textContent?.includes("Human-confirmed provenance source with a selected destination"));
   await screenshot("05-human-correction-ready.png");
   await clickText(".raw-detail", "Approve proposal");
   await page.waitForFunction(() => document.querySelector(".modal")?.textContent?.includes("Approve Raw proposal"));
@@ -198,8 +186,8 @@ try {
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
   await screenshot("09-dark-mode.png");
   if (consoleErrors.length) throw new Error(`Browser console errors: ${consoleErrors.join(" | ")}`);
-  assertProductionUntouched();
-  step("Raw screen remains usable in dark mode and the synthetic test preserved production data");
+  assertRealBootstrapUntouched();
+  step("Raw screen remains usable in dark mode and the real bootstrap pointer is unchanged");
   console.log(`Raw UI E2E passed (${steps} checks).`);
 } finally {
   if (browser) await browser.close().catch(() => undefined);

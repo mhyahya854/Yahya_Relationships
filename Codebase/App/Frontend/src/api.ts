@@ -420,10 +420,12 @@ export const api = {
   },
 
   raw: {
-    list: (filter?: string, query?: string) => {
+    list: (filter?: string, query?: string, limit: number = 200, offset: number = 0) => {
       const params = new URLSearchParams();
       if (filter && filter !== "all") params.set("filter", filter);
       if (query) params.set("query", query);
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
       const suffix = params.toString() ? `?${params.toString()}` : "";
       return request<unknown>(`/api/raw${suffix}`);
     },

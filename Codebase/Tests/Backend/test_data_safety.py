@@ -92,7 +92,7 @@ def test_filesystem_aware_undo_add_person(isolated):
     # Create person
     p = people.create_person(name="Undo Test Person", group_id="friends")
     pid = p["id"]
-    journal_file = people_dir / "Friends" / pid / "journal.md"
+    journal_file = people_dir / "Friends" / pid / "journal(personal thoughts).md"
     assert journal_file.exists()
 
     # Undo
@@ -111,7 +111,7 @@ def test_filesystem_conflict_blocks_undo(isolated):
     # Create person
     p = people.create_person(name="Conflict Test Person", group_id="friends")
     pid = p["id"]
-    journal_file = people_dir / "Friends" / pid / "journal.md"
+    journal_file = people_dir / "Friends" / pid / "journal(personal thoughts).md"
     assert journal_file.exists()
 
     # User modifies journal externally!
@@ -122,7 +122,7 @@ def test_filesystem_conflict_blocks_undo(isolated):
         mutation_history.undo_last_mutation(force_archive_conflicts=False)
 
     assert exc_info.value.code == "UNDO_FILESYSTEM_CONFLICT"
-    assert str(journal_file) in exc_info.value.detail["affected_paths"]
+    assert str(journal_file.parent) in exc_info.value.detail["affected_paths"]
 
     # Force archive conflicts -> Moves modified journal to _archived and restores DB
     undo_res = mutation_history.undo_last_mutation(force_archive_conflicts=True)
@@ -132,11 +132,28 @@ def test_filesystem_conflict_blocks_undo(isolated):
     assert len(archived_items) >= 1
 
 
+def test_undo_preserves_new_files_added_to_canonical_person_folder(isolated):
+    created = people.create_person(name="Synthetic Added File", group_id="friends")
+    folder = Path(created["folder"])
+    external = folder / "later-note.txt"
+    external.write_text("Fictional note added after person creation.\n", encoding="utf-8")
+
+    with pytest.raises(UndoFilesystemConflictError):
+        mutation_history.undo_last_mutation()
+    assert external.is_file()
+    assert people.get_person(created["id"])["id"] == created["id"]
+
+    mutation_history.undo_last_mutation(force_archive_conflicts=True)
+    archived = list((DataRootManager.get_people_dir(isolated) / "_archived").glob(f"conflict_{created['id']}_*"))
+    assert len(archived) == 1
+    assert (archived[0] / folder.name / "later-note.txt").read_text(encoding="utf-8") == "Fictional note added after person creation.\n"
+
+
 def test_filesystem_aware_undo_delete_person(isolated):
     people_dir = DataRootManager.get_people_dir(isolated)
     p = people.create_person(name="Delete Undo Test Person", group_id="colleagues")
     pid = p["id"]
-    active_folder = people_dir / "Colleagues" / pid
+    active_folder = Path(p["folder"])
     assert active_folder.exists()
 
     # Delete person

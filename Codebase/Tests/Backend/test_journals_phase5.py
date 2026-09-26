@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -17,10 +18,11 @@ from app.backend.data_root.errors import (
 from app.backend.data_root.manager import DataRootManager
 from app.backend.domain import maintenance
 from app.backend.services import errors, journals
+from app.backend.domain.canonical.ids import generate_canonical_person_id
 
 
-PID = "mohammad_yahya_hussain"
-OTHER_PID = "maham_mansoor"
+PID = generate_canonical_person_id("Mira Rahim")
+OTHER_PID = generate_canonical_person_id("Darya Sol")
 
 
 def _path(person_id: str = PID) -> Path:
@@ -230,10 +232,7 @@ def test_explicit_overwrite_only_succeeds_when_requested(isolated):
 def test_conflict_detection_creates_no_files_or_folders(isolated):
     first = journals.read_journal(PID)
     folder = _path().parent
-    for child in folder.iterdir():
-        if child.is_file():
-            child.unlink()
-    folder.rmdir()
+    shutil.rmtree(folder)
     with pytest.raises(errors.JournalConflictError):
         _save(PID, "draft\n", first)
     assert not folder.exists()

@@ -115,14 +115,14 @@ def test_sqlite_wal_open_connection_is_snapshotted_consistently(isolated):
     connection.execute("INSERT OR REPLACE INTO metadata(key, value) VALUES ('phase7_wal', 'committed')")
     connection.commit()
     created = _created(isolated, "WAL")
-    backup_connection = sqlite3.connect(str(Path(created["path"]) / "data" / "family.db"))
+    backup_connection = sqlite3.connect(str(Path(created["path"]) / "data" / "relationships.db"))
     try:
         assert backup_connection.execute("SELECT value FROM metadata WHERE key='phase7_wal'").fetchone()[0] == "committed"
         assert backup_connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     finally:
         backup_connection.close()
         connection.close()
-    assert not list(Path(created["path"]).rglob("family.db-*"))
+    assert not list(Path(created["path"]).rglob("relationships.db-*"))
 
 
 def test_people_empty_journal_and_config_are_included_but_temps_are_not(isolated):
@@ -193,8 +193,8 @@ def test_valid_backup_verifies_with_structured_compatibility(isolated):
     assert result["compatibility"] == {
         "ok": True,
         "status": "supported",
-        "backup_schema": config.APP_SCHEMA_VERSION,
-        "current_schema": config.APP_SCHEMA_VERSION,
+        "backup_schema": config.CANONICAL_SCHEMA_VERSION,
+        "current_schema": config.CANONICAL_SCHEMA_VERSION,
     }
 
 
@@ -236,7 +236,7 @@ def test_malformed_json_is_rejected(isolated):
 )
 def test_payload_tampering_is_rejected(isolated, change, code):
     path = Path(_created(isolated)["path"])
-    file = path / "data" / "family.db"
+    file = path / "data" / "relationships.db"
     change(file)
     assert code in _issue_codes(verify_backup(path))
 
@@ -259,19 +259,19 @@ def test_person_and_journal_count_mismatches_are_rejected(isolated):
 
 def test_newer_schema_is_blocked_even_when_hashes_are_valid(isolated):
     path = Path(_created(isolated)["path"])
-    database = path / "data" / "family.db"
+    database = path / "data" / "relationships.db"
     connection = sqlite3.connect(str(database))
-    connection.execute("UPDATE metadata SET value=? WHERE key='app_schema_version'", (str(config.APP_SCHEMA_VERSION + 1),))
-    connection.execute(f"PRAGMA user_version={config.APP_SCHEMA_VERSION + 1}")
+    connection.execute("UPDATE metadata SET value=? WHERE key='app_schema_version'", (str(config.CANONICAL_SCHEMA_VERSION + 1),))
+    connection.execute(f"PRAGMA user_version={config.CANONICAL_SCHEMA_VERSION + 1}")
     connection.commit()
     connection.close()
     data = _manifest(path)
-    entry = next(item for item in data["files"] if item["path"] == "data/family.db")
+    entry = next(item for item in data["files"] if item["path"] == "data/relationships.db")
     old_size = entry["size_bytes"]
     entry.update(sha256=file_sha256(database), size_bytes=database.stat().st_size)
     data["total_size_bytes"] += entry["size_bytes"] - old_size
-    data["sqlite_schema_version"] = config.APP_SCHEMA_VERSION + 1
-    data["schema_version"] = config.APP_SCHEMA_VERSION + 1
+    data["sqlite_schema_version"] = config.CANONICAL_SCHEMA_VERSION + 1
+    data["schema_version"] = config.CANONICAL_SCHEMA_VERSION + 1
     _write_manifest(path, data)
     result = verify_backup(path)
     assert result["status"] == "incompatible"
@@ -304,7 +304,7 @@ def test_restore_replaces_database_people_and_config_exact_payload(isolated):
     config_file.write_text("before", encoding="utf-8")
     created = _created(isolated)
     backup_path = Path(created["path"])
-    expected_db = (backup_path / "data" / "family.db").read_bytes()
+    expected_db = (backup_path / "data" / "relationships.db").read_bytes()
     expected_people = _tree_digest(backup_path / "people")
     config_file.write_text("after", encoding="utf-8")
     (DataRootManager.get_people_dir(isolated) / "Family" / "new" / "journal.md").parent.mkdir(parents=True)
@@ -344,7 +344,7 @@ def test_wrong_confirmation_is_blocked_before_safety_mutation(isolated):
 
 def test_corrupt_backup_is_blocked_before_safety_mutation(isolated):
     created = _created(isolated)
-    (Path(created["path"]) / "data" / "family.db").write_bytes(b"bad")
+    (Path(created["path"]) / "data" / "relationships.db").write_bytes(b"bad")
     before = len(backup_service.list_backups(isolated))
     with pytest.raises(RestoreError) as caught:
         restore_backup(created["id"], root=isolated)
@@ -371,7 +371,7 @@ def test_maintenance_conflict_blocks_create_and_restore(isolated):
             restore_backup(created["id"], root=isolated)
 
 
-@pytest.mark.parametrize("component", ["family.db", "People", "Config"])
+@pytest.mark.parametrize("component", ["relationships.db", "People", "Config"])
 def test_switch_failure_rolls_back_database_people_and_config_exactly(isolated, monkeypatch, component):
     from app.backend.domain.backups import restore as module
 

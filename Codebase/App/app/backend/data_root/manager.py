@@ -29,6 +29,22 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[5]
 
 
+def _overlaps_source_checkout(candidate: Path) -> bool:
+    """Keep production data outside a source checkout, including path aliases."""
+    if getattr(sys, "frozen", False):
+        return False
+    checkout = _repo_root()
+    if not (checkout / "Codebase" / "App").is_dir():
+        return False
+    checkout_path = os.path.normcase(os.path.realpath(checkout))
+    candidate_path = os.path.normcase(os.path.realpath(candidate.expanduser()))
+    try:
+        common = os.path.commonpath((checkout_path, candidate_path))
+    except ValueError:  # Different Windows drives.
+        return False
+    return common in {checkout_path, candidate_path}
+
+
 def _user_bootstrap_config_path() -> Path:
     """OS-specific bootstrap pointer file pointing to active Data Root.
 
@@ -56,6 +72,14 @@ class DataRootManager:
     INCOMPLETE_MARKERS = (".migration_incomplete.json", ".restore_incomplete.json")
 
     @classmethod
+    def assert_private_root(cls, path: Path) -> None:
+        if _overlaps_source_checkout(path):
+            raise DataRootInvalidError(
+                "A private Data Root cannot overlap the application source checkout.",
+                detail={"code": "SOURCE_CHECKOUT_OVERLAP"},
+            )
+
+    @classmethod
     def set_override_root(cls, path: Path | None) -> None:
         """Override active root (useful for isolated tests)."""
         cls._override_root = path.resolve() if path else None
@@ -64,14 +88,19 @@ class DataRootManager:
     def bootstrap_status(cls) -> Dict[str, Any]:
         """Read the active-root authority without creating or repairing anything."""
         if cls._override_root is not None:
+            if _overlaps_source_checkout(cls._override_root):
+                return {"configured": True, "invalid": True, "active_root": None, "source": "override", "error": "SOURCE_CHECKOUT_OVERLAP"}
             return {"configured": True, "invalid": False, "active_root": cls._override_root, "source": "override"}
 
         env_root = os.environ.get("PEOPLE_RELATIONSHIPS_ROOT")
         if env_root:
+            selected = Path(env_root).expanduser().resolve()
+            if _overlaps_source_checkout(selected):
+                return {"configured": True, "invalid": True, "active_root": None, "source": "environment", "error": "SOURCE_CHECKOUT_OVERLAP"}
             return {
                 "configured": True,
                 "invalid": False,
-                "active_root": Path(env_root).expanduser().resolve(),
+                "active_root": selected,
                 "source": "environment",
             }
 
@@ -83,10 +112,13 @@ class DataRootManager:
                 active_root = payload.get("active_root") if isinstance(payload, dict) else None
                 if not isinstance(active_root, str) or not active_root.strip():
                     raise ValueError("active_root must be a non-empty string")
+                selected = Path(active_root).expanduser().resolve()
+                if _overlaps_source_checkout(selected):
+                    raise ValueError("SOURCE_CHECKOUT_OVERLAP")
                 return {
                     "configured": True,
                     "invalid": False,
-                    "active_root": Path(active_root).expanduser().resolve(),
+                    "active_root": selected,
                     "source": "bootstrap",
                     "payload": payload,
                 }
@@ -102,11 +134,6 @@ class DataRootManager:
         if explicit_bootstrap:
             return {"configured": False, "invalid": False, "active_root": None, "source": "bootstrap"}
 
-        if not getattr(sys, "frozen", False):
-            repo = _repo_root()
-            if (repo / "Database" / "relationships.db").exists() or (repo / "Database" / "Main" / "family.db").exists():
-                return {"configured": True, "invalid": False, "active_root": repo, "source": "source_fallback"}
-
         return {"configured": False, "invalid": False, "active_root": None, "source": "bootstrap"}
 
     @classmethod
@@ -116,7 +143,7 @@ class DataRootManager:
 
     @classmethod
     def get_bootstrap_root(cls) -> Path:
-        """Resolve current active root path from override, env, bootstrap file, or repo root."""
+        """Resolve the configured root, or a non-active onboarding placeholder."""
         status = cls.bootstrap_status()
         if status["invalid"]:
             raise DataRootBootstrapInvalidError(detail={"path": str(_user_bootstrap_config_path())})
@@ -129,6 +156,7 @@ class DataRootManager:
     def set_active_root_pointer(cls, new_root: Path) -> None:
         """Atomically update the bootstrap pointer; the old bytes survive any failure."""
         resolved = new_root.resolve()
+        cls.assert_private_root(resolved)
         bootstrap_file = _user_bootstrap_config_path()
         payload = {
             "active_root": str(resolved),
@@ -374,6 +402,7 @@ class DataRootManager:
     def validate_data_root_structure(cls, path: Path) -> Dict[str, Any]:
         """Validate if a target directory is a valid usable Data Root."""
         p = path.resolve()
+        cls.assert_private_root(p)
         if not p.exists():
             raise DataRootNotFoundError(f"Path '{p}' does not exist.")
         if not p.is_dir() or p.is_symlink():

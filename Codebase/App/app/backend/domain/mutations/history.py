@@ -36,6 +36,22 @@ def _file_hash(path: Path) -> str:
     return hasher.hexdigest()
 
 
+def _directory_manifest(path: Path) -> dict[str, str]:
+    """Record the exact generated folder before undo may remove it."""
+    result: dict[str, str] = {}
+    for item in path.rglob("*"):
+        relative = item.relative_to(path).as_posix()
+        if item.is_symlink():
+            result[relative] = "symlink"
+        elif item.is_dir():
+            result[relative + "/"] = "directory"
+        elif item.is_file():
+            result[relative] = _file_hash(item)
+        else:
+            result[relative] = "other"
+    return result
+
+
 def record_pre_mutation_snapshot(
     description: str,
     filesystem_manifest: Optional[Dict[str, Any]] = None,
@@ -96,6 +112,8 @@ def update_latest_filesystem_manifest(manifest_update: Dict[str, Any]) -> None:
             p_obj = Path(p)
             if p_obj.exists() and p_obj.is_file():
                 fs.setdefault("hashes", {})[str(p)] = _file_hash(p_obj)
+            elif p_obj.exists() and p_obj.is_dir():
+                fs.setdefault("directory_manifests", {})[str(p)] = _directory_manifest(p_obj)
         fs["created_paths"] = created
 
     if "moves" in manifest_update:
@@ -151,6 +169,7 @@ def undo_last_mutation(force_archive_conflicts: bool = False) -> Dict[str, Any]:
 
     created_paths = [Path(p) for p in fs.get("created_paths", [])]
     recorded_hashes = fs.get("hashes", {})
+    directory_manifests = fs.get("directory_manifests", {})
 
     # 1. Conflict Check: Verify if created files/journals were modified externally
     conflicted_paths: List[str] = []
@@ -160,10 +179,13 @@ def undo_last_mutation(force_archive_conflicts: bool = False) -> Dict[str, Any]:
             initial_hash = recorded_hashes.get(str(cp))
             if initial_hash and current_hash != initial_hash:
                 conflicted_paths.append(str(cp))
+        elif cp.exists() and cp.is_dir() and str(cp) in directory_manifests:
+            if _directory_manifest(cp) != directory_manifests[str(cp)]:
+                conflicted_paths.append(str(cp))
 
     if conflicted_paths and not force_archive_conflicts:
         raise UndoFilesystemConflictError(
-            message=f"Cannot undo '{description}': Person journal was modified externally after the mutation.",
+            message=f"Cannot undo '{description}': Created filesystem content changed after the mutation.",
             detail={
                 "code": "UNDO_FILESYSTEM_CONFLICT",
                 "affected_paths": conflicted_paths,
@@ -194,9 +216,10 @@ def undo_last_mutation(force_archive_conflicts: bool = False) -> Dict[str, Any]:
                 if str(cp) in conflicted_paths and force_archive_conflicts:
                     # Archive modified journal instead of deleting
                     people_dir = DataRootManager.get_people_dir()
-                    archive_dest = people_dir / "_archived" / f"conflict_{cp.parent.name}_{uuid_hex()}"
+                    owner = cp.name if cp.is_dir() else cp.parent.name
+                    archive_dest = people_dir / "_archived" / f"conflict_{owner}_{uuid_hex()}"
                     archive_dest.mkdir(parents=True, exist_ok=True)
-                    shutil.move(str(cp.parent), str(archive_dest))
+                    shutil.move(str(cp if cp.is_dir() else cp.parent), str(archive_dest))
                 else:
                     parent_dir = cp.parent
                     if cp.is_file():

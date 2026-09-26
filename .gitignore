@@ -20,6 +20,22 @@
 .restore_staging_*/
 .restore_rollback_*/
 .backup_staging_*/
+/.dr-*/
+/.mosaic-quarantine/
+
+# Local private Data Roots must never enter the public source tree.
+/Database/
+/People/
+/Backups/
+/Raw/
+/Media/
+/Mosaic - Local Private Data/
+/Local Private Data/
+/Documentation/Archive/family-revision-5-pre-sqlite.json
+/Documentation/Archive/
+/Documentation/Testing/
+/Documentation/UI-Screenshots/Connections-Final-Polish/
+/Documentation/UI-Screenshots/Phase12-Raw/
 
 # Logs and environment
 *.log
@@ -42,6 +58,7 @@ Codebase/Packaging/release/*.msi
 Codebase/Packaging/release/*.dmg
 Codebase/Packaging/release/*.AppImage
 Codebase/Packaging/release/*.deb
+/Codebase/Packaging/release/
 *.exe
 *.msi
 *.dmg

@@ -154,7 +154,7 @@ export function SearchView({
       </form>
 
       <div className="search-suggestions" aria-label="Search suggestions">
-        {["Yahya", "ماموں", "maternal uncle", "close friend", "cousin", "journal"].map(
+        {["Mira", "ماموں", "maternal uncle", "close friend", "cousin", "journal"].map(
           (suggestion) => (
             <button
               type="button"

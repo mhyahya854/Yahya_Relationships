@@ -3896,6 +3896,8 @@ textarea:focus {
 .raw-search { width: min(100%, 290px); }
 .raw-workspace { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, .9fr); gap: 14px; align-items: start; }
 .raw-table-wrap, .raw-detail { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-primary); box-shadow: var(--shadow); }
+.raw-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--surface-secondary); }
+.raw-pagination .raw-actions { margin-top: 0; }
 .raw-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .raw-table th { padding: 10px 12px; color: var(--muted); background: var(--surface-secondary); font-size: 11px; text-align: left; text-transform: uppercase; letter-spacing: .06em; }
 .raw-table td { padding: 11px 12px; border-top: 1px solid var(--line); vertical-align: top; font-size: 13px; }

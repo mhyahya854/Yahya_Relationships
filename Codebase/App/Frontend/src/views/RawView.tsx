@@ -17,6 +17,7 @@ type RawItem = {
   final_relative_path: string | null;
   entry_kind: string;
   classification: string;
+  machine_classification: string;
   classification_source: string;
   classification_confidence: number | null;
   size_bytes: number | null;
@@ -39,6 +40,9 @@ type RawResponse = {
   counts: Record<string, number>;
   latest_run: { status: string; completed_at: string | null; summary_json: string } | null;
   raw_exists: boolean;
+  total_filtered: number;
+  limit: number;
+  offset: number;
 };
 
 const FILTERS = [
@@ -47,7 +51,7 @@ const FILTERS = [
   ["moved", "Moved"], ["missing", "Missing"],
 ] as const;
 
-const CLASSES = ["image", "video", "audio", "document", "archive", "social_export_candidate", "location_export_candidate", "phone_backup_candidate", "folder/container", "unknown"];
+const CLASSES = ["provenance_source", "image", "video", "audio", "document", "archive", "social_export_candidate", "location_export_candidate", "phone_backup_candidate", "folder/container", "unknown"];
 
 function formatBytes(bytes: number | null) {
   if (bytes == null) return "Unknown size";
@@ -74,9 +78,9 @@ export function RawView() {
   const [destination, setDestination] = useState("");
   const [note, setNote] = useState("");
 
-  const load = useCallback(async (nextFilter = filter, nextQuery = query) => {
+  const load = useCallback(async (nextFilter = filter, nextQuery = query, nextOffset = 0) => {
     try {
-      const result = await api.raw.list(nextFilter, nextQuery) as RawResponse;
+      const result = await api.raw.list(nextFilter, nextQuery, 200, nextOffset) as RawResponse;
       setData(result);
       setError(null);
       return result;
@@ -159,7 +163,8 @@ export function RawView() {
     } catch (err) { setError(err); } finally { setActionBusy(false); }
   }
 
-  const selectedCanApprove = selected?.proposal?.proposal_state === "READY" && !selected.proposal.stale && selected.processing_state !== "MOVED";
+  const terminalState = selected ? ["MOVING", "MOVED", "MISSING", "ERROR", "STALE"].includes(selected.processing_state) : true;
+  const selectedCanApprove = selected?.proposal?.proposal_state === "READY" && !selected.proposal.stale && !terminalState;
   const selectedCanMove = selected?.processing_state === "APPROVED" && selected?.proposal?.proposal_state === "READY" && !selected.proposal.stale;
   const rows = data?.items ?? [];
   const status = data?.latest_run ? `${label(data.latest_run.status)}${data.latest_run.completed_at ? ` · ${data.latest_run.completed_at}` : ""}` : "Not scanned yet";
@@ -183,16 +188,16 @@ export function RawView() {
 
       <div className="raw-summary" aria-label="Raw intake status">
         <div><span className="muted tiny">Last scan</span><strong>{status}</strong></div>
-        <div><span className="muted tiny">Raw area</span><strong>{data?.raw_exists ? "Available" : "Created on first scan"}</strong></div>
+        <div><span className="muted tiny">Raw area</span><strong>{data?.raw_exists ? "Available" : "Absent — scan will not create it"}</strong></div>
         <div><span className="muted tiny">Items</span><strong>{data?.counts.all ?? 0}</strong></div>
         <div><span className="muted tiny">Needs review</span><strong>{data?.counts.needs_review ?? 0}</strong></div>
       </div>
 
       <div className="raw-toolbar">
         <div className="tabs raw-filters" aria-label="Raw filters">
-          {FILTERS.map(([id, text]) => <Button key={id} kind="ghost" className={`chip-button ${filter === id ? "active" : ""}`} ariaPressed={filter === id} onClick={() => { setFilter(id); void load(id, query); }}>{text} ({data?.counts[id] ?? 0})</Button>)}
+          {FILTERS.map(([id, text]) => <Button key={id} kind="ghost" className={`chip-button ${filter === id ? "active" : ""}`} ariaPressed={filter === id} onClick={() => { setFilter(id); void load(id, query, 0); }}>{text} ({data?.counts[id] ?? 0})</Button>)}
         </div>
-        <input className="raw-search" value={query} onChange={(event) => { const value = event.target.value; setQuery(value); void load(filter, value); }} placeholder="Search Raw paths or types" aria-label="Search Raw items" />
+        <input className="raw-search" value={query} onChange={(event) => { const value = event.target.value; setQuery(value); void load(filter, value, 0); }} placeholder="Search Raw paths or types" aria-label="Search Raw items" />
       </div>
 
       {rows.length === 0 ? (
@@ -212,17 +217,18 @@ export function RawView() {
                 </tr>
               ))}</tbody>
             </table>
+            {(data?.total_filtered ?? 0) > 0 && <div className="raw-pagination"><span className="muted small">Showing {(data?.offset ?? 0) + 1}–{Math.min((data?.offset ?? 0) + rows.length, data?.total_filtered ?? 0)} of {data?.total_filtered ?? 0}</span><div className="raw-actions"><Button kind="ghost" disabled={(data?.offset ?? 0) === 0} onClick={() => void load(filter, query, Math.max(0, (data?.offset ?? 0) - (data?.limit ?? 200)))}>Previous</Button><Button kind="ghost" disabled={(data?.offset ?? 0) + rows.length >= (data?.total_filtered ?? 0)} onClick={() => void load(filter, query, (data?.offset ?? 0) + (data?.limit ?? 200))}>Next</Button></div></div>}
           </div>
 
           <aside className="raw-detail" aria-label="Raw item detail">
             {!selected ? <div className="empty-state">Select an item to inspect its source, analysis, provenance, duplicate links, proposal, and review actions.</div> : <>
               <div className="raw-detail-head"><div><span className="muted tiny">Raw item</span><h2>{selected.current_relative_path ?? selected.final_relative_path ?? selected.original_relative_path}</h2></div><Button kind="ghost" onClick={() => setSelected(null)}>Close</Button></div>
               <section><h3>Source</h3><dl><dt>Original</dt><dd>{selected.original_relative_path}</dd><dt>Current</dt><dd>{selected.current_relative_path ?? "No longer in Raw"}</dd><dt>Size</dt><dd>{formatBytes(selected.size_bytes)}</dd><dt>SHA-256</dt><dd className="raw-digest">{selected.sha256 ?? "Not available"}</dd><dt>Availability</dt><dd>{label(selected.availability_state)}</dd></dl></section>
-              <section><h3>Analysis</h3><p><span className="chip">{label(selected.classification)}</span> <span className="muted small">{selected.classification_source === "human" ? "Human-confirmed correction" : "Deterministic detection, not a confirmed fact"}</span></p><p className="muted small">Future processors: {selected.analysis_status.replace(/_/g, " ")}. No OCR, transcript, identity, face, or location fact has been generated.</p>{blockedCopy && <div className="info-note">{blockedCopy}</div>}</section>
+              <section><h3>Analysis</h3><dl><dt>Machine suggestion</dt><dd><span className="chip">{label(selected.machine_classification)}</span> <span className="muted small">Deterministic detection, not a confirmed fact</span></dd><dt>Current classification</dt><dd><span className="chip">{label(selected.classification)}</span> <span className="muted small">{selected.classification_source === "human" ? "Human-confirmed correction" : "Not human-confirmed"}</span></dd></dl><p className="muted small">Future processors: {selected.analysis_status.replace(/_/g, " ")}. No OCR, transcript, identity, face, or location fact has been generated.</p>{blockedCopy && <div className="info-note">{blockedCopy}</div>}</section>
               <section><h3>Duplicates</h3>{selected.duplicate_count > 1 ? <><p className="muted small">Exact SHA-256 group: {selected.duplicate_count} separately retained source records. No deletion is automatic.</p><ul>{selected.duplicates?.map((duplicate) => <li key={duplicate.id}>{duplicate.current_relative_path ?? duplicate.id} · {label(duplicate.availability_state)}</li>)}</ul></> : <p className="muted small">No other Raw record currently has this exact verified hash.</p>}</section>
               <section><h3>Proposal</h3><p><strong>{label(selected.proposal?.proposal_state)}</strong></p><p className="muted small">{selected.proposal?.reason ?? "No current proposal."}</p>{selected.proposal?.destination_relative_path && <code>{selected.proposal.destination_relative_path}</code>}{selected.proposal?.stale ? <div className="error-note">This proposal is stale and cannot be approved.</div> : null}</section>
-              <section><h3>Human correction</h3><label>Classification<select value={classification} disabled={actionBusy} onChange={(event) => setClassification(event.target.value)}>{CLASSES.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label><label>Authorized generic source destination (optional)<input value={destination} disabled={actionBusy} onChange={(event) => setDestination(event.target.value)} placeholder="Database/Sources/batch/filename.ext" /></label><p className="muted tiny">Only a manually selected path under <code>Database/Sources/</code> can become READY in Phase 12. All media/event/social/location destinations remain blocked for later phases.</p><label>Review note<textarea value={note} disabled={actionBusy} onChange={(event) => setNote(event.target.value)} rows={2} /></label><Button kind="ghost" disabled={actionBusy} onClick={() => void correct()}>Save correction</Button></section>
-              <section><h3>Decision</h3><div className="raw-actions"><Button kind="primary" disabled={!selectedCanApprove || actionBusy} onClick={() => setApprovalOpen(true)}>Approve proposal</Button><Button kind="ghost" disabled={actionBusy || selected.processing_state === "MOVED"} onClick={() => void decide("DEFERRED")}>Defer</Button><Button kind="danger" disabled={actionBusy || selected.processing_state === "MOVED"} onClick={() => void decide("REJECTED")}>Reject</Button><Button kind="ghost" disabled={actionBusy || !selected.current_relative_path} onClick={() => void rehash()}>Rehash / rescan</Button></div>{selectedCanMove && <div className="raw-move-box"><strong>Approved, ready to move</strong><p className="muted small">The source leaves Raw only after a verified copy reaches the exact destination shown above. Existing destinations are never overwritten.</p><Button kind="primary" disabled={actionBusy} onClick={() => void move()}>Move approved file</Button></div>}</section>
+              <section><h3>Human correction</h3><label>Classification<select value={classification} disabled={actionBusy || terminalState} onChange={(event) => setClassification(event.target.value)}>{CLASSES.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label><label>Confirmed provenance source destination (optional)<input value={destination} disabled={actionBusy || terminalState || classification !== "provenance_source"} onChange={(event) => setDestination(event.target.value)} placeholder="Database/Sources/batch/filename.ext" /></label><p className="muted tiny">Only material explicitly confirmed as a provenance source may become READY under <code>Database/Sources/</code>. Ordinary documents, media, events, social exports, and location exports remain blocked for their later phases.</p><label>Review note<textarea value={note} disabled={actionBusy || terminalState} onChange={(event) => setNote(event.target.value)} rows={2} /></label><Button kind="ghost" disabled={actionBusy || terminalState} onClick={() => void correct()}>Save correction</Button></section>
+              <section><h3>Decision</h3><div className="raw-actions"><Button kind="primary" disabled={!selectedCanApprove || actionBusy} onClick={() => setApprovalOpen(true)}>Approve proposal</Button><Button kind="ghost" disabled={actionBusy || terminalState} onClick={() => void decide("DEFERRED")}>Defer</Button><Button kind="danger" disabled={actionBusy || terminalState} onClick={() => void decide("REJECTED")}>Reject</Button><Button kind="ghost" disabled={actionBusy || !selected.current_relative_path || selected.processing_state === "MOVING"} onClick={() => void rehash()}>Rehash / rescan</Button></div>{selectedCanMove && <div className="raw-move-box"><strong>Approved, ready to move</strong><p className="muted small">The source leaves Raw only after a verified copy reaches the exact destination shown above. Existing destinations are never overwritten.</p><Button kind="primary" disabled={actionBusy} onClick={() => void move()}>Move approved file</Button></div>}</section>
               <section><h3>Provenance & history</h3><ul className="raw-event-list">{selected.events?.slice(0, 8).map((event) => <li key={`${event.event_type}-${event.created_at}`}><strong>{label(event.event_type)}</strong><span>{event.created_at}</span></li>)}</ul><p className="muted tiny">Full append-oriented history: <code>Database/raw_processing_history.md</code></p></section>
             </>}
           </aside>

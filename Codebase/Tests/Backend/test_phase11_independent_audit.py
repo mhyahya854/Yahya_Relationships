@@ -1,8 +1,7 @@
 """Independent Phase-11 safety and semantic regression tests.
 
-All mutation, failure injection, migration, and restore cases use temporary
-Data Roots. The repository's historical and canonical databases are read-only
-inputs to these tests.
+All mutation, failure injection, migration, and restore cases use generated
+fictional temporary Data Roots.
 """
 
 from __future__ import annotations
@@ -34,11 +33,7 @@ from app.backend.services import family as family_service
 from app.backend.services import general as general_service
 from app.backend.services import journals as journal_service
 from app.backend.services import people as people_service
-
-
-REPO = Path(__file__).resolve().parents[3]
-LEGACY_DB = REPO / "Database" / "Main" / "family.db"
-LEGACY_PEOPLE = REPO / "Database" / "People"
+from Tests.synthetic_mosaic import build_legacy
 
 
 def _sha256(path: Path) -> str:
@@ -57,13 +52,7 @@ def _tree_hashes(root: Path) -> dict[str, str]:
 
 def _legacy_root(tmp_path: Path) -> Path:
     root = tmp_path / "legacy-root"
-    database = root / "Database" / "Main"
-    database.mkdir(parents=True)
-    shutil.copy2(LEGACY_DB, database / "family.db")
-    if LEGACY_PEOPLE.is_dir():
-        shutil.copytree(LEGACY_PEOPLE, root / "Database" / "People")
-    else:
-        (root / "Database" / "People").mkdir(parents=True)
+    build_legacy(root)
     (root / "Database" / "Config").mkdir(parents=True)
     return root
 
@@ -100,8 +89,9 @@ def test_id_algorithm_handles_unicode_and_rejects_invalid_names():
 
 def test_missing_canonical_database_never_falls_back_or_creates(tmp_path):
     root = tmp_path / "canonical-missing-db"
-    (root / "Database" / "Main").mkdir(parents=True)
-    shutil.copy2(LEGACY_DB, root / "Database" / "Main" / "family.db")
+    build_legacy(root)
+    legacy_db = root / "Database" / "Main" / "family.db"
+    legacy_hash = _sha256(legacy_db)
     (root / "Database" / "Config").mkdir(parents=True)
     (root / "Database" / "Config" / "data-root.json").write_text(
         json.dumps({"storage_layout": DataRootManager.CANONICAL_LAYOUT}),
@@ -112,7 +102,7 @@ def test_missing_canonical_database_never_falls_back_or_creates(tmp_path):
     with pytest.raises(DataRootNotFoundError):
         db.get_connection(expected)
     assert not expected.exists()
-    assert _sha256(root / "Database" / "Main" / "family.db") == _sha256(LEGACY_DB)
+    assert _sha256(legacy_db) == legacy_hash
 
 
 def test_semantic_row_by_row_migration_parity(tmp_path):
@@ -286,7 +276,7 @@ def test_all_ordered_pair_family_semantics_match_legacy(tmp_path):
         )
 
     legacy_ids = sorted(legacy_index)
-    assert len(legacy_ids) == 35
+    assert len(legacy_ids) == 15
     for first in legacy_ids:
         for second in legacy_ids:
             legacy_pair = family_engine._viewer_pair(legacy, first, second, legacy_index)
@@ -323,9 +313,10 @@ def test_exact_template_journal_bytes_facts_and_idempotency(tmp_path):
             "journal(personal thoughts).md",
             *FOLDER_TEMPLATE_DIRECTORIES,
         }
-        source_journal = root / "Database" / "People" / "Family" / old_id / "journal.md"
-        if source_journal.is_file():
-            assert (folder / "journal(personal thoughts).md").read_bytes() == source_journal.read_bytes()
+        source_category = "Me" if entry["category"] == "Me" else "Family"
+        source_journal = root / "Database" / "People" / source_category / old_id / "journal.md"
+        assert source_journal.is_file()
+        assert (folder / "journal(personal thoughts).md").read_bytes() == source_journal.read_bytes()
         facts = (folder / f"{entry['canonical_id']}(facts and about).md").read_text(encoding="utf-8")
         assert "- **Created**: Unknown" in facts
         assert "- **Updated**: Unknown" in facts
@@ -406,7 +397,8 @@ def test_canonical_backup_restore_round_trip_and_runtime_authority(tmp_path):
 
 
 def test_legacy_backup_restores_as_legacy_not_canonical(tmp_path):
-    backup = REPO / "Backups" / "Safety" / "Pre-Upgrade" / "backup-20260919T184332151Z-0d52d225-pre-phase11"
+    source = _legacy_root(tmp_path / "backup-source")
+    backup = Path(create_backup("Fictional legacy backup", root=source)["path"])
     assert verify_backup(backup)["ok"] is True
     destination = tmp_path / "restored-legacy"
     destination.mkdir()
@@ -422,7 +414,8 @@ def test_legacy_backup_restores_as_legacy_not_canonical(tmp_path):
 
 
 def test_legacy_backup_replaces_an_existing_canonical_root(tmp_path):
-    backup = REPO / "Backups" / "Safety" / "Pre-Upgrade" / "backup-20260919T184332151Z-0d52d225-pre-phase11"
+    source = _legacy_root(tmp_path / "backup-source")
+    backup = Path(create_backup("Fictional legacy backup", root=source)["path"])
     destination = _migrated_root(tmp_path / "canonical-destination")
     assert (destination / "Database" / "HISTORICAL_FAMILY_DB.md").is_file()
 
@@ -525,35 +518,35 @@ def test_all_runtime_mutations_stay_on_canonical_authority(tmp_path):
             type="friend",
         )
         legacy_general = general_service.add_general_relationship(
-            person_a="mohammad_yahya_hussain",
-            person_b="aresha_zubair",
+            person_a="mira_rahim",
+            person_b="aika_calder_rahim",
             type="friend",
         )
-        assert legacy_general["person_a"] == "aresha_zubair--AZ01"
-        assert legacy_general["person_b"] == "mohammad_yahya_hussain--MYH01"
-        assert general_service.list_general_relationships("mohammad_yahya_hussain")
+        assert legacy_general["person_a"] == "aika_calder_rahim--ACR01"
+        assert legacy_general["person_b"] == "mira_rahim--MR01"
+        assert general_service.list_general_relationships("mira_rahim")
         updated_parent = family_service.update_parent_child(
-            "irsa_naz",
-            "mohammad_yahya_hussain",
+            "salma_rahim",
+            "mira_rahim",
             role="mother",
             kind="biological",
         )
-        assert updated_parent["parent_id"] == "irsa_naz--IN01"
-        assert updated_parent["child_id"] == "mohammad_yahya_hussain--MYH01"
+        assert updated_parent["parent_id"] == "salma_rahim--SR01"
+        assert updated_parent["child_id"] == "mira_rahim--MR01"
         updated_marriage = family_service.update_marriage(
-            "irsa_naz",
-            "mansoor_hussain",
+            "salma_rahim",
+            "elias_calder",
             status="married",
         )
         assert {updated_marriage["person_a"], updated_marriage["person_b"]} == {
-            "irsa_naz--IN01",
-            "mansoor_hussain--MH01",
+            "salma_rahim--SR01",
+            "elias_calder--EC01",
         }
 
         connection = _connect(root / "Database" / "relationships.db")
         try:
-            assert db.resolve_canonical_id(connection, "mohammad_yahya_hussain") == (
-                "mohammad_yahya_hussain--MYH01"
+            assert db.resolve_canonical_id(connection, "mira_rahim") == (
+                "mira_rahim--MR01"
             )
             assert connection.execute(
                 "SELECT 1 FROM parent_child WHERE parent_id=? AND child_id=?",

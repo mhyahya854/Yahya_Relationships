@@ -11,7 +11,7 @@
    8. Verification that user data root survives uninstall untouched
 */
 
-import { execSync, spawn } from "node:child_process";
+import { execFileSync, execSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const codebaseDir = resolve(__dirname, "../..");
-const bundleDir = join(codebaseDir, "Desktop/Tauri/target/release/bundle/nsis");
+const bundleDir = join(process.env.CARGO_TARGET_DIR || join(codebaseDir, "Desktop/Tauri/target"), "release/bundle/nsis");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -57,7 +57,7 @@ async function main() {
   // 3. Silent Installation
   console.log("\n[Step 1/6] Running silent NSIS installation...");
   execSync(
-    `powershell -Command "Start-Process -FilePath '${installerPath}' -ArgumentList '/S', '/D=${installDir}' -Wait"`,
+    `powershell -Command "Start-Process -FilePath '${installerPath}' -ArgumentList '/S', '/D=${installDir}' -WindowStyle Hidden -Wait"`,
     { stdio: "inherit" },
   );
 
@@ -72,6 +72,11 @@ async function main() {
     );
   }
   console.log(`Verified installed executable: ${installedExe}`);
+  execFileSync(process.execPath, [
+    join(codebaseDir, "Scripts/run-py.mjs"),
+    "Packaging/Scripts/audit_package.py",
+    installDir,
+  ], { cwd: codebaseDir, stdio: "inherit" });
 
   // 4. Launch Installed Application
   console.log("\n[Step 2/6] Launching installed application...");
@@ -123,7 +128,7 @@ async function main() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         target_path: dataRootDir,
-        owner_name: "Mohammad Yahya Hussain",
+        owner_name: "Mira Rahim",
       }),
     },
   );
@@ -202,7 +207,7 @@ async function main() {
   const uninstaller = join(installDir, "uninstall.exe");
   if (existsSync(uninstaller)) {
     execSync(
-      `powershell -Command "Start-Process -FilePath '${uninstaller}' -ArgumentList '/S', '_?=${installDir}' -Wait"`,
+      `powershell -Command "Start-Process -FilePath '${uninstaller}' -ArgumentList '/S', '_?=${installDir}' -WindowStyle Hidden -Wait"`,
       { stdio: "inherit" },
     );
     console.log("Uninstaller finished.");
@@ -214,20 +219,23 @@ async function main() {
       "[CRITICAL FAILURE] User Data Root was deleted during uninstallation!",
     );
   }
-  const dbFile = join(dataRootDir, "Database/Main/family.db");
+  const dbFile = join(dataRootDir, "Database/relationships.db");
   if (!existsSync(dbFile)) {
     throw new Error(
-      "[CRITICAL FAILURE] User family.db was deleted during uninstallation!",
+      "[CRITICAL FAILURE] Canonical database was deleted during uninstallation!",
     );
   }
 
   console.log(
-    "Verified: User Data Root and family.db survived uninstallation untouched!",
+    "Verified: User Data Root and canonical database survived uninstallation untouched!",
   );
   console.log("\n✨ ALL INSTALLED PACKAGE TESTS PASSED SUCCESSFULLY! ✨\n");
 
   // Clean up sandbox
   try {
+    if (!resolve(sandbox).startsWith(`${resolve(tmpdir())}\\pr-test-sandbox-`)) {
+      throw new Error("Unsafe package-test cleanup path");
+    }
     rmSync(sandbox, { recursive: true, force: true });
   } catch {}
 }

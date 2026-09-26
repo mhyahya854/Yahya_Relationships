@@ -3,6 +3,10 @@
 import pytest
 
 from app.backend.hermes import tools as hermes
+from app.backend.domain.canonical.ids import generate_canonical_person_id
+
+MIRA = generate_canonical_person_id("Mira Rahim")
+AIKA = generate_canonical_person_id("Aika Calder-Rahim")
 
 
 def test_tool_catalog_is_stable():
@@ -22,8 +26,8 @@ def test_get_relationship_tool_json():
     result = hermes.run_tool(
         "get_relationship",
         {
-            "perspective": "mohammad_yahya_hussain",
-            "target": "ezan_asif",
+            "perspective": MIRA,
+            "target": AIKA,
         },
     )
     assert result["ok"] is True
@@ -31,7 +35,7 @@ def test_get_relationship_tool_json():
         item["label_en"] for item in result["primary"] + result["additional"]
     ]
     assert "maternal first cousin" in labels
-    assert "paternal second cousin" in labels
+    assert "paternal first cousin" in labels
 
 
 def test_ambiguous_person_error():
@@ -48,8 +52,8 @@ def test_family_write_tool_validation_error():
         "add_family_fact",
         {
             "fact_type": "parent_child",
-            "parent": "mohammad_yahya_hussain",
-            "child": "mohammad_yahya_hussain",
+            "parent": MIRA,
+            "child": MIRA,
         },
     )
     assert result["ok"] is False
@@ -63,7 +67,7 @@ def test_add_friend_and_journal_flow(isolated):
     hermes.run_tool(
         "add_general_relationship",
         {
-            "person_a": "mohammad_yahya_hussain",
+            "person_a": MIRA,
             "person_b": friend_id,
             "type": "close_friend",
         },
@@ -78,7 +82,7 @@ def test_add_friend_and_journal_flow(isolated):
     assert "- Likes tea." in read["content"]
     relation = hermes.run_tool(
         "get_relationship",
-        {"perspective": "mohammad_yahya_hussain", "target": friend_id},
+        {"perspective": MIRA, "target": friend_id},
     )
     assert relation["primary"][0]["label_en"] == "Close friend"
 
@@ -88,7 +92,7 @@ def test_hermes_structured_write_provenance(isolated):
     hermes.run_tool(
         "add_general_relationship",
         {
-            "person_a": "mohammad_yahya_hussain",
+            "person_a": MIRA,
             "person_b": created["person"]["id"],
             "type": "colleague",
         },

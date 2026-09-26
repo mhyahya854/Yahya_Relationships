@@ -422,7 +422,8 @@ def create_person(
         # Both DB and filesystem are verified
         connection.commit()
         snapshot_committed = True
-        update_latest_filesystem_manifest({"created_paths": [str(journal_path)]})
+        created = [str(target_folder)] if is_canonical and not folder_existed_before else [str(journal_path)]
+        update_latest_filesystem_manifest({"created_paths": created})
         return get_person(person_id)
     except Exception:
         if not snapshot_committed:

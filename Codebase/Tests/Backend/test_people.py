@@ -10,7 +10,7 @@ Covers:
 - Perspective-aware relationship interpretation & multiple paths preservation
 - Journal safety across metadata/group edits
 - Removal consequence preview
-- Removal and filesystem-aware Undo restoring database & journal.md
+- Removal and filesystem-aware Undo restoring database & journal(personal thoughts).md
 - Path traversal prevention & invalid IDs
 - Unicode names and spaces
 """
@@ -22,11 +22,16 @@ from app.backend import config, db
 from app.backend.data_root.manager import DataRootManager
 from app.backend.domain.mutations import history as mutation_history, preview as mutation_preview
 from app.backend.services import errors, general, journals, people, relationship
+from app.backend.domain.canonical.ids import generate_canonical_person_id
+
+MIRA = generate_canonical_person_id("Mira Rahim")
+AIKA = generate_canonical_person_id("Aika Calder-Rahim")
+ELIAS = generate_canonical_person_id("Elias Calder")
 
 
 def test_list_people_and_canonical_uniqueness(isolated):
     all_people = people.list_people()
-    assert len(all_people) == 35
+    assert len(all_people) == 15
 
     # Canonical uniqueness: every ID is unique
     ids = [p["id"] for p in all_people]
@@ -66,7 +71,7 @@ def test_create_person_with_multiple_groups(isolated):
     # Canonical folder should be created under primary group
     folder = Path(p["folder"])
     assert folder.exists()
-    assert (folder / "journal.md").exists()
+    assert (folder / "journal(personal thoughts).md").exists()
 
 
 def test_update_person_groups_and_metadata_without_duplication(isolated):
@@ -123,8 +128,9 @@ def test_journal_safety_when_primary_group_changes(isolated):
     )
     pid = p["id"]
     journals.save_journal(pid, "Memories of project Alpha with Salma.")
+    original_path = journals.read_journal(pid)["path"]
 
-    # Relocate primary group from colleagues to close_friends
+    # Changing a group must preserve the canonical journal path and content.
     updated = people.update_person(
         pid,
         group_ids=["close_friends", "colleagues"],
@@ -132,10 +138,11 @@ def test_journal_safety_when_primary_group_changes(isolated):
     )
     assert updated["id"] == pid
 
-    # Verify folder moved and journal remains intact
+    # The canonical folder is independent of the primary group.
     j = journals.read_journal(pid)
     assert "Memories of project Alpha with Salma." in j["content"]
-    assert "close_friends" in j["path"].lower() or "close friends" in j["path"].lower()
+    assert j["path"] == original_path
+    assert Path(j["path"]).is_file()
 
 
 def test_duplicate_detection_and_legitimate_same_name_people(isolated):
@@ -167,13 +174,12 @@ def test_duplicate_detection_and_legitimate_same_name_people(isolated):
 
 
 def test_get_person_profile_comprehensive(isolated):
-    # Test on a real known production baseline person: mansoor_hussain
-    profile = people.get_person_profile("mansoor_hussain", perspective_id="mohammad_yahya_hussain")
+    profile = people.get_person_profile(ELIAS, perspective_id=MIRA)
     
     # Person brief
     p = profile["person"]
-    assert p["id"] == "mansoor_hussain"
-    assert p["name"] == "Mansoor Hussain"
+    assert p["id"] == ELIAS
+    assert p["name"] == "Elias Calder"
 
     # Family facts
     family_facts = profile["family"]
@@ -182,11 +188,11 @@ def test_get_person_profile_comprehensive(isolated):
     assert "children" in family_facts
     assert "siblings" in family_facts
 
-    # Mansoor Hussain has child Mohammad Yahya Hussain
+    # Elias has Mira as a child in the fictional fixture.
     child_ids = [c["id"] for c in family_facts["children"]]
-    assert "mohammad_yahya_hussain" in child_ids
+    assert MIRA in child_ids
 
-    # Perspective relationship: From Yahya to Mansoor = Father
+    # Perspective relationship: from Mira to Elias = Father.
     perspective = profile["perspective"]
     assert perspective is not None
     primary_labels = [x["label_en"] for x in perspective["primary"]]
@@ -198,17 +204,15 @@ def test_get_person_profile_comprehensive(isolated):
 
 
 def test_profile_perspective_multiple_paths(isolated):
-    # Aresha Zubair has two valid derived kinship paths from Mohammad Yahya Hussain:
-    # 1. Paternal first cousin
-    # 2. Maternal second cousin
-    profile = people.get_person_profile("aresha_zubair", perspective_id="mohammad_yahya_hussain")
+    # Aika has independent maternal and paternal first-cousin paths from Mira.
+    profile = people.get_person_profile(AIKA, perspective_id=MIRA)
     perspective = profile["perspective"]
     assert perspective is not None
 
     primary = {x["label_en"].lower() for x in perspective["primary"]}
     additional = {x["label_en"].lower() for x in perspective["additional"]}
-    assert "paternal first cousin" in primary
-    assert "maternal second cousin" in additional
+    assert {"paternal first cousin", "maternal first cousin"} <= primary | additional
+    assert primary and additional
 
 
 def test_profile_with_general_relationships(isolated):
@@ -234,16 +238,16 @@ def test_profile_with_general_relationships(isolated):
 
 
 def test_person_removal_preview_and_safety_checks(isolated):
-    # Preview deleting Mansoor Hussain (who is central to the family tree)
-    preview = mutation_preview.preview_mutation("delete_person", {"person_id": "mansoor_hussain"})
+    # Preview deleting a fictional person with family facts.
+    preview = mutation_preview.preview_mutation("delete_person", {"person_id": ELIAS})
     assert preview["valid"] is False
     assert preview["code"] == "INVALID_FAMILY_GRAPH"
     assert len(preview["warnings"]) > 0
     assert "Remove those family facts before deleting" in preview["warnings"][0]
 
-    # Attempting to delete Mansoor Hussain without removing family facts must be blocked
+    # Deletion without removing family facts must be blocked.
     with pytest.raises(errors.InvalidOperationError) as exc_info:
-        people.delete_person("mansoor_hussain", force=True)
+        people.delete_person(ELIAS, force=True)
     assert exc_info.value.code == "PERSON_IN_FAMILY_GRAPH"
 
     # Preview deleting a standalone person without family facts should be valid
@@ -255,19 +259,19 @@ def test_person_removal_preview_and_safety_checks(isolated):
 
 def test_person_removal_and_filesystem_aware_undo(isolated):
     # Create a synthetic standalone person
-    p = people.create_person(name="Zainab Noor", group_ids=["friends"], primary_group_id="friends")
+    p = people.create_person(name="Tessa Rowan", group_ids=["friends"], primary_group_id="friends")
     pid = p["id"]
-    journals.save_journal(pid, "Memories of college days with Zainab.")
+    journals.save_journal(pid, "Memories of college days with Tessa.")
 
     people_dir = DataRootManager.get_people_dir(isolated)
     active_folder = people_dir / "Friends" / pid
     assert active_folder.exists()
-    assert (active_folder / "journal.md").exists()
+    assert (active_folder / "journal(personal thoughts).md").exists()
 
     # Preview removal
     preview = mutation_preview.preview_mutation("delete_person", {"person_id": pid})
     assert preview["valid"] is True
-    assert any("Delete canonical person: Zainab Noor" in c for c in preview["direct_changes"])
+    assert any("Delete canonical person: Tessa Rowan" in c for c in preview["direct_changes"])
 
     # Remove person
     del_res = people.delete_person(pid, force=True)
@@ -276,7 +280,7 @@ def test_person_removal_and_filesystem_aware_undo(isolated):
 
     archived_folder = Path(del_res["folder_archived"])
     assert archived_folder.exists()
-    assert (archived_folder / "journal.md").exists()
+    assert (archived_folder / "journal(personal thoughts).md").exists()
 
     # Undo removal
     undo_res = mutation_history.undo_last_mutation()
@@ -284,16 +288,16 @@ def test_person_removal_and_filesystem_aware_undo(isolated):
 
     # Folder and journal restored to original location
     assert active_folder.exists()
-    assert (active_folder / "journal.md").exists()
+    assert (active_folder / "journal(personal thoughts).md").exists()
     assert not archived_folder.exists()
 
     # DB record restored
     restored = people.get_person(pid)
-    assert restored["name"] == "Zainab Noor"
+    assert restored["name"] == "Tessa Rowan"
 
     # Journal read verifies content preserved
     j = journals.read_journal(pid)
-    assert "Memories of college days with Zainab." in j["content"]
+    assert "Memories of college days with Tessa." in j["content"]
 
 
 def test_invalid_ids_and_path_traversal_prevention(isolated):
@@ -312,14 +316,14 @@ def test_invalid_ids_and_path_traversal_prevention(isolated):
 
 def test_unicode_names_and_spaces(isolated):
     unicode_person = people.create_person(
-        name="محمد علی خان",
-        aliases=["Muhammad Ali Khan", "علی بھائی"],
+        name="نور",
+        aliases=["Noor", "اسم بديل"],
         note_en="Special uncle",
         note_ur="بہترین انسان",
         group_ids=["family"],
     )
-    assert unicode_person["name"] == "محمد علی خان"
-    assert "علی بھائی" in unicode_person["aliases"]
+    assert unicode_person["name"] == "نور"
+    assert "اسم بديل" in unicode_person["aliases"]
 
     # Journal save & read
     journals.save_journal(unicode_person["id"], "خاندانی یادداشتیں\n\nبہت اچھے انسان ہیں۔")

@@ -72,7 +72,7 @@ def test_data_root_portability_lifecycle(tmp_path, monkeypatch):
 
     # 1. Initialize brand-new data root
     root_a = tmp_path / "Relationship_Brain_A"
-    res = initialize_new_data_root(str(root_a), owner_name="Mohammad Yahya Hussain")
+    res = initialize_new_data_root(str(root_a), owner_name="Mira Rahim")
     assert res["ok"] is True
     assert res["health"]["ok"] is True
     assert DataRootManager.resolve_active_root() == root_a.resolve()
@@ -177,7 +177,7 @@ def test_paths_with_spaces_and_unicode(tmp_path, monkeypatch):
 
     # Path with spaces and Unicode (e.g. German umlauts, Arabic letters)
     complex_root = tmp_path / "Family Brain 2026 — عائلة"
-    res = initialize_new_data_root(str(complex_root), owner_name="Yahya")
+    res = initialize_new_data_root(str(complex_root), owner_name="Nora Vale")
     assert res["ok"] is True
 
     # Person with Unicode name but safe slug ID

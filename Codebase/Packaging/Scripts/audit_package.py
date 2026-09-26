@@ -8,12 +8,20 @@ are packaged into distribution releases.
 
 import argparse
 import io
+import json
 import os
+import re
 import sys
 import tarfile
 import zipfile
 from pathlib import Path
 from typing import List, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "Scripts"))
+from privacy_gate import ABSOLUTE_PROFILE, _private_hits  # noqa: E402
+
+_PRIVACY_KEY = b""
+_SIGNATURES: set[str] = set()
 
 # Patterns that indicate private family data, databases, or developer environments
 FORBIDDEN_NAME_PATTERNS = [
@@ -97,6 +105,7 @@ def audit_directory(directory: Path) -> Tuple[bool, List[Tuple[str, str]]]:
         return False, [(str(directory), "Directory does not exist")]
 
     all_files: List[str] = []
+    content_violations: List[Tuple[str, str]] = []
     for root, dirs, files in os.walk(directory):
         # Also check directory names themselves
         for d in dirs:
@@ -108,8 +117,33 @@ def audit_directory(directory: Path) -> Tuple[bool, List[Tuple[str, str]]]:
             full_path = Path(root) / f
             rel = full_path.relative_to(directory).as_posix()
             all_files.append(rel)
+            reason = scan_package_bytes(full_path.read_bytes())
+            if reason:
+                content_violations.append((rel, reason))
 
-    return audit_path_list(all_files, f"staged directory '{directory.name}'")
+    paths_ok, path_violations = audit_path_list(all_files, f"staged directory '{directory.name}'")
+    if content_violations:
+        for path, reason in content_violations[:20]:
+            print(f"  CONTENT VIOLATION: {path} -> {reason}", file=sys.stderr)
+    return paths_ok and not content_violations, path_violations + content_violations
+
+
+def scan_package_bytes(content: bytes) -> str | None:
+    if b"SQLite format 3\x00" in content:
+        return "Embedded SQLite database"
+    if len(content) > 256 * 1024 * 1024:
+        return "Asset exceeds privacy scan limit"
+    if b"\x00" in content[:4096]:
+        runs = re.findall(rb"[\x20-\x7e]{6,}", content)
+        samples = (run.decode("ascii", "ignore") for run in runs)
+    else:
+        samples = (content.decode("utf-8", "replace"),)
+    for sample in samples:
+        if ABSOLUTE_PROFILE.search(sample):
+            return "Absolute user-profile path"
+        if _private_hits(sample, _PRIVACY_KEY, _SIGNATURES):
+            return "Known private identity literal"
+    return None
 
 
 def inspect_deb_archive(archive_path: Path) -> Tuple[bool, List[Tuple[str, str]]]:
@@ -121,6 +155,7 @@ def inspect_deb_archive(archive_path: Path) -> Tuple[bool, List[Tuple[str, str]]
             return audit_binary_heuristics(archive_path)
 
         all_names: List[str] = []
+        content_violations: List[Tuple[str, str]] = []
         while True:
             header = f.read(60)
             if len(header) < 60:
@@ -139,11 +174,25 @@ def inspect_deb_archive(archive_path: Path) -> Tuple[bool, List[Tuple[str, str]]
                 try:
                     with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tf:
                         all_names.extend(tf.getnames())
+                        for member in tf.getmembers():
+                            if not member.isfile():
+                                continue
+                            if member.size > 256 * 1024 * 1024:
+                                content_violations.append((member.name, "Asset exceeds privacy scan limit"))
+                                continue
+                            extracted = tf.extractfile(member)
+                            if extracted is None:
+                                content_violations.append((member.name, "Could not scan package member"))
+                                continue
+                            reason = scan_package_bytes(extracted.read())
+                            if reason:
+                                content_violations.append((member.name, reason))
                 except Exception as e:
                     print(f"[AUDIT WARNING] Could not unpack {name} in {archive_path.name}: {e}")
 
         if all_names:
-            return audit_path_list(all_names, f"Debian package contents '{archive_path.name}'")
+            paths_ok, path_violations = audit_path_list(all_names, f"Debian package contents '{archive_path.name}'")
+            return paths_ok and not content_violations, path_violations + content_violations
         return audit_binary_heuristics(archive_path)
 
 
@@ -156,10 +205,10 @@ def audit_binary_heuristics(binary_path: Path) -> Tuple[bool, List[Tuple[str, st
     # Distinguish harmless code/schema strings from actual embedded SQLite databases:
     # A real SQLite database file header starts at offset 0 of its stream with:
     # b"SQLite format 3\x00" followed by 100 bytes of binary database header (page size, etc.)
-    if b"SQLite format 3\x00" in content:
-        # Check if this is an actual SQLite file embedded intact
-        print(f"[CRITICAL SECURITY AUDIT FAILURE] Embedded SQLite database detected inside {binary_path.name}!", file=sys.stderr)
-        return False, [(str(binary_path), "Embedded SQLite database detected via binary signature")]
+    reason = scan_package_bytes(content)
+    if reason:
+        print(f"[CRITICAL SECURITY AUDIT FAILURE] {reason} inside {binary_path.name}!", file=sys.stderr)
+        return False, [(str(binary_path), reason)]
 
     print(f"[AUDIT PASS] Heuristic binary scan of {binary_path.name}: No embedded SQLite databases detected. (Note: Heuristic check; staged tree audit remains authoritative).")
     return True, []
@@ -170,10 +219,36 @@ def audit_archive(archive_path: Path) -> Tuple[bool, List[Tuple[str, str]]]:
     ext = archive_path.suffix.lower()
     if ext in (".zip", ".appx"):
         with zipfile.ZipFile(archive_path, "r") as zf:
-            return audit_path_list(zf.namelist(), f"zip archive '{archive_path.name}'")
+            paths_ok, path_violations = audit_path_list(zf.namelist(), f"zip archive '{archive_path.name}'")
+            content_violations = []
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                if info.file_size > 256 * 1024 * 1024:
+                    content_violations.append((info.filename, "Asset exceeds privacy scan limit"))
+                    continue
+                reason = scan_package_bytes(zf.read(info))
+                if reason:
+                    content_violations.append((info.filename, reason))
+            return paths_ok and not content_violations, path_violations + content_violations
     elif ext in (".tar", ".gz", ".tgz", ".xz", ".bz2"):
         with tarfile.open(archive_path, "r:*") as tf:
-            return audit_path_list(tf.getnames(), f"tar archive '{archive_path.name}'")
+            paths_ok, path_violations = audit_path_list(tf.getnames(), f"tar archive '{archive_path.name}'")
+            content_violations = []
+            for member in tf.getmembers():
+                if not member.isfile():
+                    continue
+                if member.size > 256 * 1024 * 1024:
+                    content_violations.append((member.name, "Asset exceeds privacy scan limit"))
+                    continue
+                extracted = tf.extractfile(member)
+                if extracted is None:
+                    content_violations.append((member.name, "Could not scan archive member"))
+                    continue
+                reason = scan_package_bytes(extracted.read())
+                if reason:
+                    content_violations.append((member.name, reason))
+            return paths_ok and not content_violations, path_violations + content_violations
     elif ext == ".deb":
         return inspect_deb_archive(archive_path)
     else:
@@ -195,9 +270,20 @@ def audit_target(target_path: Path) -> bool:
 
 
 def main() -> int:
+    global _PRIVACY_KEY, _SIGNATURES
     parser = argparse.ArgumentParser(description="Audit package contents for privacy and security")
     parser.add_argument("targets", nargs="+", help="Target directories or installer files to audit")
     args = parser.parse_args()
+
+    try:
+        _PRIVACY_KEY = bytes.fromhex(os.environ.get("MOSAIC_PRIVACY_HMAC_KEY", ""))
+        _SIGNATURES = set(json.loads((Path(__file__).resolve().parents[2] / "Scripts" / "privacy-signatures.json").read_text(encoding="utf-8"))["hmac_sha256"])
+    except (ValueError, OSError, KeyError, TypeError):
+        print("[AUDIT BLOCKED] Privacy key or signatures unavailable.", file=sys.stderr)
+        return 2
+    if len(_PRIVACY_KEY) < 32:
+        print("[AUDIT BLOCKED] Privacy key is missing or invalid.", file=sys.stderr)
+        return 2
 
     all_passed = True
     for t in args.targets:

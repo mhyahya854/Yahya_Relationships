@@ -21,18 +21,22 @@ from app.backend.data_root.errors import DataRootReadOnlyError
 from app.backend.data_root.manager import DataRootManager
 from app.backend.domain.mutations import history as mutation_history
 from app.backend.services import errors, journals, people
+from app.backend.domain.canonical.ids import generate_canonical_person_id
+from Tests.synthetic_mosaic import build as build_synthetic_root
+
+SYNTHETIC_PID = generate_canonical_person_id("Mira Rahim")
 
 
 def test_existing_person_and_journal_reads_do_not_mutate(isolated):
     """Reading an existing person leaves the filesystem untouched."""
-    p_id = "mohammad_yahya_hussain"
+    p_id = SYNTHETIC_PID
     conn = db.get_connection()
     try:
         folder = db.find_person_folder(conn, p_id)
     finally:
         conn.close()
     assert folder is not None and folder.exists()
-    journal = folder / "journal.md"
+    journal = folder / "journal(personal thoughts).md"
     assert journal.exists()
 
     mtime_before = journal.stat().st_mtime_ns
@@ -62,14 +66,14 @@ def test_existing_person_and_journal_reads_do_not_mutate(isolated):
 
 def test_missing_journal_not_recreated_by_reads(isolated):
     """If journal.md is missing, read paths must NEVER recreate it."""
-    p_id = "mohammad_yahya_hussain"
+    p_id = SYNTHETIC_PID
     conn = db.get_connection()
     try:
         folder = db.find_person_folder(conn, p_id)
     finally:
         conn.close()
     assert folder is not None
-    journal = folder / "journal.md"
+    journal = folder / "journal(personal thoughts).md"
     assert journal.exists()
 
     # Simulate missing journal
@@ -90,7 +94,7 @@ def test_missing_journal_not_recreated_by_reads(isolated):
     assert p["journal_exists"] is False
 
     # 3. check_duplicate_person must not recreate journal
-    _ = people.check_duplicate_person("Mohammad Yahya Hussain")
+    _ = people.check_duplicate_person("Mira Rahim")
     assert not journal.exists(), "check_duplicate_person recreated missing journal!"
 
     # 4. get_person_profile must not recreate journal
@@ -109,7 +113,7 @@ def test_missing_journal_not_recreated_by_reads(isolated):
 
 def test_missing_person_folder_not_recreated_by_reads(isolated):
     """If person folder is missing, read paths must NEVER recreate folder or journal."""
-    p_id = "mohammad_yahya_hussain"
+    p_id = SYNTHETIC_PID
     conn = db.get_connection()
     try:
         folder = db.find_person_folder(conn, p_id)
@@ -143,7 +147,7 @@ def test_missing_person_folder_not_recreated_by_reads(isolated):
 
 def test_explicit_ensure_journal_creates_folder_and_file(isolated):
     """Explicit mutating ensure_journal recreates folder and journal when called deliberately."""
-    p_id = "mohammad_yahya_hussain"
+    p_id = SYNTHETIC_PID
     conn = db.get_connection()
     try:
         folder = db.find_person_folder(conn, p_id)
@@ -154,7 +158,7 @@ def test_explicit_ensure_journal_creates_folder_and_file(isolated):
         created_path = db.ensure_journal(conn, p_id)
         assert created_path.is_file()
         assert folder.is_dir()
-        assert "# Mohammad Yahya Hussain" in created_path.read_text(encoding="utf-8")
+        assert "# Mira Rahim" in created_path.read_text(encoding="utf-8")
     finally:
         conn.close()
 
@@ -162,7 +166,7 @@ def test_explicit_ensure_journal_creates_folder_and_file(isolated):
 def test_create_person_normal_success_creates_exactly_one_folder_and_journal(isolated):
     """create_person creates exactly one canonical folder and journal.md."""
     created = people.create_person(
-        name="Zainab Tariq",
+        name="Tessa Rowan",
         birth_year=2005,
         gender="female",
         group_ids=["family"],
@@ -172,9 +176,9 @@ def test_create_person_normal_success_creates_exactly_one_folder_and_journal(iso
     try:
         folder = db.find_person_folder(conn, p_id)
         assert folder is not None and folder.is_dir()
-        journal = folder / "journal.md"
+        journal = folder / "journal(personal thoughts).md"
         assert journal.is_file()
-        assert "# Zainab Tariq" in journal.read_text(encoding="utf-8")
+        assert "# Tessa Rowan" in journal.read_text(encoding="utf-8")
 
         # Verify exactly one folder under people_dir
         matches = [p for p in config.PEOPLE_DIR.rglob(p_id) if p.is_dir()]
@@ -236,21 +240,21 @@ def test_create_person_filesystem_failure_rolls_back_atomically(isolated):
 
 def test_person_edit_preserves_journal_without_duplication(isolated):
     """Editing person metadata preserves canonical journal without duplication."""
-    p_id = "mohammad_yahya_hussain"
+    p_id = SYNTHETIC_PID
     conn = db.get_connection()
     try:
         folder = db.find_person_folder(conn, p_id)
         assert folder is not None
-        journal = folder / "journal.md"
+        journal = folder / "journal(personal thoughts).md"
         assert journal.is_file()
-        journal.write_text("# Mohammad Yahya Hussain\n\nCustom notes.\n", encoding="utf-8")
+        journal.write_text("# Mira Rahim\n\nCustom notes.\n", encoding="utf-8")
     finally:
         conn.close()
 
     updated = people.update_person(
         p_id,
         note_en="Updated note",
-        aliases=["Yahya", "MYH"],
+        aliases=["Mira", "MR"],
     )
     assert updated["id"] == p_id
     assert updated["note_en"] == "Updated note"
@@ -275,29 +279,20 @@ def test_create_person_refuses_when_data_root_is_read_only(isolated):
 def test_cross_platform_spaces_and_unicode(tmp_path):
     """Test with path containing spaces and Unicode characters."""
     root = tmp_path / "Family Data Ünïcöde & Spaces"
-    root.mkdir(parents=True, exist_ok=True)
-
-    db_dir = root / "Database" / "Main"
-    db_dir.mkdir(parents=True, exist_ok=True)
-    prod_db = Path(__file__).resolve().parents[3] / "Database" / "Main" / "family.db"
-    shutil.copy2(prod_db, db_dir / "family.db")
-
-    people_dir = root / "Database" / "People" / "Family"
-    people_dir.mkdir(parents=True, exist_ok=True)
+    build_synthetic_root(root)
 
     DataRootManager.set_override_root(root)
     try:
-        db.migrate(db_dir / "family.db")
         p = people.create_person(
             name="Farhan Khan",
             group_ids=["family"],
         )
-        assert p["id"] == "farhan_khan"
+        assert p["id"] == generate_canonical_person_id("Farhan Khan")
         conn = db.get_connection()
         try:
-            folder = db.find_person_folder(conn, "farhan_khan")
+            folder = db.find_person_folder(conn, p["id"])
             assert folder is not None and folder.exists()
-            assert (folder / "journal.md").is_file()
+            assert (folder / "journal(personal thoughts).md").is_file()
         finally:
             conn.close()
     finally:
@@ -308,11 +303,11 @@ def test_create_person_mkdir_succeeds_journal_write_fails(isolated):
     """TEST 1: mkdir succeeds, journal write fails.
     Verifies that the newly created person directory is cleanly removed,
     leaving no orphan folder, and SQLite transaction is rolled back."""
-    target_id = "mkdir_succeeds_fail"
+    target_id = generate_canonical_person_id("Mkdir Succeeds Fail")
     orig_write_text = Path.write_text
 
     def failing_write_text(self, *args, **kwargs):
-        if self.name == "journal.md" and target_id in str(self):
+        if self.name == "journal(personal thoughts).md" and target_id in str(self):
             # Target directory exists at this point because mkdir succeeded
             assert self.parent.exists(), "Expected parent folder to exist before writing journal"
             raise OSError("Simulated disk I/O failure during journal write")
@@ -355,11 +350,11 @@ def test_create_person_mkdir_succeeds_journal_write_fails(isolated):
 def test_create_person_partial_journal_file_cleaned_up_on_failure(isolated):
     """TEST 2: Partial journal file exists when write fails.
     Verifies that a partially-written file and newly created folder are both removed."""
-    target_id = "partial_write_fail"
+    target_id = generate_canonical_person_id("Partial Write Fail")
     orig_write_text = Path.write_text
 
     def partial_write_then_fail(self, *args, **kwargs):
-        if self.name == "journal.md" and target_id in str(self):
+        if self.name == "journal(personal thoughts).md" and target_id in str(self):
             # Write partial corrupted data to disk
             self.write_bytes(b"# Partial corrupted data")
             assert self.exists() and self.stat().st_size > 0
@@ -379,7 +374,7 @@ def test_create_person_partial_journal_file_cleaned_up_on_failure(isolated):
     try:
         expected = db.expected_person_folder(conn, target_id)
         # Both partial journal and folder must be gone
-        assert not (expected / "journal.md").exists(), "Partial journal was left on disk!"
+        assert not (expected / "journal(personal thoughts).md").exists(), "Partial journal was left on disk!"
         assert not expected.exists(), "Folder was left on disk after partial journal failure!"
         assert conn.execute("SELECT * FROM people WHERE id = ?", (target_id,)).fetchone() is None
     finally:
@@ -391,7 +386,7 @@ def test_create_person_partial_journal_file_cleaned_up_on_failure(isolated):
 def test_create_person_pre_existing_folder_must_survive(isolated):
     """TEST 3: Pre-existing folder must survive.
     If the person folder existed prior to the attempted creation, compensation must NOT delete it."""
-    target_id = "pre_existing_folder_person"
+    target_id = generate_canonical_person_id("Pre Existing Folder Person")
     conn = db.get_connection()
     expected_folder = db.expected_person_folder(conn, target_id, group_id="family")
     conn.close()
@@ -403,7 +398,7 @@ def test_create_person_pre_existing_folder_must_survive(isolated):
     orig_write_text = Path.write_text
 
     def fail_write(self, *args, **kwargs):
-        if self.name == "journal.md" and target_id in str(self):
+        if self.name == "journal(personal thoughts).md" and target_id in str(self):
             raise OSError("Simulated write failure")
         return orig_write_text(self, *args, **kwargs)
 
@@ -419,19 +414,19 @@ def test_create_person_pre_existing_folder_must_survive(isolated):
     assert marker_file.exists()
     assert marker_file.read_text(encoding="utf-8") == "pre-existing data"
     # Target journal must not exist
-    assert not (expected_folder / "journal.md").exists()
+    assert not (expected_folder / "journal(personal thoughts).md").exists()
 
 
 def test_create_person_pre_existing_journal_must_never_be_deleted(isolated):
     """TEST 4: Pre-existing journal must never be deleted.
     If a journal file already existed at the target path before the attempt, compensation must preserve it."""
-    target_id = "pre_existing_journal_person"
+    target_id = generate_canonical_person_id("Pre Existing Journal Person")
     conn = db.get_connection()
     expected_folder = db.expected_person_folder(conn, target_id, group_id="family")
     conn.close()
 
     expected_folder.mkdir(parents=True, exist_ok=True)
-    existing_journal = expected_folder / "journal.md"
+    existing_journal = expected_folder / "journal(personal thoughts).md"
     existing_journal.write_text("# Existing Canonical Prose\n\nPreserve this.\n", encoding="utf-8")
 
     # Simulate failure after filesystem check (e.g. failure during link_fact_source)

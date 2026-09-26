@@ -37,6 +37,18 @@ from app.backend.api.main import api_family_diagram, api_family_view
 from app.backend.domain.family import engine as build_family
 from app.backend.model import load_model
 from app.backend.services import errors, family, people, relationship
+from app.backend.domain.canonical.ids import generate_canonical_person_id
+
+MIRA = generate_canonical_person_id("Mira Rahim")
+AIKA = generate_canonical_person_id("Aika Calder-Rahim")
+ELIAS = generate_canonical_person_id("Elias Calder")
+SALMA = generate_canonical_person_id("Salma Rahim")
+SAMI = generate_canonical_person_id("Sami Calder")
+QADIR = generate_canonical_person_id("Qadir Rahim")
+MAHIRA = generate_canonical_person_id("Mahira Rahim")
+ADNAN = generate_canonical_person_id("Adnan Calder")
+SORAYA = generate_canonical_person_id("Soraya Calder")
+LAYLA = generate_canonical_person_id("Layla Rahim")
 
 
 # 1. default focus family view succeeds
@@ -45,21 +57,21 @@ def test_default_focus_family_view_succeeds(client):
     assert res.status_code == 200
     data = res.json()
     assert data["ok"] is True
-    assert data["focus"]["id"] == "mohammad_yahya_hussain"
-    assert data["default_focus_id"] == "mohammad_yahya_hussain"
+    assert data["focus"]["id"] == MIRA
+    assert data["default_focus_id"] == MIRA
     assert "flowchart TB" in data["diagram"]
-    assert len(data["people"]) == 35
+    assert len(data["people"]) == 15
     assert len(data["legend"]) >= 5
 
 
 # 2. arbitrary valid focus succeeds
 def test_arbitrary_valid_focus_succeeds(client):
-    res = client.get("/api/family/view?focus_person_id=aresha_zubair")
+    res = client.get(f"/api/family/view?focus_person_id={AIKA}")
     assert res.status_code == 200
     data = res.json()
     assert data["ok"] is True
-    assert data["focus"]["id"] == "aresha_zubair"
-    assert "class p_aresha_zubair focus;" in data["diagram"]
+    assert data["focus"]["id"] == AIKA
+    assert f"class {build_family._person_node_id(AIKA)} focus;" in data["diagram"]
 
 
 # 3. invalid focus rejected cleanly
@@ -72,38 +84,35 @@ def test_invalid_focus_rejected_cleanly(client):
 
 # 4. focus relationship labels are Python-derived
 def test_focus_relationship_labels_are_python_derived(client):
-    res = client.get("/api/family/view?focus_person_id=aresha_zubair")
+    res = client.get(f"/api/family/view?focus_person_id={AIKA}")
     assert res.status_code == 200
     diagram = res.json()["diagram"]
-    # Label for Mohammad Yahya Hussain relative to Aresha Zubair
-    assert 'p_mohammad_yahya_hussain["[1] Mohammad Yahya Hussain (2004)<br/>maternal second cousin / maternal first cousin"]' in diagram
+    assert build_family._person_node_id(MIRA) in diagram
+    assert "maternal first cousin" in diagram
+    assert "paternal first cousin" in diagram
 
 
 # 5. maternal branch metadata correct
 def test_maternal_branch_metadata_correct(isolated):
     model = load_model()
-    # Shahnaz Israr is maternal branch
-    shahnaz = next(p for p in model["people"] if p["id"] == "shahnaz_israr")
-    assert shahnaz["branch"] == "maternal"
+    grandmother = next(p for p in model["people"] if p["id"] == MAHIRA)
+    assert grandmother["branch"] == "maternal"
     diagram = build_family.build_mermaid(model)
-    # Couple containing shahnaz has maternal palette style
-    assert "u_israr_hussain__shahnaz_israr" in diagram
+    assert build_family._person_node_id(QADIR) in diagram and build_family._person_node_id(MAHIRA) in diagram
 
 
 # 6. paternal branch metadata correct
 def test_paternal_branch_metadata_correct(isolated):
     model = load_model()
-    # Shaheen Abrar is paternal branch
-    shaheen = next(p for p in model["people"] if p["id"] == "shaheen_abrar")
-    assert shaheen["branch"] == "paternal"
+    grandmother = next(p for p in model["people"] if p["id"] == SORAYA)
+    assert grandmother["branch"] == "paternal"
     diagram = build_family.build_mermaid(model)
-    assert "u_abrar_hussain__shaheen_abrar" in diagram
+    assert build_family._person_node_id(ADNAN) in diagram and build_family._person_node_id(SORAYA) in diagram
 
 
 # 7. relationship with both sides preserves both
 def test_relationship_with_both_sides_preserves_both(isolated):
-    # Aresha Zubair has both paternal and maternal kinship paths to Mohammad Yahya Hussain
-    rel = relationship.get_relationship("mohammad_yahya_hussain", "aresha_zubair")
+    rel = relationship.get_relationship(MIRA, AIKA)
     sides = {item.get("side") for item in rel["primary"] + rel["additional"]}
     assert "paternal" in sides
     assert "maternal" in sides
@@ -111,7 +120,7 @@ def test_relationship_with_both_sides_preserves_both(isolated):
 
 # 8. multiple paths preserved
 def test_multiple_paths_preserved(isolated):
-    rel = relationship.get_relationship("mohammad_yahya_hussain", "aresha_zubair")
+    rel = relationship.get_relationship(MIRA, AIKA)
     assert len(rel["primary"]) >= 1
     assert len(rel["additional"]) >= 1
     # Both paths have distinct path_ids
@@ -122,7 +131,7 @@ def test_multiple_paths_preserved(isolated):
 
 # 9. direct parent relationship
 def test_direct_parent_relationship(isolated):
-    rel = relationship.get_relationship("mohammad_yahya_hussain", "mansoor_hussain")
+    rel = relationship.get_relationship(MIRA, ELIAS)
     entry = rel["primary"][0]
     assert entry["label_en"] == "Father"
     assert entry["derived"] is False
@@ -131,16 +140,16 @@ def test_direct_parent_relationship(isolated):
 
 # 10. direct child relationship
 def test_direct_child_relationship(isolated):
-    rel = relationship.get_relationship("mansoor_hussain", "mohammad_yahya_hussain")
+    rel = relationship.get_relationship(ELIAS, MIRA)
     entry = rel["primary"][0]
-    assert entry["label_en"] in ("Son", "Child")
+    assert entry["label_en"] in ("Daughter", "Child")
     assert entry["derived"] is False
     assert entry["stored_fact_kind"] == "parent_child"
 
 
 # 11. marriage relationship
 def test_marriage_relationship(isolated):
-    rel = relationship.get_relationship("mansoor_hussain", "irsa_naz")
+    rel = relationship.get_relationship(ELIAS, SALMA)
     entry = rel["primary"][0]
     assert entry["label_en"] == "Wife"
     assert entry["derived"] is False
@@ -150,17 +159,17 @@ def test_marriage_relationship(isolated):
 
 # 12. sibling relationship
 def test_sibling_relationship(isolated):
-    rel = relationship.get_relationship("mohammad_yahya_hussain", "maham_mansoor")
+    rel = relationship.get_relationship(MIRA, SAMI)
     entry = rel["primary"][0]
-    assert entry["label_en"] == "Sister"
-    assert entry["label_ur"] == "بہن"
+    assert entry["label_en"] == "Full brother"
+    assert entry["label_ur"]
     assert entry["derived"] is False
     assert entry["stored_fact_kind"] == "sibling_group"
 
 
 # 13. grandparent relationship
 def test_grandparent_relationship(isolated):
-    rel = relationship.get_relationship("mohammad_yahya_hussain", "israr_hussain")
+    rel = relationship.get_relationship(MIRA, QADIR)
     entry = rel["primary"][0]
     assert entry["label_en"] == "Maternal Grandfather"
     assert entry["label_ur"] == "نانا"
@@ -170,22 +179,22 @@ def test_grandparent_relationship(isolated):
 
 # 14. uncle/aunt relationship
 def test_uncle_aunt_relationship(isolated):
-    rel = relationship.get_relationship("mohammad_yahya_hussain", "arsalan_israr")
+    rel = relationship.get_relationship(MIRA, LAYLA)
     entry = rel["primary"][0]
-    assert entry["label_en"].lower() == "maternal uncle"
-    assert entry["label_ur"] == "ماموں"
+    assert entry["label_en"].lower() == "maternal aunt"
+    assert entry["label_ur"]
     assert entry["derived"] is True
     assert entry["side"] == "maternal"
 
 
 # 15. cousin degree/removal
 def test_cousin_degree_and_removal(isolated):
-    rel = relationship.get_relationship("mohammad_yahya_hussain", "aresha_zubair")
+    rel = relationship.get_relationship(MIRA, AIKA)
     primary = rel["primary"][0]
     assert primary["degree"] == 1
     assert primary["removal"] == 0
     additional = rel["additional"][0]
-    assert additional["degree"] == 2
+    assert additional["degree"] == 1
     assert additional["removal"] == 0
 
 
@@ -252,10 +261,9 @@ def test_marriage_status_preserved(isolated):
 def test_birth_order_metadata_preserved(isolated):
     model = load_model()
     markers = build_family._order_markers(model)
-    # Mohammad Yahya Hussain is [1] in irsa_mansoor_kids
-    assert markers.get("mohammad_yahya_hussain") == 1
+    assert markers.get(MIRA) == 1
     diagram = build_family.build_mermaid(model)
-    assert 'p_mohammad_yahya_hussain["[1] Mohammad Yahya Hussain' in diagram
+    assert f'{build_family._person_node_id(MIRA)}["[1] Mira Rahim' in diagram
 
 
 # 21. special characters escaped safely
@@ -267,12 +275,13 @@ def test_special_characters_escaped_safely(isolated):
         "Ali & Sara",
         "Name <script>alert(1)</script>",
     ]
-    created = []
-    for name in special_names:
-        p = people.create_person(name=name)
-        created.append(p)
-
     model = load_model()
+    created = []
+    for index, name in enumerate(special_names):
+        person = copy.deepcopy(model["people"][0])
+        person.update(id=f"synthetic_hostile_{index}", name=name)
+        model["people"].append(person)
+        created.append(person)
     mermaid_text = build_family.build_mermaid(model)
 
     # Verify no raw script tags are output
@@ -287,7 +296,7 @@ def test_special_characters_escaped_safely(isolated):
 
     # Verify node identity uses slugs, not display names
     for p in created:
-        assert f"p_{p['id']}" in mermaid_text
+        assert build_family._person_node_id(p["id"]) in mermaid_text
 
 
 # 22. canonical person IDs used for Mermaid node identity
@@ -295,7 +304,7 @@ def test_canonical_person_ids_used_for_node_identity(isolated):
     model = load_model()
     for person in model["people"]:
         node_id = build_family._person_node_id(person["id"])
-        assert node_id == f"p_{person['id']}"
+        assert node_id == f"p_{person['id'].replace('-', '_')}"
         assert " " not in node_id
 
 
@@ -420,9 +429,9 @@ def test_family_view_is_read_only(isolated, client):
         conn.close()
 
     # Call view multiple times with arbitrary focus
-    client.get("/api/family/view?focus_person_id=mohammad_yahya_hussain")
-    client.get("/api/family/view?focus_person_id=aresha_zubair")
-    client.get("/api/family/view?focus_person_id=israr_hussain")
+    client.get(f"/api/family/view?focus_person_id={MIRA}")
+    client.get(f"/api/family/view?focus_person_id={AIKA}")
+    client.get(f"/api/family/view?focus_person_id={QADIR}")
 
     conn2 = db.get_connection()
     try:
@@ -474,7 +483,7 @@ def test_empty_partial_family_handled_cleanly(isolated):
     }
     mermaid_text = build_family.build_mermaid(data)
     assert "flowchart TB" in mermaid_text
-    assert f"p_{p['id']}" in mermaid_text
+    assert build_family._person_node_id(p["id"]) in mermaid_text
 
 
 # 29. alias-aware people search used by Family resolves alias to canonical person ID
@@ -521,10 +530,10 @@ def test_hostile_mermaid_labels_escaped(isolated):
         '"B"',
         "Ali & Sara",
     ]
-    created = []
-    for idx, name in enumerate(hostile_payloads):
-        p = people.create_person(name=name, aliases=[f"HostileAlias{idx}"])
-        created.append(p)
+    created = [
+        {"id": f"synthetic_hostile_{idx}", "name": name, "gender": "unknown", "birth_year": None, "branch": None}
+        for idx, name in enumerate(hostile_payloads)
+    ]
 
     data = {
         "metadata": {
@@ -568,7 +577,7 @@ def test_canonical_node_id_independent_of_display_name(isolated):
         "sibling_groups": [],
     }
     d1 = build_family.build_mermaid(data1)
-    assert f"p_{canon_id}" in d1
+    assert build_family._person_node_id(canon_id) in d1
 
     # Update person's display name to something completely different
     people.update_person(canon_id, name="Completely Altered Name <script>")
@@ -582,7 +591,7 @@ def test_canonical_node_id_independent_of_display_name(isolated):
         "sibling_groups": [],
     }
     d2 = build_family.build_mermaid(data2)
-    # Node ID remains strictly p_{canon_id}
-    assert f"p_{canon_id}" in d2
+    # The canonical ID still determines the node identity after a display-name edit.
+    assert build_family._person_node_id(canon_id) in d2
     assert "p_Original" not in d2
     assert "p_Completely" not in d2

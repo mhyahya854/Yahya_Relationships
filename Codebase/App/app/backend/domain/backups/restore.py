@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from ... import config
 from ...data_root.errors import DataRootReadOnlyError, RestoreError
 from ...data_root.manager import DataRootManager
 from ...data_root.validation import audit_data_root
@@ -83,9 +84,10 @@ def _post_restore_health(
             code="POST_RESTORE_HEALTH_FAILED",
             detail=health.to_dict(),
         )
-    model = load_model(database)
-    if model.get("metadata", {}).get("focus_person"):
-        validate_model(model)
+    if expected_schema == config.CANONICAL_SCHEMA_VERSION:
+        model = load_model(database)
+        if model.get("metadata", {}).get("focus_person"):
+            validate_model(model)
     return health.to_dict()
 
 
@@ -245,6 +247,10 @@ def restore_backup(
                 encoding="utf-8",
             )
 
+            if canonical_backup and int(manifest["sqlite_schema_version"]) >= 4:
+                from ..raw_intake import reconcile_restored_sources
+
+                reconcile_restored_sources(active_root)
             post_health = _post_restore_health(
                 active_root,
                 manifest["person_count"],

@@ -18,14 +18,15 @@ from ...data_root import DataRootManager
 # Paths anchored at the ACTIVE data root (single canonical source of truth)
 # and at the central project config. ROOT is kept for the legacy source
 # registration below.
-ROOT = DataRootManager.resolve_active_root()
-DB_PATH = DataRootManager.get_database_path(ROOT)
-DATA_PATH = ROOT / "Database" / "Main" / "family.json"
+_initial_root = DataRootManager.bootstrap_status()["active_root"]
+ROOT = _initial_root
+DB_PATH = DataRootManager.get_database_path(ROOT) if ROOT is not None else None
+DATA_PATH = ROOT / "Database" / "Main" / "family.json" if ROOT is not None else None
 ARCHIVE_DIR = DOCUMENTATION_ROOT / "Archive"
 ARCHIVE_JSON_PATH = ARCHIVE_DIR / "family-revision-5-pre-sqlite.json"
 MERMAID_LIB_PATH = VENDOR_DIR / "mermaid.min.js"
-OUTPUT_MD_PATH = DataRootManager.get_exports_dir(ROOT) / "Family" / "family.md"
-OUTPUT_HTML_PATH = DataRootManager.get_exports_dir(ROOT) / "Family" / "family.html"
+OUTPUT_MD_PATH = DataRootManager.get_exports_dir(ROOT) / "Family" / "family.md" if ROOT is not None else None
+OUTPUT_HTML_PATH = DataRootManager.get_exports_dir(ROOT) / "Family" / "family.html" if ROOT is not None else None
 
 
 def rebind_active_root() -> None:
@@ -205,48 +206,6 @@ def validate(data):
 # SQLite persistence (the DataRootManager-selected database is authoritative)
 # ---------------------------------------------------------------------------
 
-SOURCE_KIND_BY_BATCH = {
-    1: "evidence",
-    2: "evidence",
-    3: "visual",
-    4: "visual",
-    5: "visual",
-    6: "visual",
-    7: "visual",
-    8: "evidence",
-    9: "architecture",
-}
-SOURCE_TITLES = {
-    "001": "Initial family notes",
-    "002": "Review responses",
-    "003": "Layout preference",
-    "004": "Couple layout and colors",
-    "005": "Direct secondary relationship lines",
-    "006": "Current master left-right layout",
-    "007": "Person-square semantic endpoints",
-    "008": "Current family verification",
-    "009": "Hard rules and SQLite app architecture",
-}
-SOURCE_RECORDED_DATES = {
-    "001": "2026-09-02",
-    "002": "2026-09-02",
-    "003": "2026-09-02",
-    "004": "2026-09-02",
-    "005": "2026-09-02",
-    "006": "2026-09-02",
-    "007": "2026-09-03",
-    "008": "2026-09-03",
-    "009": "2026-09-03",
-}
-
-
-def _source_kind(batch_number):
-    try:
-        return SOURCE_KIND_BY_BATCH.get(int(batch_number), "architecture")
-    except ValueError:
-        return "architecture"
-
-
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS metadata (
   key TEXT PRIMARY KEY,
@@ -354,8 +313,10 @@ def _connect(db_path):
 
 
 def _register_sources(connection, data):
+    details = {entry["file_path"]: entry for entry in data.get("source_details", [])}
     for file_path in data["metadata"].get("source_batches", []):
         batch_number = Path(file_path).stem.split("-")[0]
+        source = details.get(file_path, {})
         connection.execute(
             """
             INSERT OR IGNORE INTO sources
@@ -365,9 +326,9 @@ def _register_sources(connection, data):
             (
                 batch_number,
                 file_path,
-                SOURCE_TITLES.get(batch_number, f"Source batch {batch_number}"),
-                _source_kind(batch_number),
-                SOURCE_RECORDED_DATES.get(batch_number),
+                source.get("title", Path(file_path).stem),
+                source.get("kind", "architecture"),
+                source.get("recorded_on"),
             ),
         )
 
@@ -388,105 +349,25 @@ def _register_project_source_files(connection):
             (
                 batch_number,
                 str(file_path.relative_to(ROOT)).replace("\\", "/"),
-                SOURCE_TITLES.get(batch_number, f"Source batch {batch_number}"),
-                _source_kind(batch_number),
-                SOURCE_RECORDED_DATES.get(batch_number),
+                file_path.stem,
+                "architecture",
+                None,
             ),
         )
 
 
 def _fact_source_rules(data):
-    """Provenance rules mapping current facts to evidence batches.
+    """Use explicit source attribution supplied with a model.
 
-    Batch 001 established the initial notes; 002 contains the review
-    responses (R1-R8); 008 is the current verification batch that restates
-    and corrects the in-scope facts. Batches 003-007 are visual-only and are
-    never cited as fact evidence.
+    Historical person-to-evidence mappings belong to the private Data Root;
+    the public application cannot infer them from identifiers or batch numbers.
     """
+    if data.get("metadata", {}).get("source_batches") and "fact_sources" not in data:
+        raise ValueError("Import requires explicit fact_sources for source attribution; it cannot infer private evidence links.")
     rules = {}
-
-    def add(entity_type, entity_key, *batches):
-        rules[(entity_type, entity_key)] = set(batches)
-
-    for person in data["people"]:
-        add("people", person["id"], 1, 8)
-        for alias in person.get("aliases", []):
-            add("aliases", f"{person['id']}|{alias}", 1, 2)
-
-    core_children = {"mohammad_yahya_hussain", "maham_mansoor"}
-    maternal_children = {
-        "sohaib_hussain",
-        "sadia_asif",
-        "irsa_naz",
-        "arsalan_israr",
-        "ayesha_naeem",
-    }
-    abrar_children = {"mansoor_hussain", "hina", "sana", "afshan"}
-    asif_children = {"ezan_asif", "fakhir_asif"}
-    hina_children = {"aresha_zubair", "fizza_zubair", "abdul_rafey"}
-    unnamed_daughters = {"aresha_owais_daughter_a", "aresha_owais_daughter_b"}
-    sana_children = {"muaaz", "barirah"}
-    afshan_children = {"musabiha", "musa"}
-
-    child_batches = {}
-    for child in core_children:
-        child_batches[child] = (1, 2, 8)
-    for child in maternal_children:
-        child_batches[child] = (1, 2, 8)
-    for child in abrar_children:
-        child_batches[child] = (2, 8)
-    for child in asif_children:
-        child_batches[child] = (1, 8)
-    for child in hina_children:
-        child_batches[child] = (1, 8)
-    for child in unnamed_daughters:
-        child_batches[child] = (1, 2, 8)
-    for child in sana_children:
-        child_batches[child] = (1, 8)
-    for child in afshan_children:
-        child_batches[child] = (1, 2, 8)
-
-    for rel in data["parent_child"]:
-        parent, child = rel["parent"], rel["child"]
-        add(
-            "parent_child",
-            f"{parent}|{child}",
-            *child_batches.get(child, (1, 8)),
-        )
-
-    for marriage in data["marriages"]:
-        pair = tuple(sorted((marriage["person1"], marriage["person2"])))
-        key = f"{pair[0]}|{pair[1]}"
-        if pair in {
-            tuple(sorted(("irsa_naz", "mansoor_hussain"))),
-            tuple(sorted(("shahnaz_israr", "israr_hussain"))),
-            tuple(sorted(("shaheen_abrar", "abrar_hussain"))),
-        }:
-            add("marriages", key, 2, 8)
-        else:
-            add("marriages", key, 1, 8)
-
-    group_batches = {
-        "mohammad_maham": (8,),
-        "maternal_siblings": (1, 2, 8),
-        "ezan_fakhir": (8,),
-        "rubinna_falak": (1, 8),
-        "abrar_israr": (1, 8),
-        "paternal_siblings": (1, 8),
-        "hina_children": (1, 8),
-        "sana_children": (1, 8),
-        "afshan_children": (1, 2, 8),
-        "aresha_children": (1, 2, 8),
-    }
-    for group in data["sibling_groups"]:
-        group_id = group["id"]
-        add("sibling_groups", group_id, *group_batches.get(group_id, (1, 8)))
-        for member in group["members"]:
-            add("sibling_group_members", f"{group_id}|{member}", *(group_batches.get(group_id, (1, 8))))
-
-    for note in data.get("review_notes", []):
-        batch = 2 if note["id"].startswith("R") and note["id"][1:].isdigit() and int(note["id"][1:]) <= 8 else 8
-        add("review_notes", note["id"], batch)
+    for link in data.get("fact_sources", []):
+        key = (link["entity_type"], link["entity_key"])
+        rules.setdefault(key, set()).add(int(link["batch_number"]))
     return rules
 
 
@@ -1058,7 +939,7 @@ BRIDGE = "bridge"
 def _person_side(person_id, people_index, parents_of, cache):
     """Side (maternal/paternal) a person belongs to, derived from family facts.
 
-    Returns a set; core descendants of Irsa + Mansoor return both sides.
+    Returns a set; people with multiple ancestry routes may return both sides.
     This is layout metadata for couple coloring, never a family fact.
     """
     if person_id in cache:
@@ -1568,86 +1449,17 @@ def _marriage_derived_lines(data, first, second):
 
 
 def _audit_derived(data):
-    """Fail the build if any required derived consequence is not calculated."""
+    """Check derived path shape without embedding a particular family tree."""
     people_index = {person["id"]: person for person in data["people"]}
     alias_map = dict(data.get("identifier_aliases") or {})
-    for p in data.get("people", []):
-        pid = p["id"]
-        alias_map[pid] = pid
-        if "--" in pid:
-            base = pid.split("--")[0]
-            alias_map.setdefault(base, pid)
-
-    def resolve_id(pid: str) -> str:
-        return alias_map.get(pid, pid)
-
-    focus = resolve_id(data["metadata"]["focus_person"])
-    problems = []
-
-    def terms(person_id):
-        res_id = resolve_id(person_id)
-        return {
-            (
-                term["degree"],
-                term["removal"],
-                term["side"],
-            )
-            for term in _kinship_terms(
-                data,
-                focus,
-                res_id,
-                focus_id=focus,
-                people_index=people_index,
-            )
-        }
-
-    def require_subset(person_id, expected, label):
-        actual = terms(person_id)
-        missing = sorted(expected - actual)
-        if missing:
-            problems.append(f"{label} missing terms for {person_id}: {missing}.")
-
-    irsa = resolve_id("irsa_naz")
-    mansoor = resolve_id("mansoor_hussain")
-    pair = {
-        (
-            term["degree"],
-            term["removal"],
-            term["side"],
-        )
-        for term in _kinship_terms(data, irsa, mansoor)
-    }
-    if (1, 0, "") not in pair:
-        problems.append("Irsa Naz + Mansoor Hussain are not derived as first cousins.")
-
-    for person_id in ("ezan_asif", "fakhir_asif"):
-        require_subset(
-            person_id,
-            {(1, 0, "maternal"), (2, 0, "paternal")},
-            "Ezan/Fakhir focus terms",
-        )
-    for person_id in (
-        "aresha_zubair",
-        "fizza_zubair",
-        "abdul_rafey",
-        "muaaz",
-        "barirah",
-        "musabiha",
-        "musa",
-    ):
-        require_subset(
-            person_id,
-            {(1, 0, "paternal"), (2, 0, "maternal")},
-            "Hina/Sana/Afshan child focus terms",
-        )
-    for person_id in ("aresha_owais_daughter_a", "aresha_owais_daughter_b"):
-        require_subset(
-            person_id,
-            {(1, 1, "paternal"), (2, 1, "maternal")},
-            "Aresha daughter focus terms",
-        )
-    if problems:
-        raise ValueError("\n".join(f"- {problem}" for problem in problems))
+    focus = alias_map.get(data["metadata"]["focus_person"], data["metadata"]["focus_person"])
+    if focus not in people_index:
+        raise ValueError("Focus person is absent from the model.")
+    for person_id in people_index:
+        for term in _kinship_terms(data, focus, person_id, focus_id=focus, people_index=people_index):
+            if (term["degree"] < 1 or term["removal"] < 0
+                    or term["side"] not in {"", "maternal", "paternal"}):
+                raise ValueError("Derived kinship path has invalid degree, removal, or side.")
     return {
         "focus_cousin_paths": len(_derived_focus_entries(data)),
     }
@@ -2119,54 +1931,20 @@ def _viewer_snapshot(data):
 
 
 def _kinship_regression_audit(data):
-    """Phase-2 regression checks for arbitrary perspectives; fails the build
-    if any required relationship is missing."""
+    """Check direct relationship renderability for an arbitrary model.
+
+    Detailed maternal, paternal, and multipath expectations live in the
+    fictional fixture tests rather than production identity constants.
+    """
     people_index = {person["id"]: person for person in data["people"]}
-    alias_map = dict(data.get("identifier_aliases") or {})
-    if not alias_map:
-        for p in data.get("people", []):
-            pid = p["id"]
-            if "--" in pid:
-                base = pid.split("--")[0]
-                alias_map[base] = pid
-
-    def resolve_id(pid: str) -> str:
-        return alias_map.get(pid, pid)
-
-    def entry_labels(first, second):
-        resolved_first = resolve_id(first)
-        resolved_second = resolve_id(second)
-        pair = _viewer_pair(data, resolved_first, resolved_second, people_index)
-        return {
-            label["en"]
-            for label in pair["main"] + pair["additional"]
-        }
-
-    problems = []
-
-    def require(first, second, expected, label):
-        actual = entry_labels(first, second)
-        missing = [
-            phrase
-            for phrase in expected
-            if not any(phrase in item for item in actual)
-        ]
-        if missing:
-            problems.append(f"{label}: missing {missing} for {first} -> {second}.")
-
-    require("mohammad_yahya_hussain", "maham_mansoor", {"Sister"}, "direct sibling")
-    require("mohammad_yahya_hussain", "ezan_asif",
-            {"maternal first cousin", "paternal second cousin"}, "Ezan paths")
-    require("mohammad_yahya_hussain", "aresha_zubair",
-            {"paternal first cousin", "maternal second cousin"}, "Aresha paths")
-    require("irsa_naz", "mansoor_hussain", {"Husband"}, "Irsa spouse")
-    require("mohammad_yahya_hussain", "mohammad_yahya_hussain", {"Self"}, "self")
-    require("mansoor_hussain", "aresha_zubair", {"Niece"}, "Mansoor niece")
-    require("irsa_naz", "aresha_zubair", {"first cousin once removed"}, "Irsa to Aresha")
-    require("irsa_naz", "ezan_asif", {"Nephew"}, "Irsa nephew")
-    require("ezan_asif", "irsa_naz", {"aunt"}, "Ezan aunt")
-    if problems:
-        raise ValueError("\n".join(f"- {problem}" for problem in problems))
+    for person_id in people_index:
+        pair = _viewer_pair(data, person_id, person_id, people_index)
+        if not any("Self" in label["en"] for label in pair["main"] + pair["additional"]):
+            raise ValueError("Self perspective is missing a direct label.")
+    for fact in data.get("parent_child", []):
+        pair = _viewer_pair(data, fact["parent"], fact["child"], people_index)
+        if not pair["main"] and not pair["additional"]:
+            raise ValueError("Parent-child fact has no derived perspective label.")
     return len(people_index)
 
 
@@ -2434,7 +2212,7 @@ def build_mermaid(data):
         cluster = _cluster_id(key)
         branch = branch_by_couple[key]
         if branch == BRIDGE:
-            # Irsa (maternal) + Mansoor (paternal): neutral shared boundary,
+            # A cross-branch couple uses a neutral shared boundary,
             # one pale-pink card and one pale-blue card.
             fill, stroke = NEUTRAL_COUPLE
             for spouse in key:
@@ -2584,7 +2362,7 @@ READING_GUIDE = [
     "Each married couple is one compact horizontal unit: spouses sit beside each other and the horizontal line between them is the marriage, with the recorded year where known.",
     "Parent lines leave both actual parent cards, meet at a separate family junction, and fan out to the actual child cards; `parents / والدین` or `biological parents / حقیقی والدین` is written on the shared downward line.",
     "A couple without recorded children has no child junction; `no children / کوئی اولاد نہیں` stays on the marriage line where recorded.",
-    "In this current master view, maternal-side pink units occupy the left and paternal-side blue units occupy the right. Irsa Naz + Mansoor Hussain remain the central bridge, using one pink card and one blue card inside a neutral boundary.",
+    "In this view, maternal-side pink units occupy the left and paternal-side blue units occupy the right. Cross-branch couples use a neutral boundary with one card for each side.",
     "`[1]`, `[2]`, ... before a name record birth order within that sibling group.",
     "Direct neutral dotted lines connect the existing person cards for other recorded sibling/cross-family relationships; the relationship wording appears on the line and person names are not repeated.",
     "Derived cousin relationships (first/second cousin and once-removed terms with maternal/paternal sides) are calculated from biological links and full-sibling facts; they appear in the generated derived-relationships section, and a couple that is also a cousin pair gets a small annotation on its marriage line.",
@@ -3059,7 +2837,7 @@ _VIEWER_JS = """
     $("view-from-selected").addEventListener("click", () => {
       if (state.selected !== state.perspective) setPerspective(state.selected);
     });
-    $("return-yahya").addEventListener("click", () => {
+    $("return-focus").addEventListener("click", () => {
       if (state.perspective !== FAMILY.app.focus_id) setPerspective(FAMILY.app.focus_id);
       selectPerson(FAMILY.app.focus_id, true);
     });
@@ -3099,7 +2877,7 @@ def _with_viewer(core_html, data, mermaid_lib_js):
   <div class="toolbar-state">
     <span>Perspective / نقطہ نظر: <strong id="perspective-name"></strong></span>
     <button id="view-from-selected" type="button">View family from selected / اس شخص کے نقطہ نظر سے</button>
-    <button id="return-yahya" type="button">Return to Yahya / یحییٰ پر واپس</button>
+    <button id="return-focus" type="button">Return to focus / مرکزی شخص پر واپس</button>
   </div>
 </div>
 """

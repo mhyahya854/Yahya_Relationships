@@ -146,14 +146,14 @@ def test_rescan_is_idempotent_then_changed_source_stales_review(raw_root: Path):
     assert changed["id"] == first["id"]
     assert changed["sha256"] != first["sha256"]
     assert changed["proposal"]["stale"] == 0
-    assert changed["proposal"]["proposal_state"] == "NEEDS_USER_INPUT"
+    assert changed["proposal"]["proposal_state"] == "BLOCKED_BY_FUTURE_PHASE"
 
 
 def test_correction_approval_verified_move_and_truthful_history(raw_root: Path):
     raw_intake.scan_raw(raw_root)
     item = _items(raw_root)["Raw/report.pdf"]
     destination = "Database/Sources/synthetic-batch/report.pdf"
-    corrected = raw_intake.correct_item(item["id"], classification="document", destination_relative_path=destination, note="Synthetic fixture", root=raw_root)["item"]
+    corrected = raw_intake.correct_item(item["id"], classification="provenance_source", destination_relative_path=destination, note="Synthetic fixture", root=raw_root)["item"]
     assert corrected["classification_source"] == "human"
     assert corrected["proposal"]["proposal_state"] == "READY"
     raw_intake.decide_item(item["id"], "APPROVED", note="Explicit synthetic review", root=raw_root)
@@ -173,17 +173,18 @@ def test_stale_approval_traversal_and_overwrite_are_refused(raw_root: Path):
     item = _items(raw_root)["Raw/report.pdf"]
     with pytest.raises(raw_intake.RawIntakeError, match="traversal"):
         raw_intake.correct_item(item["id"], destination_relative_path="../outside.pdf", root=raw_root)
-    raw_intake.correct_item(item["id"], destination_relative_path="Database/Sources/batch/report.pdf", root=raw_root)
+    raw_intake.correct_item(item["id"], classification="provenance_source", destination_relative_path="Database/Sources/batch/report.pdf", root=raw_root)
     # The file changes after the destination proposal, so approval must rehash
     # and refuse the stale source rather than moving a different payload.
     (raw_root / "Raw" / "report.pdf").write_bytes(b"%PDF-1.4 changed after proposal")
     with pytest.raises(raw_intake.SourceChangedError):
         raw_intake.decide_item(item["id"], "APPROVED", root=raw_root)
     assert (raw_root / "Raw" / "report.pdf").exists()
+    raw_intake.scan_raw(raw_root)
 
     (raw_root / "Database" / "Sources" / "batch").mkdir(parents=True, exist_ok=True)
     (raw_root / "Database" / "Sources" / "batch" / "occupied.pdf").write_bytes(b"retain")
-    conflict = raw_intake.correct_item(item["id"], destination_relative_path="Database/Sources/batch/occupied.pdf", root=raw_root)["item"]
+    conflict = raw_intake.correct_item(item["id"], classification="provenance_source", destination_relative_path="Database/Sources/batch/occupied.pdf", root=raw_root)["item"]
     assert conflict["proposal"]["proposal_state"] == "CONFLICT"
 
 
@@ -212,7 +213,7 @@ def test_history_outbox_and_move_recovery_never_lose_raw_source(raw_root: Path, 
 
     item = _items(raw_root)["Raw/report.pdf"]
     destination = "Database/Sources/recovery/report.pdf"
-    raw_intake.correct_item(item["id"], destination_relative_path=destination, root=raw_root)
+    raw_intake.correct_item(item["id"], classification="provenance_source", destination_relative_path=destination, root=raw_root)
     raw_intake.decide_item(item["id"], "APPROVED", root=raw_root)
     raw_intake._RAW_FAILPOINT = "move_after_destination_verified"
     try:
@@ -220,7 +221,8 @@ def test_history_outbox_and_move_recovery_never_lose_raw_source(raw_root: Path, 
             raw_intake.move_approved_item(item["id"], raw_root)
     finally:
         raw_intake._RAW_FAILPOINT = None
-    assert (raw_root / "Raw" / "report.pdf").exists()
+    assert not (raw_root / "Raw" / "report.pdf").exists()
+    assert any((raw_root / ".mosaic-quarantine" / "raw-moves").glob("*/payload"))
     assert (raw_root / "Database" / "Sources" / "recovery" / "report.pdf").exists()
     recovered = raw_intake.recover_pending_moves(raw_root)
     assert item["id"] in recovered["recovered_item_ids"]

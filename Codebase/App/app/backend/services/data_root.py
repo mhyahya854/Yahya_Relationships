@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
+import stat
 import uuid
 from pathlib import Path
 from typing import Any, Dict
@@ -22,6 +24,7 @@ from ..data_root.validation import audit_data_root, safe_repair_data_root
 from ..domain.backups import BackupCategory, SafetyReason, create_backup, restore_backup, verify_backup
 from ..domain.backups.paths import native_io_path, remove_tree
 from ..domain.maintenance import MaintenanceLockContext, is_maintenance_locked
+from ..domain.raw_intake import _destination_path_for_existing, _locked
 
 _REPAIRABLE_CODES = {"MISSING_PERSON_FOLDER", "MISSING_JOURNAL", "ARCHIVED_ACTIVE_MISMATCH"}
 _RUNTIME_NAMES = (
@@ -29,6 +32,8 @@ _RUNTIME_NAMES = (
     "People",
     "Backups",
     "Raw",
+    "Media",
+    ".mosaic-quarantine",
     "family.db",
     "people",
     "config",
@@ -329,6 +334,7 @@ def _create_initial_owner(root: Path, owner_name: str, owner_gender: str | None)
 def initialize_new_data_root(target_path: str, owner_name: str, owner_gender: str | None = None) -> Dict[str, Any]:
     """Build, validate, publish, then activate one genuinely new Data Root."""
     target = Path(target_path).expanduser().resolve()
+    DataRootManager.assert_private_root(target)
     target_was_empty = _prepare_new_destination(target)
     staging = _staging_path(target, "initialize")
     published = False
@@ -362,6 +368,7 @@ def initialize_new_data_root(target_path: str, owner_name: str, owner_gender: st
 
 def switch_data_root(target_path: str) -> Dict[str, Any]:
     target = Path(target_path).expanduser().resolve()
+    DataRootManager.assert_private_root(target)
     current = DataRootManager.bootstrap_status().get("active_root")
     if isinstance(current, Path) and target == current:
         return {"ok": True, "active_root": str(current), "unchanged": True, "candidate": inspect_data_root(str(current))}
@@ -396,37 +403,103 @@ def _sha256_stream(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _is_link_like(path: Path) -> bool:
+    try:
+        data = path.lstat()
+    except OSError:
+        return False
+    attributes = int(getattr(data, "st_file_attributes", 0) or 0)
+    return path.is_symlink() or bool(attributes & int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)))
+
+
+def _walk_runtime_files(root: Path, payload: Path) -> list[Path]:
+    if _is_link_like(payload):
+        raise DataRootInvalidError(f"Runtime payload contains an unsafe link: {payload.relative_to(root).as_posix()}")
+    if payload.is_file():
+        return [payload]
+    files: list[Path] = []
+    stack = [payload]
+    while stack:
+        directory = stack.pop()
+        with os.scandir(directory) as entries:
+            for entry in sorted(entries, key=lambda value: value.name.casefold()):
+                item = Path(entry.path)
+                relative = item.relative_to(root)
+                if _is_transient(relative):
+                    continue
+                if entry.is_symlink() or _is_link_like(item):
+                    raise DataRootInvalidError(f"Runtime payload contains an unsafe link: {relative.as_posix()}")
+                if entry.is_dir(follow_symlinks=False):
+                    stack.append(item)
+                elif entry.is_file(follow_symlinks=False):
+                    files.append(item)
+    return sorted(files, key=lambda value: value.as_posix())
+
+
+def _runtime_payloads(root: Path) -> list[Path]:
+    """Visit case aliases once on Windows while retaining distinct POSIX roots."""
+    payloads: list[Path] = []
+    native_root = native_io_path(root)
+    for name in _RUNTIME_NAMES:
+        candidate = native_root / name
+        if _is_link_like(candidate):
+            raise DataRootInvalidError("Runtime payload contains an unsafe link.")
+        if not candidate.exists():
+            continue
+        if any(os.path.samefile(candidate, existing) for existing in payloads):
+            continue
+        payloads.append(candidate)
+    return payloads
+
+
 def _runtime_inventory(root: Path) -> list[Dict[str, Any]]:
     rows: list[Dict[str, Any]] = []
     scan_root = native_io_path(root)
-    for name in _RUNTIME_NAMES:
-        payload = scan_root / name
-        if not payload.exists():
-            continue
-        if payload.is_symlink():
-            raise DataRootInvalidError(f"Runtime payload contains an unsafe symbolic link: {name}")
-        items = [payload] if payload.is_file() else sorted(payload.rglob("*"), key=lambda item: item.as_posix())
-        for item in items:
+    for payload in _runtime_payloads(root):
+        for item in _walk_runtime_files(scan_root, payload):
             relative = item.relative_to(scan_root)
             if _is_transient(relative):
                 continue
-            if item.is_symlink():
-                raise DataRootInvalidError(f"Runtime payload contains an unsafe symbolic link: {relative.as_posix()}")
-            if item.is_file():
-                rows.append(
-                    {
-                        "path": relative.as_posix(),
-                        "size": item.stat().st_size,
-                        "sha256": _sha256_stream(item),
-                    }
-                )
+            rows.append(
+                {
+                    "path": relative.as_posix(),
+                    "size": item.stat().st_size,
+                    "sha256": _sha256_stream(item),
+                }
+            )
     return rows
+
+
+def _runtime_directories(root: Path) -> list[str]:
+    """Include empty canonical directories in relocation parity."""
+    found: list[str] = []
+    native_root = native_io_path(root)
+    for payload in _runtime_payloads(root):
+        if payload.is_file():
+            continue
+        if _is_link_like(payload):
+            raise DataRootInvalidError("Runtime payload contains an unsafe link.")
+        stack = [payload]
+        while stack:
+            directory = stack.pop()
+            relative = directory.relative_to(native_root)
+            if _is_transient(relative):
+                continue
+            found.append(relative.as_posix())
+            for child in directory.iterdir():
+                if _is_link_like(child):
+                    raise DataRootInvalidError("Runtime payload contains an unsafe link.")
+                if child.is_dir():
+                    stack.append(child)
+    return sorted(found)
 
 
 def _copy_runtime_payload(source: Path, destination: Path) -> None:
     native_destination = native_io_path(destination)
     native_source = native_io_path(source)
     native_destination.mkdir(parents=True, exist_ok=False)
+    for relative in _runtime_directories(source):
+        (native_destination / Path(relative)).mkdir(parents=True, exist_ok=True)
     for row in _runtime_inventory(source):
         relative = Path(row["path"])
         target = native_destination / relative
@@ -434,15 +507,63 @@ def _copy_runtime_payload(source: Path, destination: Path) -> None:
         shutil.copy2(native_source / relative, target)
 
 
+def _check_raw_move_relocation_state(active_root: Path) -> None:
+    """Allow only verified retained copies owned by completed Raw moves."""
+    quarantine = active_root / ".mosaic-quarantine" / "raw-moves"
+    connection = db.get_connection(DataRootManager.get_database_path(active_root))
+    try:
+        operations = connection.execute(
+            "SELECT op.id, op.status, op.error_message, op.expected_sha256, "
+            "op.destination_relative_path, item.processing_state "
+            "FROM raw_move_operations op JOIN raw_items item ON item.id=op.raw_item_id"
+        ).fetchall()
+    finally:
+        connection.close()
+    if any(row["status"] in {"PREPARED", "DESTINATION_VERIFIED"} for row in operations):
+        raise DataRootInvalidError(
+            "A pending Raw move blocks relocation; recover or review it first.",
+            detail={"code": "RAW_MOVE_PENDING"},
+        )
+    allowed = {
+        f"{row['id']}/payload": row for row in operations
+        if row["status"] == "COMPLETED" and row["error_message"] == "CLEANUP_PENDING"
+        and row["processing_state"] == "MOVED"
+    }
+    found: set[str] = set()
+    if quarantine.exists():
+        if _is_link_like(quarantine) or not quarantine.is_dir():
+            raise DataRootInvalidError("Unsafe Raw quarantine blocks relocation.", detail={"code": "RAW_QUARANTINE_PENDING"})
+        for entry in quarantine.rglob("*"):
+            if _is_link_like(entry):
+                raise DataRootInvalidError("Unsafe Raw quarantine blocks relocation.", detail={"code": "RAW_QUARANTINE_PENDING"})
+            if entry.is_dir():
+                continue
+            relative = entry.relative_to(quarantine).as_posix()
+            row = allowed.get(relative)
+            if row is None or not entry.is_file() or _sha256_stream(entry) != row["expected_sha256"]:
+                raise DataRootInvalidError("Unverified Raw quarantine blocks relocation.", detail={"code": "RAW_QUARANTINE_PENDING"})
+            destination = _destination_path_for_existing(active_root, row["destination_relative_path"])
+            if not destination.is_file() or _is_link_like(destination) or _sha256_stream(destination) != row["expected_sha256"]:
+                raise DataRootInvalidError("Unverified Raw destination blocks relocation.", detail={"code": "RAW_QUARANTINE_PENDING"})
+            found.add(relative)
+    if found != set(allowed):
+        raise DataRootInvalidError("Missing retained Raw quarantine blocks relocation.", detail={"code": "RAW_QUARANTINE_PENDING"})
+
+
 def move_data_root(destination_path: str) -> Dict[str, Any]:
     active_root = DataRootManager.resolve_active_root()
     destination = Path(destination_path).expanduser().resolve()
+    DataRootManager.assert_private_root(destination)
     if _target_is_within(destination, active_root) or _target_is_within(active_root, destination):
         raise DataRootDestinationConflictError("The move destination and active Data Root cannot contain one another.")
     target_was_empty = _prepare_new_destination(destination)
     staging = _staging_path(destination, "move")
     published = False
-    with MaintenanceLockContext(f"MOVE_DATA_ROOT:{destination.name}"):
+    with _locked(active_root), MaintenanceLockContext(f"MOVE_DATA_ROOT:{destination.name}"):
+        _check_raw_move_relocation_state(active_root)
+        # Reject unsafe runtime links before backup creation traverses the root.
+        _runtime_inventory(active_root)
+        _runtime_directories(active_root)
         safety_backup = create_backup(
             label=f"Before moving to {destination.name}",
             category=BackupCategory.SAFETY,
@@ -451,10 +572,13 @@ def move_data_root(destination_path: str) -> Dict[str, Any]:
             _maintenance_held=True,
         )
         expected = _runtime_inventory(active_root)
+        expected_directories = _runtime_directories(active_root)
         try:
             _copy_runtime_payload(active_root, staging)
             actual = _runtime_inventory(staging)
-            if actual != expected:
+            current_source = _runtime_inventory(active_root)
+            if (current_source != expected or actual != expected
+                    or _runtime_directories(staging) != expected_directories):
                 raise DataRootInvalidError("Moved runtime payload failed exact inventory verification.")
             health = audit_data_root(staging)
             if _state_for_health(health) not in {DataRootState.HEALTHY, DataRootState.READ_ONLY}:
@@ -489,6 +613,7 @@ def move_data_root(destination_path: str) -> Dict[str, Any]:
 def restore_backup_to_data_root(backup_path: str, target_root: str) -> Dict[str, Any]:
     backup = Path(backup_path).expanduser().resolve()
     destination = Path(target_root).expanduser().resolve()
+    DataRootManager.assert_private_root(destination)
     if not backup.is_dir() or backup.is_symlink():
         raise DataRootNotFoundError(f"Backup path '{backup}' is not a safe directory.")
     if _target_is_within(destination, backup) or _target_is_within(backup, destination):

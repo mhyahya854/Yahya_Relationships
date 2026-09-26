@@ -1,2 +1,0 @@
-# Delete Undo Test Person
-

@@ -30,9 +30,11 @@ def _error(exc: DataRootError, status: int = 400) -> HTTPException:
 def list_items(
     filter_name: str | None = Query(default=None, alias="filter"),
     query: str | None = Query(default=None, max_length=500),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ):
     try:
-        return raw_intake.list_raw_items(filter_name=filter_name, query=query)
+        return raw_intake.list_raw_items(filter_name=filter_name, query=query, limit=limit, offset=offset)
     except DataRootError as exc:
         raise _error(exc) from exc
 

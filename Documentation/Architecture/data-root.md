@@ -2,7 +2,7 @@
 
 ## Authority and payload
 
-The active Data Root is the single authoritative directory for user data. In a source checkout it may be the repository root, but portable runtime payload is deliberately limited to `Database/` and `Backups/`; source folders such as `Codebase/` and `Documentation/` are never part of a move or restore payload.
+The active Data Root is the single authoritative directory for user data. It must not overlap the public source checkout, including through a symlink or reparse alias. The portable runtime payload includes `Database/`, `People/`, `Raw/`, `Media/`, and `Backups/` where present; source folders such as `Codebase/` and `Documentation/` are never part of a move or restore payload. A fresh clone is `UNCONFIGURED` until the user selects, creates, or restores a private root.
 
 ```text
 <DataRoot>/

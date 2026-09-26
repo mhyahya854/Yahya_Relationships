@@ -7,6 +7,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   unlinkSync,
@@ -17,15 +18,13 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(HERE, "../..");
-const REPO = resolve(ROOT, "..");
-const SHOTS = resolve(REPO, "Documentation/UI-Screenshots");
+const ROOT = realpathSync.native(resolve(HERE, "../.."));
+const SHOTS = process.env.MOSAIC_DATA_ROOT_SHOTS
+  ? resolve(process.env.MOSAIC_DATA_ROOT_SHOTS)
+  : resolve(tmpdir(), `mosaic-data-root-synthetic-shots-${process.pid}`);
 const EDGE = existsSync("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe")
   ? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
   : "C:/Program Files/Microsoft/Edge/Application/msedge.exe";
-const PROD_DB = resolve(REPO, "Database/Main/family.db");
-const PROD_PEOPLE = resolve(REPO, "Database/People");
-const PROD_BACKUPS = resolve(REPO, "Backups");
 const REAL_BOOTSTRAP = join(process.env.APPDATA ?? "", "people-relationships", "bootstrap.json");
 
 function sha256(path) {
@@ -49,13 +48,8 @@ function collectFiles(root, transient = false) {
 }
 
 const production = {
-  db: sha256(PROD_DB),
-  journals: collectFiles(PROD_PEOPLE).filter((row) => row.path.endsWith("/journal.md")),
-  backups: collectFiles(PROD_BACKUPS),
   bootstrap: existsSync(REAL_BOOTSTRAP) ? { exists: true, hash: sha256(REAL_BOOTSTRAP), bytes: statSync(REAL_BOOTSTRAP).size } : { exists: false },
 };
-if (production.db !== "3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E") throw new Error(`Unexpected production DB: ${production.db}`);
-if (production.journals.length !== 35) throw new Error(`Expected 35 production Journals, found ${production.journals.length}`);
 
 const sandbox = resolve(tmpdir(), `data_root_e2e_${Date.now()}`);
 const bootstrap = join(sandbox, "settings", "bootstrap.json");
@@ -116,10 +110,7 @@ function stop(child) {
   if (process.platform === "win32") { try { execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" }); } catch {} }
   else { try { child.kill("SIGKILL"); } catch {} }
 }
-function verifyProduction() {
-  if (sha256(PROD_DB) !== production.db) throw new Error("Production database changed");
-  if (JSON.stringify(collectFiles(PROD_PEOPLE).filter((row) => row.path.endsWith("/journal.md"))) !== JSON.stringify(production.journals)) throw new Error("Production Journals changed");
-  if (JSON.stringify(collectFiles(PROD_BACKUPS)) !== JSON.stringify(production.backups)) throw new Error("Production Backups changed");
+function verifyRealBootstrap() {
   const now = existsSync(REAL_BOOTSTRAP) ? { exists: true, hash: sha256(REAL_BOOTSTRAP), bytes: statSync(REAL_BOOTSTRAP).size } : { exists: false };
   if (JSON.stringify(now) !== JSON.stringify(production.bootstrap)) throw new Error("Real bootstrap pointer changed");
 }
@@ -232,7 +223,7 @@ try {
   await page.waitForSelector("[aria-label='Data Root change summary']");
   step("Existing root is inspected before any pointer change");
   const preview = await page.$eval("[aria-label='Data Root change summary']", (node) => node.textContent);
-  if (!preview.includes("People: 1") || !preview.includes("Schema: 3") || !preview.includes("Writable")) throw new Error("Candidate summary incomplete");
+  if (!preview.includes("People: 1") || !preview.includes("Schema: 4") || !preview.includes("Writable")) throw new Error("Candidate summary incomplete");
   step("Candidate preview shows health, counts, schema, and write state");
   await screenshot("data-root-existing-preview.png");
   step("Existing-root preview has visual evidence");
@@ -377,7 +368,7 @@ try {
   step("The complete journey has no console errors or browser dialogs");
 
   if (passed !== 50) throw new Error(`Expected exactly 50 meaningful checks, recorded ${passed}`);
-  verifyProduction();
+  verifyRealBootstrap();
   console.log(`\nALL ${passed} DATAROOT E2E CHECKS PASSED\n`);
 } finally {
   if (browser) await browser.close();
@@ -385,5 +376,5 @@ try {
   stop(vite);
   await sleep(700);
   rmSync(sandbox, { recursive: true, force: true });
-  verifyProduction();
+  verifyRealBootstrap();
 }

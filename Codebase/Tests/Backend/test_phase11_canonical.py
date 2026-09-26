@@ -41,6 +41,7 @@ from app.backend.domain.canonical.template import (
 )
 from app.backend.domain.migration.engine import CanonicalMigrationEngine
 from app.backend.services import people as people_service
+from Tests.synthetic_mosaic import build_legacy
 
 
 # ==============================================================================
@@ -49,12 +50,12 @@ from app.backend.services import people as people_service
 
 def test_canonical_id_normalization_and_initials():
     assert normalize_name("Sara Khan") == "sara_khan"
-    assert normalize_name("Mohammad Yahya Hussain") == "mohammad_yahya_hussain"
+    assert normalize_name("Mira Rahim") == "mira_rahim"
     assert normalize_name("O'Connor-Smith") == "o_connor_smith"
     assert normalize_name("  Syed   Ali  ") == "syed_ali"
 
     assert compute_initials("Sara Khan") == "SK"
-    assert compute_initials("Mohammad Yahya Hussain") == "MYH"
+    assert compute_initials("Mira Rahim") == "MR"
     assert compute_initials("Plato") == "P"
     with pytest.raises(ValueError):
         compute_initials("")
@@ -65,8 +66,8 @@ def test_canonical_person_id_generation_basic():
     assert cid == "sara_khan--SK01"
     assert is_valid_canonical_person_id(cid) is True
 
-    cid_long = generate_canonical_person_id("Mohammad Yahya Hussain", set())
-    assert cid_long == "mohammad_yahya_hussain--MYH01"
+    cid_long = generate_canonical_person_id("Mira Rahim", set())
+    assert cid_long == "mira_rahim--MR01"
     assert is_valid_canonical_person_id(cid_long) is True
 
 
@@ -83,7 +84,7 @@ def test_canonical_person_id_collision_handling():
 
 def test_canonical_person_id_validation_predicate():
     assert is_valid_canonical_person_id("sara_khan--SK01") is True
-    assert is_valid_canonical_person_id("mohammad_yahya_hussain--MYH99") is True
+    assert is_valid_canonical_person_id("mira_rahim--MR99") is True
     assert is_valid_canonical_person_id("unknown_person--UP0001") is False
     assert is_valid_canonical_person_id("sara-khan") is False
     assert is_valid_canonical_person_id("sara_khan") is False
@@ -256,50 +257,38 @@ def test_unresolved_person_lifecycle(canonical_test_env):
 # ==============================================================================
 
 def test_migration_engine_plan_and_dry_run(tmp_path):
-    # Test on isolated unmigrated copy with dry_run=True (safe, read-only)
-    proj_root = Path(__file__).resolve().parents[3]
+    # Test on a generated legacy schema-v2 root; dry-run leaves it unchanged.
     isolated_root = tmp_path / "UnmigratedDataRoot"
-    (isolated_root / "Database" / "Main").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(proj_root / "Database" / "Main" / "family.db", isolated_root / "Database" / "Main" / "family.db")
-    if (proj_root / "Database" / "People").exists():
-        shutil.copytree(proj_root / "Database" / "People", isolated_root / "Database" / "People")
-    else:
-        (isolated_root / "Database" / "People").mkdir(parents=True, exist_ok=True)
+    build_legacy(isolated_root)
 
     engine = CanonicalMigrationEngine(isolated_root, dry_run=True)
     plan = engine.plan()
 
     assert plan["can_migrate"] is True
-    assert len(plan["mappings"]) == 35
+    assert len(plan["mappings"]) == 15
 
-    # Check key mappings from Master Plan
+    # Check representative fictional mappings.
     id_map = {m["old_id"]: m["canonical_id"] for m in plan["mappings"]}
-    assert id_map["mohammad_yahya_hussain"] == "mohammad_yahya_hussain--MYH01"
-    assert id_map["maham_mansoor"] == "maham_mansoor--MM01"
-    assert id_map["mansoor_hussain"] == "mansoor_hussain--MH01"
+    assert id_map["mira_rahim"] == "mira_rahim--MR01"
+    assert id_map["sami_calder"] == "sami_calder--SC01"
+    assert id_map["elias_calder"] == "elias_calder--EC01"
 
     # Dry run should not modify anything
     assert not (isolated_root / "Database" / "relationships.db").exists()
 
 
 def test_migration_engine_execution_on_isolated_copy(tmp_path):
-    # Create an isolated copy of the real unmigrated data root
-    proj_root = Path(__file__).resolve().parents[3]
+    # Migrate a generated legacy Data Root.
     isolated_root = tmp_path / "IsolatedDataRoot"
-    (isolated_root / "Database" / "Main").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(proj_root / "Database" / "Main" / "family.db", isolated_root / "Database" / "Main" / "family.db")
-    if (proj_root / "Database" / "People").exists():
-        shutil.copytree(proj_root / "Database" / "People", isolated_root / "Database" / "People")
-    else:
-        (isolated_root / "Database" / "People").mkdir(parents=True, exist_ok=True)
+    build_legacy(isolated_root)
 
     # Run migration on the isolated copy
     engine = CanonicalMigrationEngine(isolated_root, dry_run=False)
     results = engine.migrate()
 
     assert results["ok"] is True
-    assert results["migrated_people_count"] == 35
-    assert len(results["mappings"]) == 35
+    assert results["migrated_people_count"] == 15
+    assert len(results["mappings"]) == 15
 
     # Authoritative canonical database exists
     canon_db_path = isolated_root / "Database" / "relationships.db"
@@ -325,13 +314,13 @@ def test_migration_engine_execution_on_isolated_copy(tmp_path):
         assert src_cnt == dst_cnt, f"Mismatch in table {tbl}: {src_cnt} != {dst_cnt}"
     src_conn.close()
 
-    # Verify all 35 aliases registered
+    # Verify all 15 aliases registered
     alias_count = conn.execute("SELECT count(*) FROM identifier_aliases").fetchone()[0]
-    assert alias_count == 35
+    assert alias_count == 15
 
     # Verify alias lookup works
-    assert db.resolve_canonical_id(conn, "maham_mansoor") == "maham_mansoor--MM01"
-    assert db.resolve_canonical_id(conn, "mohammad_yahya_hussain") == "mohammad_yahya_hussain--MYH01"
+    assert db.resolve_canonical_id(conn, "sami_calder") == "sami_calder--SC01"
+    assert db.resolve_canonical_id(conn, "mira_rahim") == "mira_rahim--MR01"
     conn.close()
 
     # Verify People folder hierarchy
@@ -341,10 +330,10 @@ def test_migration_engine_execution_on_isolated_copy(tmp_path):
     assert (people_root / "Family").is_dir()
     assert (people_root / "Friends").is_dir()
 
-    # Verify Mohammad Yahya Hussain is under Me/
-    myh_folder = people_root / "Me" / "mohammad_yahya_hussain--MYH01"
+    # Verify Mira Rahim is under Me/
+    myh_folder = people_root / "Me" / "mira_rahim--MR01"
     assert myh_folder.is_dir()
-    assert (myh_folder / "mohammad_yahya_hussain--MYH01(facts and about).md").is_file()
+    assert (myh_folder / "mira_rahim--MR01(facts and about).md").is_file()
     assert (myh_folder / "journal(personal thoughts).md").is_file()
     for sub in FOLDER_TEMPLATE_DIRECTORIES:
         assert (myh_folder / sub).is_dir()
@@ -353,10 +342,10 @@ def test_migration_engine_execution_on_isolated_copy(tmp_path):
     myh_journal = (myh_folder / "journal(personal thoughts).md").read_text(encoding="utf-8")
     assert len(myh_journal) > 0
 
-    # Verify Maham Mansoor is under Family/
-    mm_folder = people_root / "Family" / "maham_mansoor--MM01"
+    # Verify fictional sibling Sami Calder is under Family/
+    mm_folder = people_root / "Family" / "sami_calder--SC01"
     assert mm_folder.is_dir()
-    assert (mm_folder / "maham_mansoor--MM01(facts and about).md").is_file()
+    assert (mm_folder / "sami_calder--SC01(facts and about).md").is_file()
     assert (mm_folder / "journal(personal thoughts).md").is_file()
 
 
@@ -365,14 +354,8 @@ def test_migration_engine_execution_on_isolated_copy(tmp_path):
 # ==============================================================================
 
 def test_kinship_audit_on_migrated_store(tmp_path):
-    proj_root = Path(__file__).resolve().parents[3]
     isolated_root = tmp_path / "KinshipDataRoot"
-    (isolated_root / "Database" / "Main").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(proj_root / "Database" / "Main" / "family.db", isolated_root / "Database" / "Main" / "family.db")
-    if (proj_root / "Database" / "People").exists():
-        shutil.copytree(proj_root / "Database" / "People", isolated_root / "Database" / "People")
-    else:
-        (isolated_root / "Database" / "People").mkdir(parents=True, exist_ok=True)
+    build_legacy(isolated_root)
 
     engine = CanonicalMigrationEngine(isolated_root, dry_run=False)
     engine.migrate()

@@ -1,58 +1,68 @@
 """End-to-end API tests against FastAPI's TestClient."""
 
+from app.backend.domain.canonical.ids import generate_canonical_person_id
+
+MIRA = generate_canonical_person_id("Mira Rahim")
+SAMI = generate_canonical_person_id("Sami Calder")
+RAFI = generate_canonical_person_id("Rafi Calder")
+KAMAL = generate_canonical_person_id("Kamal Calder")
+DARYA = generate_canonical_person_id("Darya Sol")
+SALMA = generate_canonical_person_id("Salma Rahim")
+AIKA = generate_canonical_person_id("Aika Calder-Rahim")
+
 
 def test_health(client):
     response = client.get("/api/health")
     assert response.status_code == 200
     payload = response.json()
     assert payload["ok"] is True
-    assert payload["people"] == 35
+    assert payload["people"] == 15
 
 
 def test_people_endpoints(client):
     response = client.get("/api/people")
     assert response.status_code == 200
-    assert len(response.json()["people"]) == 35
-    detail = client.get("/api/people/mohammad_yahya_hussain")
+    assert len(response.json()["people"]) == 15
+    detail = client.get(f"/api/people/{MIRA}")
     assert detail.status_code == 200
-    assert detail.json()["person"]["name"] == "Mohammad Yahya Hussain"
+    assert detail.json()["person"]["name"] == "Mira Rahim"
 
 
 def test_relationship_endpoint_and_perspective(client):
-    response = client.get(
-        "/api/relationships/mohammad_yahya_hussain/ezan_asif"
-    )
+    response = client.get(f"/api/relationships/{MIRA}/{SAMI}")
     assert response.status_code == 200
     labels = {
         item["label_en"]
         for item in response.json()["primary"]
     }
-    assert "maternal first cousin" in labels
-    additional = {
-        item["label_en"]
-        for item in response.json()["additional"]
-    }
-    assert "paternal second cousin" in additional
+    assert "Full brother" in labels
 
 
 def test_compare_endpoint(client):
-    response = client.get("/api/compare/mansoor_hussain/aresha_zubair")
+    response = client.get(f"/api/compare/{KAMAL}/{RAFI}")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["a_to_b"]["primary"][0]["label_en"] == "Niece"
-    assert payload["b_to_a"]["primary"][0]["label_en"] == "Maternal uncle"
+    assert payload["a_to_b"]["primary"][0]["label_en"] == "Son"
+    assert payload["b_to_a"]["primary"][0]["label_en"] == "Father"
+
+
+def test_fictional_maternal_and_paternal_cousin_paths(client):
+    response = client.get(f"/api/relationships/{MIRA}/{AIKA}")
+    assert response.status_code == 200
+    labels = {item["label_en"] for item in response.json()["primary"] + response.json()["additional"]}
+    assert {"maternal first cousin", "paternal first cousin"} <= labels
 
 
 def test_state_perspective(client):
     state = client.get("/api/state").json()
-    assert state["perspective_person_id"] == "mohammad_yahya_hussain"
+    assert state["perspective_person_id"] == MIRA
     updated = client.put(
-        "/api/state", json={"perspective_person_id": "mansoor_hussain"}
+        "/api/state", json={"perspective_person_id": KAMAL}
     )
     assert updated.status_code == 200
-    assert updated.json()["perspective_person_id"] == "mansoor_hussain"
+    assert updated.json()["perspective_person_id"] == KAMAL
     reset = client.post("/api/state/reset")
-    assert reset.json()["perspective_person_id"] == "mohammad_yahya_hussain"
+    assert reset.json()["perspective_person_id"] == MIRA
 
 
 def test_general_relationship_lifecycle(client):
@@ -64,7 +74,7 @@ def test_general_relationship_lifecycle(client):
         "/api/relationships/general",
         json={
             "person_a": created["id"],
-            "person_b": "mohammad_yahya_hussain",
+            "person_b": MIRA,
             "type": "close_friend",
         },
     )
@@ -77,21 +87,21 @@ def test_general_relationship_lifecycle(client):
 
 
 def test_journal_api_and_external_edit(client, isolated):
-    journal = client.get("/api/people/maham_mansoor/journal")
+    journal = client.get(f"/api/people/{MIRA}/journal")
     assert journal.status_code == 200
     path = journal.json()["path"]
     from pathlib import Path
 
     Path(path).write_text(
-        "# Maham Mansoor\n\n## Test\n\n- Edited externally.\n",
+        "# Mira Rahim\n\n## Test\n\n- Edited externally.\n",
         encoding="utf-8",
     )
-    again = client.get("/api/people/maham_mansoor/journal")
+    again = client.get(f"/api/people/{MIRA}/journal")
     assert "Edited externally." in again.json()["content"]
 
 
 def test_search_api(client):
-    response = client.get("/api/search", params={"q": "yahya"})
+    response = client.get("/api/search", params={"q": "mira"})
     assert response.status_code == 200
     people_hits = [
         result
@@ -101,11 +111,10 @@ def test_search_api(client):
     assert people_hits
 
     family = client.get(
-        "/api/search", params={"q": "maternal uncle"}
+        "/api/search", params={"q": "father"}
     ).json()["results"]
     titles = {result["title"] for result in family}
-    assert "Sohaib Hussain" in titles
-    assert "Arsalan Israr" in titles
+    assert "Elias Calder" in titles
 
 
 def test_backup_api(client):
@@ -125,22 +134,22 @@ def test_hermes_endpoints(client):
         json={
             "tool": "get_relationship",
             "arguments": {
-                "perspective": "mansoor_hussain",
-                "target": "aresha_zubair",
+                "perspective": KAMAL,
+                "target": RAFI,
             },
         },
     )
     assert run.status_code == 200
     assert run.json()["ok"] is True
-    assert run.json()["primary"][0]["label_en"] == "Niece"
+    assert run.json()["primary"][0]["label_en"] == "Son"
 
 
 def test_family_diagram_endpoint(client):
     response = client.get(
         "/api/family/diagram",
-        params={"perspective_id": "irsa_naz"},
+        params={"perspective_id": SALMA},
     )
     assert response.status_code == 200
     mermaid_text = response.json()["mermaid"]
     assert mermaid_text.startswith("flowchart TB")
-    assert "p_irsa_naz" in mermaid_text
+    assert f"p_{SALMA.replace('--', '__')}" in mermaid_text

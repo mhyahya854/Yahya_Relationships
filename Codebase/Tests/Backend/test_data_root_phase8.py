@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -407,6 +408,33 @@ def test_move_copies_only_runtime_payload_and_retains_old_root(tmp_path):
     assert DataRootManager.read_root_metadata(destination)["root_id"] == root_id
     assert list((source / "Backups" / "Safety" / "Pre-Organization").iterdir())
     assert service._runtime_inventory(source) == service._runtime_inventory(destination)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction regression")
+@pytest.mark.parametrize("placement", ["nested", "top_level"])
+def test_move_rejects_dangling_junction_before_safety_backup(tmp_path, placement):
+    source = make_root(tmp_path, "source")
+    target = tmp_path / "junction-target"
+    target.mkdir()
+    junction = source / "People" / "dangling-junction" if placement == "nested" else source / "Media"
+    assert not junction.exists()
+    created = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(target)],
+        capture_output=True, text=True, check=False,
+    )
+    if created.returncode != 0:
+        pytest.skip("Junction creation is unavailable")
+    target.rmdir()
+    pointer = bootstrap_path().read_bytes()
+    safety = source / "Backups" / "Safety" / "Pre-Organization"
+    before = sorted(path.name for path in safety.iterdir())
+    destination = tmp_path / "destination"
+    with pytest.raises(DataRootInvalidError):
+        service.move_data_root(str(destination))
+    assert bootstrap_path().read_bytes() == pointer
+    assert sorted(path.name for path in safety.iterdir()) == before
+    assert not destination.exists()
+    assert service._is_link_like(junction)
 
 
 @pytest.mark.parametrize("failure", ["copy", "inventory", "publication"])

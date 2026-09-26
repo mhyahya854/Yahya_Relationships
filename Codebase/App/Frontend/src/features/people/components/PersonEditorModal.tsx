@@ -251,7 +251,7 @@ export const PersonEditorModal: React.FC<Props> = ({
                   className="form-input"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Mansoor Hussain"
+                  placeholder="e.g. Sara Khan"
                   autoFocus
                 />
               </div>
@@ -263,7 +263,7 @@ export const PersonEditorModal: React.FC<Props> = ({
                   className="form-input"
                   value={aliasesText}
                   onChange={(e) => setAliasesText(e.target.value)}
-                  placeholder="Aliases: e.g. Mansoor Bhai, Uncle Mansoor, منصور بھائی"
+                  placeholder="Aliases: e.g. Sara, S. Khan"
                 />
               </div>
 

@@ -125,9 +125,9 @@ def test_parent_child_all_seven_kinds_and_undo_cycle(isolated, client):
 
 
 def test_parent_child_refusals(isolated):
-    p1 = people.create_person(name="P1")["id"]
-    p2 = people.create_person(name="P2")["id"]
-    p3 = people.create_person(name="P3")["id"]
+    p1 = people.create_person(name="P One")["id"]
+    p2 = people.create_person(name="P Two")["id"]
+    p3 = people.create_person(name="P Three")["id"]
 
     # 1. Self-parent
     with pytest.raises(errors.ValidationError) as exc:
@@ -236,8 +236,8 @@ def test_marriage_crud_metadata_and_undo(isolated, client):
 
 
 def test_marriage_refusals(isolated):
-    p1 = people.create_person(name="Marriage Person 1")["id"]
-    p2 = people.create_person(name="Marriage Person 2")["id"]
+    p1 = people.create_person(name="Marriage Person  One")["id"]
+    p2 = people.create_person(name="Marriage Person  Two")["id"]
     p_single = people.create_person(name="Single Person", marital_status="single")["id"]
 
     # 1. Self-marriage
@@ -332,9 +332,9 @@ def test_sibling_group_crud_and_derived_persistence(isolated, client):
 
 
 def test_sibling_group_refusals(isolated):
-    p1 = people.create_person(name="Sib 1")["id"]
-    p2 = people.create_person(name="Sib 2")["id"]
-    p3 = people.create_person(name="Sib 3")["id"]
+    p1 = people.create_person(name="Sib  One")["id"]
+    p2 = people.create_person(name="Sib  Two")["id"]
+    p3 = people.create_person(name="Sib  Three")["id"]
 
     # 1. Less than 2 members
     with pytest.raises(errors.ValidationError) as exc:
@@ -406,8 +406,8 @@ def test_preview_dry_run_immutability(client):
 
 
 def test_atomicity_failed_mutation_leaves_undo_clean(isolated):
-    p1 = people.create_person(name="Safe Person 1")["id"]
-    p2 = people.create_person(name="Safe Person 2")["id"]
+    p1 = people.create_person(name="Safe Person  One")["id"]
+    p2 = people.create_person(name="Safe Person  Two")["id"]
 
     mutation_history._MUTATION_STACK.clear()
 
@@ -440,8 +440,8 @@ def test_atomicity_failed_mutation_leaves_undo_clean(isolated):
 
 
 def test_read_only_mode_blocks_family_writes(isolated):
-    p1 = people.create_person(name="RO Person 1")["id"]
-    p2 = people.create_person(name="RO Person 2")["id"]
+    p1 = people.create_person(name="RO Person  One")["id"]
+    p2 = people.create_person(name="RO Person  Two")["id"]
 
     with patch.object(DataRootManager, "is_read_only", return_value=True):
         with pytest.raises(DataRootReadOnlyError):
@@ -582,8 +582,8 @@ def test_parent_child_injected_failure_rolls_back_exactly(isolated):
 
 def test_marriage_injected_failure_rolls_back_exactly(isolated):
     """Injected failure during marriage write rolls back DB rows, provenance, and undo stack."""
-    p1 = people.create_person(name="Fail Spouse 1", gender="male")["id"]
-    p2 = people.create_person(name="Fail Spouse 2", gender="female")["id"]
+    p1 = people.create_person(name="Fail Spouse  One", gender="male")["id"]
+    p2 = people.create_person(name="Fail Spouse  Two", gender="female")["id"]
 
     before = _snapshot_tables("marriages", "sources", "fact_sources")
     stack_before = len(mutation_history._MUTATION_STACK)
@@ -635,10 +635,10 @@ def test_sibling_group_injected_failure_rolls_back_members_and_group(isolated):
 
 def test_multi_member_default_sibling_group_create(isolated):
     """Explicit default sibling groups support >= 2 members (e.g. 3 or 4 siblings)."""
-    p1 = people.create_person(name="Multi 1")["id"]
-    p2 = people.create_person(name="Multi 2")["id"]
-    p3 = people.create_person(name="Multi 3")["id"]
-    p4 = people.create_person(name="Multi 4")["id"]
+    p1 = people.create_person(name="Multi  One")["id"]
+    p2 = people.create_person(name="Multi  Two")["id"]
+    p3 = people.create_person(name="Multi  Three")["id"]
+    p4 = people.create_person(name="Multi  Four")["id"]
 
     res = family.add_sibling_group(member_ids=[p1, p2, p3, p4])
     assert res["ok"] is True
@@ -659,9 +659,9 @@ def test_multi_member_default_sibling_group_create(isolated):
 
 def test_full_sibling_group_rejects_more_than_two_members(isolated):
     """Full-sibling group type requires exactly 2 members in both service and preview."""
-    p1 = people.create_person(name="Full Sib 1")["id"]
-    p2 = people.create_person(name="Full Sib 2")["id"]
-    p3 = people.create_person(name="Full Sib 3")["id"]
+    p1 = people.create_person(name="Full Sib  One")["id"]
+    p2 = people.create_person(name="Full Sib  Two")["id"]
+    p3 = people.create_person(name="Full Sib  Three")["id"]
 
     with pytest.raises(errors.ValidationError) as exc:
         family.add_sibling_group(member_ids=[p1, p2, p3], type_="full")
@@ -674,9 +674,9 @@ def test_full_sibling_group_rejects_more_than_two_members(isolated):
 
 def test_multi_member_sibling_group_undo_restores_exact_members_and_order(isolated):
     """Undo of multi-member sibling group restores exact member IDs and order sequence."""
-    p1 = people.create_person(name="Ord Sib 1")["id"]
-    p2 = people.create_person(name="Ord Sib 2")["id"]
-    p3 = people.create_person(name="Ord Sib 3")["id"]
+    p1 = people.create_person(name="Ord Sib  One")["id"]
+    p2 = people.create_person(name="Ord Sib  Two")["id"]
+    p3 = people.create_person(name="Ord Sib  Three")["id"]
 
     add_res = family.add_sibling_group(member_ids=[p1, p2, p3], ordered=True)
     grp_id = add_res["id"]
@@ -703,8 +703,8 @@ def test_multi_member_sibling_group_undo_restores_exact_members_and_order(isolat
 
 def test_preview_validation_matches_commit_validation(isolated):
     """Preview validity aligns with commit validity for duplicates and constraints."""
-    p1 = people.create_person(name="Parity P1")["id"]
-    p2 = people.create_person(name="Parity P2")["id"]
+    p1 = people.create_person(name="Parity P One")["id"]
+    p2 = people.create_person(name="Parity P Two")["id"]
 
     # 1. Parent-child duplicate
     family.add_parent_child(parent_id=p1, child_id=p2)

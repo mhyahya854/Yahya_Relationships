@@ -6,6 +6,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -15,15 +16,13 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(HERE, "../..");
-const REPO = resolve(ROOT, "..");
-const SHOTS = resolve(REPO, "Documentation/UI-Screenshots");
+const ROOT = realpathSync.native(resolve(HERE, "../.."));
+const SHOTS = process.env.MOSAIC_NAVIGATION_SHOTS
+  ? resolve(process.env.MOSAIC_NAVIGATION_SHOTS)
+  : resolve(tmpdir(), `mosaic-navigation-synthetic-shots-${process.pid}`);
 const EDGE = existsSync("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe")
   ? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
   : "C:/Program Files/Microsoft/Edge/Application/msedge.exe";
-const PROD_DB = resolve(REPO, "Database/Main/family.db");
-const PROD_PEOPLE = resolve(REPO, "Database/People");
-const PROD_BACKUPS = resolve(REPO, "Backups");
 const REAL_BOOTSTRAP = join(process.env.APPDATA ?? "", "people-relationships", "bootstrap.json");
 
 function sha256(path) {
@@ -49,9 +48,6 @@ function collectFiles(root) {
 }
 
 const production = {
-  db: sha256(PROD_DB),
-  journals: collectFiles(PROD_PEOPLE).filter((row) => row.path.endsWith("/journal.md")),
-  backups: collectFiles(PROD_BACKUPS),
   bootstrap: existsSync(REAL_BOOTSTRAP)
     ? { exists: true, bytes: statSync(REAL_BOOTSTRAP).size, hash: sha256(REAL_BOOTSTRAP) }
     : { exists: false },
@@ -116,10 +112,7 @@ function stop(child) {
     try { child.kill("SIGKILL"); } catch {}
   }
 }
-function verifyProduction() {
-  if (sha256(PROD_DB) !== production.db) throw new Error("Production database changed");
-  if (JSON.stringify(collectFiles(PROD_PEOPLE).filter((row) => row.path.endsWith("/journal.md"))) !== JSON.stringify(production.journals)) throw new Error("Production Journals changed");
-  if (JSON.stringify(collectFiles(PROD_BACKUPS)) !== JSON.stringify(production.backups)) throw new Error("Production Backups changed");
+function verifyRealBootstrap() {
   const now = existsSync(REAL_BOOTSTRAP)
     ? { exists: true, bytes: statSync(REAL_BOOTSTRAP).size, hash: sha256(REAL_BOOTSTRAP) }
     : { exists: false };
@@ -209,8 +202,6 @@ async function nav(label) {
 }
 
 try {
-  if (production.db !== "3258C738F9D65B23B15970D0E1E7389E8584A35BA8E26030249061BAF74E096E") throw new Error("Unexpected production DB baseline");
-  if (production.journals.length !== 35 || production.backups.length === 0) throw new Error("Unexpected production inventory baseline");
   await waitForUrl("http://127.0.0.1:8765/api/health");
   await waitForUrl("http://localhost:1420");
   browser = await puppeteer.launch({ executablePath: EDGE, headless: "new", args: ["--disable-gpu", "--no-first-run", "--no-sandbox", "--edge-skip-compat-layer-relaunch"], defaultViewport: { width: 1500, height: 1000 } });
@@ -398,12 +389,12 @@ try {
   if (forbiddenDialogs !== 0) throw new Error(`Browser dialogs called: ${forbiddenDialogs}`);
   if (consoleErrors.length) throw new Error(`Unexpected browser errors: ${consoleErrors.join(" | ")}`);
   step("Journey has no browser dialogs or unexpected console errors");
-  verifyProduction();
+  verifyRealBootstrap();
   console.log(`\nALL ${passed} NAVIGATION / OVERALL UX E2E CHECKS PASSED\n`);
 } finally {
   if (browser) await browser.close();
   if (!backendStopped) stop(backend);
   stop(vite);
   rmSync(sandbox, { recursive: true, force: true });
-  verifyProduction();
+  verifyRealBootstrap();
 }

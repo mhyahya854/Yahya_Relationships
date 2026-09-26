@@ -1,6 +1,8 @@
-# Mosaic Phase 12 — Independent Audit Handoff
+# Mosaic Phase 12 — Implementation Handoff
 
-Status: **PROVISIONALLY IMPLEMENTED — INDEPENDENT AUDIT REQUIRED.** Phase 12 is not frozen. Phase 13 is not started or authorized by this handoff.
+Status: **IMPLEMENTED — FINAL SYSTEM AUDIT PENDING.** The current branch tip separates public code from the private Data Root and claims approved Raw files into operation-owned quarantine before copying. Windows uses handle-bound cleanup; macOS and Linux retain the claimed source with an explicit cleanup-pending state when safe identity-bound removal is unavailable. Phase 11 remains frozen and Phase 13 has not started.
+
+Sol's implementation tests, independent Terra and Luna attacks, repair rechecks, full regression, privacy gates, normal push, and remote verification form this phase's gate. Passing it sets **IMPLEMENTED — FINAL SYSTEM AUDIT PENDING**; a separate per-phase independent audit is not required. Historical public commits still contain pre-separation private material. This task sanitizes the current branch tip only; history cleanup is a later dedicated operation, without a force push here.
 
 ## What changed
 
@@ -13,7 +15,8 @@ Phase 12 advances only the raw-intake foundation:
 - ZIP inspection reads central-directory metadata only. It never extracts a member and records malformed, unsafe-path, and suspicious conditions.
 - The generic classification boundary is intentionally coarse: image, video, audio, document, archive, social/location/phone candidates, folder/container, and unknown. Candidate labels are not parsed facts.
 - A human may select one current generic provenance destination under `Database/Sources/`. No media, event, person, relationship, social, or location canonical destination exists in this phase.
-- Approval is distinct from moving. The move engine rehashes the current source, writes and hashes a staging copy, publishes to an absent destination, verifies that destination, then removes the source. Interrupted verified moves are recovered explicitly.
+- Approval is distinct from moving. The move engine claims the exact source into operation-owned quarantine without replacing an existing path, rehashes it, writes and hashes a staging copy, publishes to an absent destination, and verifies that destination. Windows cleanup is bound to the claimed handle; other platforms retain the quarantined source and surface cleanup pending. Interrupted moves are recovered explicitly.
+- Schema 4 already persists operation identity, status, and error details. `CLEANUP_PENDING` uses the existing error field and an operation-ID-derived quarantine path, so the move repair does not silently change schema-4 semantics or require a schema-5 migration. On platforms without identity-bound deletion, a completed move retains its verified source indefinitely; relocation verifies and copies that operation-owned quarantine payload, while unknown or changed payloads block relocation.
 - SQLite is authoritative for `raw_processing_history.md`; event markers make the append projection idempotent and a SQLite outbox makes history-write recovery possible.
 - Backups include the schema-4 metadata database and history projection, while deliberately excluding `Raw/` binaries. Restore switches the matching history projection with the database/people/config generation or removes a newer projection when restoring an older canonical snapshot.
 - The established application shell now has a Raw navigation destination with filters, search, detail/provenance, correction, decision, recovery, and separated approval/move controls. The global Search surface remains unchanged.
@@ -30,14 +33,19 @@ Phase 12 advances only the raw-intake foundation:
 
 ## Verification material
 
-- [Verification record](../Testing/phase12-raw-intake-verification.md)
-- [Raw UI evidence manifest](../UI-Screenshots/Phase12-Raw/MANIFEST.md)
+- [Synthetic Raw UI evidence manifest](../UI-Screenshots/Phase12-Raw-Synthetic/MANIFEST.md)
 - `Codebase/Tests/Backend/test_phase12_raw_intake.py`
 - `Codebase/Tests/UI/raw_e2e.mjs`
 
-The verification record identifies the executed tests, the read-only production baseline, and the completed controlled production upgrade. The final release result adds the final commit and remote verification evidence.
+Private verification evidence is retained outside public source. The final whole-app adversarial audit remains part of whole-app QA and pre-release, after the implementation phases.
 
-## Independent audit checklist
+## In-phase verification
+
+Terra independently found that completed cleanup-pending quarantine on macOS and Linux blocked Data Root relocation. The repair verifies and copies the retained operation-owned payload during relocation. Luna independently found that dangling Windows junctions could escape relocation preflight; both nested and top-level runtime links now fail closed before safety-backup creation. Both findings were reproduced with disposable synthetic roots, repaired, and independently rechecked.
+
+The final local regression collected 595 backend tests (592 passed, 3 platform skips); all 12 UI suites passed, including 50 Data Root, 5 Raw, 18 Navigation, and 110 visual checks. A data-free export passed the same backend suite. Windows desktop check/test, installer build, installed-app persistence and uninstall checks, package audit, and the keyed current-tree privacy gate passed. The private verification record remains outside public Git.
+
+## Topics for the later final system audit
 
 - [ ] Confirm schema 3 production input receives exactly one verified `Pre-Upgrade` backup before Phase 12 migration.
 - [ ] Compare production database/journal/Raw inventories before and after schema migration; the completed run recorded the expected schema-4 Raw metadata structure, one verified safety backup, and an empty history projection.
@@ -49,4 +57,4 @@ The verification record identifies the executed tests, the read-only production 
 - [ ] Inspect the browser evidence against the actual controls and repeat the UI flow with a synthetic root.
 - [ ] Confirm no deferred processor or Phase 13 behavior has entered the code path.
 
-An audit finding should be fixed narrowly, re-verified, and returned to this provisional state until an independent auditor explicitly approves a freeze.
+Later final-system findings require narrow repair and regression verification; this phase does not claim permanent certification.
