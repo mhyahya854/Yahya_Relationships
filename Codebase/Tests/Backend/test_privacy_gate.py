@@ -116,3 +116,48 @@ def test_package_audit_checks_app_owned_binary_while_tolerating_vendor_build_pat
     ok, violations = module.audit_directory(bundle)
     assert not ok
     assert any(path.endswith("usr/bin/mosaic") and reason == "Absolute user-profile path" for path, reason in violations)
+
+
+def test_package_audit_limits_vendor_run_digests_to_exact_appimage(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "Packaging" / "Scripts" / "audit_package.py"
+    specification = importlib.util.spec_from_file_location("mosaic_package_audit_digest_test", script)
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    module._PRIVACY_KEY = bytes.fromhex("22" * 32)
+    module._SIGNATURES = set()
+    vendor_run = b"stencil-export=/" + b"home/vendor/dev/RESOURCES/synthetic.svg"
+    approved = hashlib.sha256(vendor_run).hexdigest()
+    module._APPIMAGE_VENDOR_PROFILE_DIGESTS = frozenset({approved})
+    bundle = tmp_path / "bundle"
+    appdir = bundle / "appimage" / "Mosaic.AppDir"
+    appdir.mkdir(parents=True)
+    version = json.loads((Path(__file__).resolve().parents[2] / "Desktop" / "Tauri" / "tauri.conf.json").read_text(encoding="utf-8"))["version"]
+    appimage = appdir.parent / f"Mosaic_{version}_amd64.AppImage"
+    appimage.write_bytes(b"\0" + vendor_run)
+    assert module.audit_directory(bundle)[0]
+
+    appimage.write_bytes(b"\0" + vendor_run + b"-changed")
+    assert not module.audit_directory(bundle)[0]
+    appimage.write_bytes(b"\0" + vendor_run)
+    other_version = appdir.parent / "Mosaic_0.0.0_amd64.AppImage"
+    appimage.rename(other_version)
+    assert not module.audit_directory(bundle)[0]
+    other_version.rename(appimage)
+    unrelated = appdir.parent / "Evil.AppImage"
+    unrelated.write_bytes(b"\0" + vendor_run)
+    assert not module.audit_directory(bundle)[0]
+    unrelated.unlink()
+
+    module._SIGNATURES = {hmac.new(module._PRIVACY_KEY, b"synthetic", hashlib.sha256).hexdigest()}
+    assert module.scan_package_bytes(
+        b"\0" + vendor_run,
+        allowed_profile_run_digests=frozenset({approved}),
+    ) == "Known private identity literal"
+    database = tmp_path / "synthetic.db"
+    connection = sqlite3.connect(database)
+    connection.execute("CREATE TABLE synthetic (id INTEGER)")
+    connection.close()
+    assert module.scan_package_bytes(
+        b"\0" + vendor_run + b"\0" + database.read_bytes(),
+        allowed_profile_run_digests=frozenset({approved}),
+    ) == "Embedded SQLite database"

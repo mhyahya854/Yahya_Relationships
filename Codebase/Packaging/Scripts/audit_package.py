@@ -7,11 +7,11 @@ are packaged into distribution releases.
 """
 
 import argparse
+import hashlib
 import io
 import json
 import os
 import re
-import subprocess
 import sys
 import tarfile
 import zipfile
@@ -27,6 +27,12 @@ _SYSTEM_GTK_CANDIDATES = (
     Path("/usr/lib/x86_64-linux-gnu/libgtk-3.so.0"),
     Path("/lib/x86_64-linux-gnu/libgtk-3.so.0"),
 )
+# Two exact printable runs from third-party SVG metadata in the outer AppImage.
+# Any changed vendor run fails the release audit until reviewed again.
+_APPIMAGE_VENDOR_PROFILE_DIGESTS = frozenset({
+    "5e44746a143790d00fb08f302d06932cf86d28b39a7ada15f4b359b4bceed2f4",
+    "e63843255dcaf2a07c7312b54e716833732a1b4b14bd1a14fae4a8eb9f189fc0",
+})
 
 # Patterns that indicate private family data, databases, or developer environments
 FORBIDDEN_NAME_PATTERNS = [
@@ -148,9 +154,8 @@ def audit_directory(directory: Path) -> Tuple[bool, List[Tuple[str, str]]]:
             reason = scan_package_bytes(
                 content,
                 allowed_profile_runs=appdir_profile_runs if mirrored_appimage else vendor_profile_runs,
+                allowed_profile_run_digests=_APPIMAGE_VENDOR_PROFILE_DIGESTS if mirrored_appimage else None,
             )
-            if mirrored_appimage and reason == "Absolute user-profile path":
-                _report_encrypted_appimage_profiles(content, appdir_profile_runs or set())
             if reason:
                 content_violations.append((rel, reason))
 
@@ -185,33 +190,10 @@ def _profile_runs(content: bytes) -> set[str]:
     }
 
 
-def _report_encrypted_appimage_profiles(content: bytes, allowed: set[str]) -> None:
-    """Keep CI-only failure evidence private while identifying an AppImage wrapper string."""
-    if os.environ.get("GITHUB_ACTIONS") != "true":
-        return
-    workspace = os.environ.get("GITHUB_WORKSPACE", "")
-    for run in sorted(_profile_runs(content) - allowed)[:5]:
-        try:
-            result = subprocess.run(
-                ["openssl", "enc", "-aes-256-cbc", "-salt", "-pbkdf2", "-base64", "-A",
-                 "-pass", "env:MOSAIC_PRIVACY_HMAC_KEY"],
-                input=run.encode("ascii"), capture_output=True, check=False,
-            )
-        except OSError:
-            continue
-        if result.returncode == 0:
-            print(
-                "APPIMAGE_PROFILE_DIAGNOSTIC "
-                f"length={len(run)} offset={content.find(run.encode('ascii'))} "
-                f"workspace={bool(workspace and workspace in run)} "
-                f"ciphertext={result.stdout.decode('ascii')}",
-                file=sys.stderr,
-            )
-
-
 def scan_package_bytes(
     content: bytes, *, check_profile: bool = True,
     allowed_profile_runs: set[str] | None = None,
+    allowed_profile_run_digests: frozenset[str] | None = None,
 ) -> str | None:
     if _contains_sqlite_database(content):
         return "Embedded SQLite database"
@@ -223,8 +205,12 @@ def scan_package_bytes(
     else:
         samples = (content.decode("utf-8", "replace"),)
     for sample in samples:
-        if check_profile and ABSOLUTE_PROFILE.search(sample) and sample not in (allowed_profile_runs or ()):
-            return "Absolute user-profile path"
+        if check_profile and ABSOLUTE_PROFILE.search(sample):
+            allowed = sample in (allowed_profile_runs or ())
+            if not allowed and allowed_profile_run_digests:
+                allowed = sample.isascii() and hashlib.sha256(sample.encode("ascii")).hexdigest() in allowed_profile_run_digests
+            if not allowed:
+                return "Absolute user-profile path"
         if _private_hits(sample, _PRIVACY_KEY, _SIGNATURES):
             return "Known private identity literal"
     return None
