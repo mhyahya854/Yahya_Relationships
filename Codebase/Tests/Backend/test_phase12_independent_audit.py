@@ -252,7 +252,10 @@ def test_approval_is_bound_to_exact_proposal_not_timestamp_order(tmp_path: Path)
         ("move_after_destination_verify", True, True),
         ("move_after_destination_verified", True, True),
         ("move_before_source_removal", True, True),
-        ("move_during_source_removal", True, True),
+        pytest.param(
+            "move_during_source_removal", True, True,
+            marks=pytest.mark.skipif(os.name != "nt", reason="Only Windows performs identity-bound source removal"),
+        ),
         ("move_after_source_removal", True, True),
         ("move_before_db_completion", True, True),
         ("move_after_db_completion_before_history", True, False),
