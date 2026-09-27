@@ -115,9 +115,16 @@ def build(root: Path, *, include_backup: bool = False) -> dict[str, str]:
         connection.execute("INSERT OR REPLACE INTO metadata (key,value) VALUES ('revision','1')")
         connection.execute("INSERT INTO general_relationships (person_a,person_b,type,directionality) VALUES (?,?,'friend','symmetric')",
                            tuple(sorted((identifiers["Mira Rahim"], identifiers["Darya Sol"]))))
+        connection.execute(
+            "INSERT INTO general_relationships (person_a,person_b,type,directionality,direction_from) "
+            "VALUES (?,?,'mentor','directional',?)",
+            (*sorted((identifiers["Darya Sol"], identifiers["Quinn Aster"])), identifiers["Darya Sol"]),
+        )
     journal = root / "People" / "Me" / identifiers["Mira Rahim"] / "journal(personal thoughts).md"
     journal.write_text("# Synthetic journal\n\nThe garden concert was fictional.\n", encoding="utf-8")
-    (root / "Raw" / "synthetic-note.txt").write_text("Synthetic Raw intake sample.\n", encoding="utf-8")
+    raw_sample = "Synthetic Raw intake sample.\n"
+    (root / "Raw" / "synthetic-note.txt").write_text(raw_sample, encoding="utf-8")
+    (root / "Raw" / "synthetic-note-copy.txt").write_text(raw_sample, encoding="utf-8")
     (root / "Database" / "Config" / "state.json").write_text(
         json.dumps({"perspective_person_id": identifiers["Mira Rahim"]}) + "\n", encoding="utf-8")
     if include_backup:
