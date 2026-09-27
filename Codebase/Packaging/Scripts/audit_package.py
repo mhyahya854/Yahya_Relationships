@@ -117,6 +117,7 @@ def audit_directory(directory: Path) -> Tuple[bool, List[Tuple[str, str]]]:
         release_version = None
     expected_appimage = f"appimage/Mosaic_{release_version}_amd64.AppImage" if release_version else None
     appdir = directory / "appimage" / "Mosaic.AppDir"
+    appdir_profile_runs: set[str] | None = None
     for root, dirs, files in os.walk(directory):
         # Also check directory names themselves
         for d in dirs:
@@ -132,12 +133,21 @@ def audit_directory(directory: Path) -> Tuple[bool, List[Tuple[str, str]]]:
             # their own build-machine paths. The expanded AppDir is audited
             # separately, including every app-owned executable and sidecar.
             content = full_path.read_bytes()
-            vendor_runtime = (
-                rel == "appimage/Mosaic.AppDir/usr/lib/libgtk-3.so.0"
-                and any(candidate.is_file() and candidate.read_bytes() == content for candidate in _SYSTEM_GTK_CANDIDATES)
-            )
+            vendor_profile_runs: set[str] = set()
+            if rel == "appimage/Mosaic.AppDir/usr/lib/libgtk-3.so.0":
+                for candidate in _SYSTEM_GTK_CANDIDATES:
+                    if candidate.is_file():
+                        vendor_profile_runs.update(_profile_runs(candidate.read_bytes()))
             mirrored_appimage = rel == expected_appimage and appdir.is_dir()
-            reason = scan_package_bytes(content, check_profile=not (vendor_runtime or mirrored_appimage))
+            if mirrored_appimage and appdir_profile_runs is None:
+                appdir_profile_runs = set()
+                for app_file in appdir.rglob("*"):
+                    if app_file.is_file():
+                        appdir_profile_runs.update(_profile_runs(app_file.read_bytes()))
+            reason = scan_package_bytes(
+                content,
+                allowed_profile_runs=appdir_profile_runs if mirrored_appimage else vendor_profile_runs,
+            )
             if reason:
                 content_violations.append((rel, reason))
 
@@ -164,7 +174,18 @@ def _contains_sqlite_database(content: bytes) -> bool:
     return False
 
 
-def scan_package_bytes(content: bytes, *, check_profile: bool = True) -> str | None:
+def _profile_runs(content: bytes) -> set[str]:
+    return {
+        run.decode("ascii", "ignore")
+        for run in re.findall(rb"[\x20-\x7e]{6,}", content)
+        if ABSOLUTE_PROFILE.search(run.decode("ascii", "ignore"))
+    }
+
+
+def scan_package_bytes(
+    content: bytes, *, check_profile: bool = True,
+    allowed_profile_runs: set[str] | None = None,
+) -> str | None:
     if _contains_sqlite_database(content):
         return "Embedded SQLite database"
     if len(content) > 256 * 1024 * 1024:
@@ -175,7 +196,7 @@ def scan_package_bytes(content: bytes, *, check_profile: bool = True) -> str | N
     else:
         samples = (content.decode("utf-8", "replace"),)
     for sample in samples:
-        if check_profile and ABSOLUTE_PROFILE.search(sample):
+        if check_profile and ABSOLUTE_PROFILE.search(sample) and sample not in (allowed_profile_runs or ()):
             return "Absolute user-profile path"
         if _private_hits(sample, _PRIVACY_KEY, _SIGNATURES):
             return "Known private identity literal"

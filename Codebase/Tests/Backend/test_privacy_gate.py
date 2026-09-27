@@ -81,10 +81,18 @@ def test_package_audit_checks_app_owned_binary_while_tolerating_vendor_build_pat
     trusted_library.write_bytes(library.read_bytes())
     module._SYSTEM_GTK_CANDIDATES = (trusted_library,)
     version = json.loads((Path(__file__).resolve().parents[2] / "Desktop" / "Tauri" / "tauri.conf.json").read_text(encoding="utf-8"))["version"]
-    (appdir.parent / f"Mosaic_{version}_amd64.AppImage").write_bytes(vendor_profile)
+    appimage = appdir.parent / f"Mosaic_{version}_amd64.AppImage"
+    appimage.write_bytes(vendor_profile)
     app_binary = appdir / "usr" / "bin" / "mosaic"
     app_binary.parent.mkdir(parents=True)
     app_binary.write_bytes(b"\0safe application")
+    assert module.audit_directory(bundle)[0]
+    appimage.write_bytes(private_profile)
+    ok, violations = module.audit_directory(bundle)
+    assert not ok
+    assert any(path.endswith(appimage.name) and reason == "Absolute user-profile path" for path, reason in violations)
+    appimage.write_bytes(vendor_profile)
+    library.write_bytes(vendor_profile + b"\0packager-patched")
     assert module.audit_directory(bundle)[0]
     unrelated = appdir.parent / "Evil.AppImage"
     unrelated.write_bytes(private_profile)
