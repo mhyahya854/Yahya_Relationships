@@ -127,6 +127,9 @@ def build(root: Path, *, include_backup: bool = False) -> dict[str, str]:
     (root / "Raw" / "synthetic-note-copy.txt").write_text(raw_sample, encoding="utf-8")
     (root / "Database" / "Config" / "state.json").write_text(
         json.dumps({"perspective_person_id": identifiers["Mira Rahim"]}) + "\n", encoding="utf-8")
+    from app.backend.domain import raw_intake
+
+    raw_intake.scan_raw(root)
     if include_backup:
         from app.backend.domain.backups import create_backup
 
