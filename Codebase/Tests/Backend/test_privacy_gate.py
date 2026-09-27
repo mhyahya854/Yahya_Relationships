@@ -3,6 +3,8 @@
 import hashlib
 import hmac
 import importlib.util
+import json
+import sqlite3
 import subprocess
 from pathlib import Path
 
@@ -40,7 +42,7 @@ def test_gate_rejects_private_roots_identity_paths_and_uncertified_images(tmp_pa
     assert any(item.startswith("uncertified screenshot:") for item in problems)
 
 
-def test_package_content_scan_detects_identity_and_database():
+def test_package_content_scan_detects_identity_and_database(tmp_path):
     script = Path(__file__).resolve().parents[2] / "Packaging" / "Scripts" / "audit_package.py"
     specification = importlib.util.spec_from_file_location("mosaic_package_audit_test", script)
     module = importlib.util.module_from_spec(specification)
@@ -49,5 +51,60 @@ def test_package_content_scan_detects_identity_and_database():
     module._PRIVACY_KEY = key
     module._SIGNATURES = {hmac.new(key, b"fictional person", hashlib.sha256).hexdigest()}
     assert module.scan_package_bytes(b"compiled literal: Fictional Person") == "Known private identity literal"
-    assert module.scan_package_bytes(b"SQLite format 3\0payload") == "Embedded SQLite database"
+    database_path = tmp_path / "synthetic.db"
+    connection = sqlite3.connect(database_path)
+    connection.execute("CREATE TABLE synthetic (id INTEGER)")
+    connection.close()
+    database = database_path.read_bytes()
+    assert module.scan_package_bytes(b"binary prefix" + database) == "Embedded SQLite database"
+    assert module.scan_package_bytes(b"SQLite format 3\0payload") is None
+    assert module.scan_package_bytes(b"\0/" + b"home/vendor/build", check_profile=False) is None
+    assert module.scan_package_bytes(b"\0Fictional Person", check_profile=False) == "Known private identity literal"
     assert module.scan_package_bytes(b"safe application schema") is None
+
+
+def test_package_audit_checks_app_owned_binary_while_tolerating_vendor_build_paths(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "Packaging" / "Scripts" / "audit_package.py"
+    specification = importlib.util.spec_from_file_location("mosaic_package_audit_vendor_test", script)
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    module._PRIVACY_KEY = bytes.fromhex("22" * 32)
+    module._SIGNATURES = set()
+    vendor_profile = b"\0/" + b"home/vendor/build"
+    private_profile = b"\0/" + b"home/somebody/private"
+    bundle = tmp_path / "bundle"
+    appdir = bundle / "appimage" / "Mosaic.AppDir"
+    library = appdir / "usr" / "lib" / "libgtk-3.so.0"
+    library.parent.mkdir(parents=True)
+    library.write_bytes(vendor_profile)
+    trusted_library = tmp_path / "trusted-system-libgtk.so"
+    trusted_library.write_bytes(library.read_bytes())
+    module._SYSTEM_GTK_CANDIDATES = (trusted_library,)
+    version = json.loads((Path(__file__).resolve().parents[2] / "Desktop" / "Tauri" / "tauri.conf.json").read_text(encoding="utf-8"))["version"]
+    (appdir.parent / f"Mosaic_{version}_amd64.AppImage").write_bytes(vendor_profile)
+    app_binary = appdir / "usr" / "bin" / "mosaic"
+    app_binary.parent.mkdir(parents=True)
+    app_binary.write_bytes(b"\0safe application")
+    assert module.audit_directory(bundle)[0]
+    unrelated = appdir.parent / "Evil.AppImage"
+    unrelated.write_bytes(private_profile)
+    ok, violations = module.audit_directory(bundle)
+    assert not ok
+    assert any(path.endswith("Evil.AppImage") and reason == "Absolute user-profile path" for path, reason in violations)
+    unrelated.unlink()
+    nested = bundle / "attacker" / "usr" / "lib" / "libgtk-3.so.0"
+    nested.parent.mkdir(parents=True)
+    nested.write_bytes(private_profile)
+    ok, violations = module.audit_directory(bundle)
+    assert not ok
+    assert any(path.endswith("attacker/usr/lib/libgtk-3.so.0") and reason == "Absolute user-profile path" for path, reason in violations)
+    nested.unlink()
+    library.write_bytes(private_profile)
+    ok, violations = module.audit_directory(bundle)
+    assert not ok
+    assert any(path.endswith("Mosaic.AppDir/usr/lib/libgtk-3.so.0") and reason == "Absolute user-profile path" for path, reason in violations)
+    library.write_bytes(trusted_library.read_bytes())
+    app_binary.write_bytes(private_profile)
+    ok, violations = module.audit_directory(bundle)
+    assert not ok
+    assert any(path.endswith("usr/bin/mosaic") and reason == "Absolute user-profile path" for path, reason in violations)

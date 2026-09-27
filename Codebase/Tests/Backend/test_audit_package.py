@@ -6,6 +6,7 @@ legitimate compiled application assets.
 """
 
 import zipfile
+import sqlite3
 from pathlib import Path
 import sys
 
@@ -107,10 +108,17 @@ def test_audit_catches_violation_in_zip_archive(tmp_path: Path):
 def test_audit_binary_detects_embedded_sqlite_header(tmp_path: Path):
     """Verifies that raw binary scan catches intact embedded SQLite database header."""
     fake_exe = tmp_path / "installer.exe"
-    # Construct binary containing b"SQLite format 3\x00"
-    content = b"MZ" + b"\x00" * 500 + b"SQLite format 3\x00" + b"\x00" * 200
+    database_path = tmp_path / "synthetic.db"
+    connection = sqlite3.connect(database_path)
+    connection.execute("CREATE TABLE synthetic (id INTEGER)")
+    connection.close()
+    database = database_path.read_bytes()
+    content = b"MZ" + b"\x00" * 500 + database
     fake_exe.write_bytes(content)
 
     ok, violations = audit_package.audit_binary_heuristics(fake_exe)
     assert ok is False
     assert len(violations) > 0
+
+    fake_exe.write_bytes(b"MZ" + b"\x00" * 500 + b"SQLite format 3\x00" + b"\x00" * 200)
+    assert audit_package.audit_binary_heuristics(fake_exe)[0]

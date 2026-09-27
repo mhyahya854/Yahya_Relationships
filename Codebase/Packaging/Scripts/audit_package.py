@@ -22,6 +22,10 @@ from privacy_gate import ABSOLUTE_PROFILE, _private_hits  # noqa: E402
 
 _PRIVACY_KEY = b""
 _SIGNATURES: set[str] = set()
+_SYSTEM_GTK_CANDIDATES = (
+    Path("/usr/lib/x86_64-linux-gnu/libgtk-3.so.0"),
+    Path("/lib/x86_64-linux-gnu/libgtk-3.so.0"),
+)
 
 # Patterns that indicate private family data, databases, or developer environments
 FORBIDDEN_NAME_PATTERNS = [
@@ -106,6 +110,13 @@ def audit_directory(directory: Path) -> Tuple[bool, List[Tuple[str, str]]]:
 
     all_files: List[str] = []
     content_violations: List[Tuple[str, str]] = []
+    config_path = Path(__file__).resolve().parents[2] / "Desktop" / "Tauri" / "tauri.conf.json"
+    try:
+        release_version = json.loads(config_path.read_text(encoding="utf-8"))["version"]
+    except (OSError, ValueError, KeyError):
+        release_version = None
+    expected_appimage = f"appimage/Mosaic_{release_version}_amd64.AppImage" if release_version else None
+    appdir = directory / "appimage" / "Mosaic.AppDir"
     for root, dirs, files in os.walk(directory):
         # Also check directory names themselves
         for d in dirs:
@@ -117,7 +128,16 @@ def audit_directory(directory: Path) -> Tuple[bool, List[Tuple[str, str]]]:
             full_path = Path(root) / f
             rel = full_path.relative_to(directory).as_posix()
             all_files.append(rel)
-            reason = scan_package_bytes(full_path.read_bytes())
+            # The AppImage runtime and bundled distro GTK library can contain
+            # their own build-machine paths. The expanded AppDir is audited
+            # separately, including every app-owned executable and sidecar.
+            content = full_path.read_bytes()
+            vendor_runtime = (
+                rel == "appimage/Mosaic.AppDir/usr/lib/libgtk-3.so.0"
+                and any(candidate.is_file() and candidate.read_bytes() == content for candidate in _SYSTEM_GTK_CANDIDATES)
+            )
+            mirrored_appimage = rel == expected_appimage and appdir.is_dir()
+            reason = scan_package_bytes(content, check_profile=not (vendor_runtime or mirrored_appimage))
             if reason:
                 content_violations.append((rel, reason))
 
@@ -128,8 +148,24 @@ def audit_directory(directory: Path) -> Tuple[bool, List[Tuple[str, str]]]:
     return paths_ok and not content_violations, path_violations + content_violations
 
 
-def scan_package_bytes(content: bytes) -> str | None:
-    if b"SQLite format 3\x00" in content:
+def _contains_sqlite_database(content: bytes) -> bool:
+    magic = b"SQLite format 3\x00"
+    start = content.find(magic)
+    while start >= 0:
+        header = content[start:start + 100]
+        if len(header) == 100:
+            page_size = int.from_bytes(header[16:18], "big")
+            if (page_size == 1 or 512 <= page_size <= 32768 and page_size & (page_size - 1) == 0) and (
+                header[18] in (1, 2) and header[19] in (1, 2)
+                and header[21:24] == bytes((64, 32, 32))
+            ):
+                return True
+        start = content.find(magic, start + 1)
+    return False
+
+
+def scan_package_bytes(content: bytes, *, check_profile: bool = True) -> str | None:
+    if _contains_sqlite_database(content):
         return "Embedded SQLite database"
     if len(content) > 256 * 1024 * 1024:
         return "Asset exceeds privacy scan limit"
@@ -139,7 +175,7 @@ def scan_package_bytes(content: bytes) -> str | None:
     else:
         samples = (content.decode("utf-8", "replace"),)
     for sample in samples:
-        if ABSOLUTE_PROFILE.search(sample):
+        if check_profile and ABSOLUTE_PROFILE.search(sample):
             return "Absolute user-profile path"
         if _private_hits(sample, _PRIVACY_KEY, _SIGNATURES):
             return "Known private identity literal"
