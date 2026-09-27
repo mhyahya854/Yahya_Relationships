@@ -11,6 +11,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import tarfile
 import zipfile
@@ -148,6 +149,8 @@ def audit_directory(directory: Path) -> Tuple[bool, List[Tuple[str, str]]]:
                 content,
                 allowed_profile_runs=appdir_profile_runs if mirrored_appimage else vendor_profile_runs,
             )
+            if mirrored_appimage and reason == "Absolute user-profile path":
+                _report_encrypted_appimage_profiles(content, appdir_profile_runs or set())
             if reason:
                 content_violations.append((rel, reason))
 
@@ -180,6 +183,30 @@ def _profile_runs(content: bytes) -> set[str]:
         for run in re.findall(rb"[\x20-\x7e]{6,}", content)
         if ABSOLUTE_PROFILE.search(run.decode("ascii", "ignore"))
     }
+
+
+def _report_encrypted_appimage_profiles(content: bytes, allowed: set[str]) -> None:
+    """Keep CI-only failure evidence private while identifying an AppImage wrapper string."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    workspace = os.environ.get("GITHUB_WORKSPACE", "")
+    for run in sorted(_profile_runs(content) - allowed)[:5]:
+        try:
+            result = subprocess.run(
+                ["openssl", "enc", "-aes-256-cbc", "-salt", "-pbkdf2", "-base64", "-A",
+                 "-pass", "env:MOSAIC_PRIVACY_HMAC_KEY"],
+                input=run.encode("ascii"), capture_output=True, check=False,
+            )
+        except OSError:
+            continue
+        if result.returncode == 0:
+            print(
+                "APPIMAGE_PROFILE_DIAGNOSTIC "
+                f"length={len(run)} offset={content.find(run.encode('ascii'))} "
+                f"workspace={bool(workspace and workspace in run)} "
+                f"ciphertext={result.stdout.decode('ascii')}",
+                file=sys.stderr,
+            )
 
 
 def scan_package_bytes(
