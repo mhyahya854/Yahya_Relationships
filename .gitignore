@@ -31,6 +31,7 @@
 /Media/
 /Mosaic - Local Private Data/
 /Local Private Data/
+/.mosaic-quarantine/
 /Documentation/Archive/family-revision-5-pre-sqlite.json
 /Documentation/Archive/
 /Documentation/Testing/
@@ -50,15 +51,15 @@ Thumbs.db
 .vscode/
 
 # Packaging binaries, sidecars, and installers
-Codebase/Desktop/Tauri/binaries/
-Codebase/Packaging/dist/
-Codebase/Packaging/build/
-Codebase/Packaging/release/*.exe
-Codebase/Packaging/release/*.msi
-Codebase/Packaging/release/*.dmg
-Codebase/Packaging/release/*.AppImage
-Codebase/Packaging/release/*.deb
-/Codebase/Packaging/release/
+/Desktop/Tauri/binaries/
+/Packaging/dist/
+/Packaging/build/
+/Packaging/release/*.exe
+/Packaging/release/*.msi
+/Packaging/release/*.dmg
+/Packaging/release/*.AppImage
+/Packaging/release/*.deb
+/Packaging/release/release-manifest-*.json
 *.exe
 *.msi
 *.dmg

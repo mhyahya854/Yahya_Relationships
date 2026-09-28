@@ -42,8 +42,8 @@ Mosaic follows a strict separation of concerns across its stack:
 ### Key Principles
 
 1. **Shared Application Code**:
-   - The React frontend (`Codebase/App/Frontend`) is 100% platform-agnostic.
-   - The FastAPI backend service (`Codebase/App/app/backend`) is 100% platform-agnostic.
+   - The React frontend (`App/Frontend`) is 100% platform-agnostic.
+   - The FastAPI backend service (`App/app/backend`) is 100% platform-agnostic.
    - The genealogy/kinship engine (`domain/family/engine.py`) is never duplicated or rewritten for different operating systems.
 2. **Platform-Specific Sidecar Binaries**:
    - Python code and dependencies are bundled using PyInstaller on native build runners per target platform.
@@ -60,7 +60,7 @@ Mosaic follows a strict separation of concerns across its stack:
 ## 2. Directory Structure
 
 ```text
-Codebase/
+Repository root/
 ├── Packaging/
 │   ├── Python/
 │   │   └── backend.spec          # PyInstaller spec bundling FastAPI/kinship engine
@@ -83,11 +83,15 @@ Codebase/
     └── app/backend/              # FastAPI backend & kinship engine
 ```
 
+Packaging starts at the repository root and is self-contained there. Its path
+guard rejects the sibling local private Data Root, including existing
+symlink/junction aliases, before it can be used as a build input or output.
+
 ---
 
 ## 3. Platform Sidecar Build Architecture
 
-The Python backend is packaged via PyInstaller using `Codebase/Packaging/Python/backend.spec`:
+The Python backend is packaged via PyInstaller using `Packaging/Python/backend.spec`:
 
 - **Bundled**:
   - FastAPI, Starlette, Uvicorn, Pydantic, SQLite3
@@ -114,7 +118,7 @@ The Python backend is packaged via PyInstaller using `Codebase/Packaging/Python/
 
 ## 4. Desktop Shell & Sidecar Lifecycle
 
-In `Codebase/Desktop/Tauri/src/lib.rs`:
+In `Desktop/Tauri/src/lib.rs`:
 
 1. **Port Negotiation**:
    - Finds an available loopback port starting from 8765.
@@ -145,9 +149,9 @@ The application cleanly separates:
 ### Bootstrap Pointers
 
 The active data root pointer is saved in standard OS configuration directories:
-- **Windows**: `%APPDATA%\people-relationships\config.json`
-- **macOS**: `~/Library/Application Support/people-relationships/config.json`
-- **Linux**: `~/.config/people-relationships/config.json` (or `$XDG_CONFIG_HOME/people-relationships/config.json`)
+- **Windows**: `%APPDATA%\people-relationships\bootstrap.json`
+- **macOS**: `~/Library/Application Support/people-relationships/bootstrap.json`
+- **Linux**: `~/.config/people-relationships/bootstrap.json` (or `$XDG_CONFIG_HOME/people-relationships/bootstrap.json`)
 
 ### Portable Data Root
 

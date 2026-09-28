@@ -12,8 +12,8 @@ screen can render several independently selected paths in React Flow.
 SQLite facts (Database/relationships.db; legacy roots use Database/Main/family.db before migration)
     |
     v
-Canonical Python family engine (Codebase/App/app/backend/domain/family/;
-    |   CLI wrapper Codebase/Scripts/build_family.py)
+Canonical Python family engine (App/app/backend/domain/family/;
+    |   CLI wrapper Scripts/build_family.py)
     |   one implementation, used by the legacy export, API, Hermes and UI
     v
 Path extraction (domain/relationships/path_service.py)
@@ -34,11 +34,11 @@ FastAPI (GET /api/relationships/{p}/{t}/paths)
 - `parent_child` rows (with role and kind: biological, adopted, step, foster,
   guardian, unknown, unspecified), `marriages`, `sibling_groups` and
   `general_relationships` are the stored facts.
-- The canonical kinship implementation in `Codebase/App/app/backend/domain/family/engine.py`
-  (wrapped by `Codebase/Scripts/build_family.py`) builds a biological parent graph, adds calculation-only
+- The canonical kinship implementation in `App/app/backend/domain/family/engine.py`
+  (wrapped by `Scripts/build_family.py`) builds a biological parent graph, adds calculation-only
   virtual ancestors for full-sibling facts with unrecorded parents, and enumerates ancestor
   chains.
-- `Codebase/App/app/backend/domain/family/paths.py` mirrors the engine's
+- `App/app/backend/domain/family/paths.py` mirrors the engine's
   semantic record enumeration (`_pair_path_records`) but remembers one
   concrete chain pair per deduplicated record, so every engine label has a
   real node/edge path.
@@ -119,13 +119,13 @@ relationship schema.
 
 ## Key files
 
-- `Codebase/App/app/backend/domain/family/paths.py` — engine-aligned
+- `App/app/backend/domain/family/paths.py` — engine-aligned
   record/path enumeration
-- `Codebase/App/app/backend/domain/relationships/path_service.py` — explicit
+- `App/app/backend/domain/relationships/path_service.py` — explicit
   + derived path assembly, bounds and errors
-- `Codebase/App/app/backend/domain/relationships/graph.py` — neighbour
+- `App/app/backend/domain/relationships/graph.py` — neighbour
   expansion model
-- `Codebase/App/Frontend/src/features/relationships/` — React Flow graph
+- `App/Frontend/src/features/relationships/` — React Flow graph
   feature
-- `Codebase/Tests/Backend/test_paths.py`,
-  `Codebase/Tests/Backend/test_api_paths.py` — path guarantees
+- `Tests/Backend/test_paths.py`,
+  `Tests/Backend/test_api_paths.py` — path guarantees

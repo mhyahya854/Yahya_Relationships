@@ -108,11 +108,11 @@ required V1 phase.
   - `metadata` rows for `app_name`, `app_version`, `app_schema_version`
 - Existing tables (`people`, `parent_child`, `marriages`, `sibling_groups`,
   `aliases`, `sources`, `fact_sources`, `review_notes`, `metadata`) are
-  untouched. Running the legacy builder (`Codebase/Scripts/build_family.py`)
+  untouched. Running the legacy builder (`Scripts/build_family.py`)
   after migration reproduced byte-identical `family.md`/`family.html` outputs.
-- The legacy builder still works: `npm run legacy:check` from `Codebase/`
-  (which runs `Codebase/Scripts/build_family.py --check`) runs the
-  full semantic-render, derived-kinship and arbitrary-perspective audits.
++ `npm run legacy:check` from the repository root runs the full
+  semantic-render, derived-kinship and arbitrary-perspective audits against
+  a temporary fictional Data Root; it never reads the active private archive.
 - Fourth-pass upgrade snapshot (Data Safety & Restore upgrade):
   `Backups/Safety/Pre-Upgrade/pre-safety-upgrade-2026-09-04T210155/` (database + journals + manifest).
 
@@ -123,60 +123,57 @@ required V1 phase.
 - **Guided Backup Restore**: Full human-facing restore flow with strict manifest/path/hash/size/count/schema verification, mandatory verified `Safety/Pre-Restore` snapshots, reversible staged DB/People/Config switching, exact rollback, and post-restore health checks.
 - **Data Root Health Audit**: Deterministic, non-destructive audit (`audit_data_root()`) checking SQLite integrity and filesystem alignment (detects missing folders, missing journals, orphan folders, and archived-active mismatches). Includes `safe_repair_data_root()` for safe repairs.
 - **Atomic Data Root Onboarding**: Create New stages a schema-2 root with a user-provided owner, validates it, publishes it, and atomically commits the OS-local pointer last. Existing nonempty locations are never reused or overwritten.
-- **Data Root Relocation & Switching**: Existing roots are inspected and confirmed before atomic switching. Move creates a verified safety backup and copies runtime `Database/`, `People/`, `Backups/`, and untouched `Raw/` payload with exact streaming-hash inventory verification; source `Codebase/` and `Documentation/` trees are excluded and the old root is retained.
+- **Data Root Relocation & Switching**: Existing roots are inspected and confirmed before atomic switching. Move creates a verified safety backup and copies runtime `Database/`, `People/`, `Backups/`, and untouched `Raw/` payload with exact streaming-hash inventory verification; public source and `Documentation/` trees are excluded and the old root is retained.
 - **First-Run Restore**: A verified backup source is restored into a separately selected empty destination through staging, then activated pointer-last; the backup source remains unchanged.
 - **Disconnected / Invalid Location Recovery**: Reachable backend plus missing, malformed, or invalid root opens the appropriate recovery flow, while actual backend failure alone opens service-failure UX. Empty databases are never created silently.
 
 ## Architecture
 
 ```text
-Tauri Desktop shell (Codebase/Desktop/Tauri)
+Tauri Desktop shell (Desktop/Tauri)
         |
         v
-React + TypeScript + Vite (Codebase/App/Frontend)
+React + TypeScript + Vite (App/Frontend)
         |
         v  http://127.0.0.1:8765
-FastAPI local backend (Codebase/App/app/backend)
+FastAPI local backend (App/app/backend)
         |
         +---- Python relationship engine (canonical domain/family/engine.py, reused)
         +---- Database/relationships.db (authoritative canonical structured truth)
         +---- People/<group>/<person-id>/... (locked Markdown/context hierarchy)
 ```
 
-Source repository and private Data Root are separate:
+The public repository and private Data Root are separate:
 
 ```text
-<Public source checkout>/
-  Codebase/              application source, synthetic tests, scripts and packaging
-    App/app/backend/     FastAPI + services + Hermes tools
-      domain/family/     canonical engine + engine-aligned path extraction
-      domain/relationships/ path service + graph neighbour model
-    App/Frontend/        React UI
-      src/features/relationships/ diagram-first React Flow feature
-    Desktop/Tauri/       Tauri 2 desktop shell
-    Scripts/             dev / verify helpers + build_family.py CLI wrapper
-    Tests/Backend/       pytest suite using generated temporary data
-    Tests/UI/            headless Edge smoke test
-    Resources/Vendor/    bundled third-party assets (mermaid.min.js)
-  Documentation/         public architecture, API, and development documentation
-
-<User-selected private Data Root>/
-  Database/
-    relationships.db     authoritative canonical SQLite store
-    raw_processing_history.md
-    Sources/             provenance source batches
-    Exports/Family/      family.html / family.md (still generated)
-  People/                locked person records and person-specific context
-  Media/                 locked ordinary event-based media hierarchy
-  Raw/                   private intake; reviewed moves claim source into quarantine first
-  .mosaic-quarantine/    private, recoverable move state; excluded from ordinary backups
-  Backups/<Category>/<backup-id>/  full snapshots + manifest.json
+Family Relationships/                 local container, not a Git repository
+  Codebase/                           public Git repository and GitHub content
+    App/app/backend/                  FastAPI + services + Hermes tools
+      domain/family/                  canonical engine + engine-aligned path extraction
+      domain/relationships/           path service + graph neighbour model
+    App/Frontend/                     React UI
+      src/features/relationships/     diagram-first React Flow feature
+    Desktop/Tauri/                    Tauri 2 desktop shell
+    Documentation/                    public architecture and development documentation
+    Scripts/                          development, verification, and packaging helpers
+    Tests/Backend/                    pytest suite using generated temporary data
+    Tests/UI/                         headless Edge smoke tests
+    Resources/Vendor/                 bundled third-party assets
+  Mosaic - Local Private Data/        selected local-only Data Root
+    Database/                         authoritative SQLite, config, provenance, exports
+    People/                           locked person records and context
+    Media/                            ordinary event-based media when present
+    Raw/                              private intake
+    .mosaic-quarantine/               recoverable move state when required
+    Backups/                          full snapshots and manifests
 ```
 
-The active path is stored only in OS-local bootstrap state or an environment
-override. It must be outside the source checkout. A fresh clone starts
-`UNCONFIGURED` and can create a blank Data Root, use an existing one, or
-restore a backup. The development fixture is fictional and disposable.
+A public clone contains the contents of Codebase at its root, without an
+additional Codebase directory. The active private-root path is stored only in
+OS-local bootstrap state or an environment override; it may be a sibling of
+the checkout but must never overlap it. A fresh clone starts `UNCONFIGURED`
+and can create a blank Data Root, use an existing one, or restore a backup.
+The development fixture is fictional and disposable.
 
 ## Consolidated people, media, memories, conversations, and location architecture
 
@@ -573,8 +570,8 @@ Shortcuts never fire while typing in inputs, textareas or editors.
 
 ## Family engine preservation
 
-The existing engine (canonical at `Codebase/App/app/backend/domain/family/engine.py`,
-with `Codebase/Scripts/build_family.py` as a thin CLI wrapper) is **not**
+The existing engine (canonical at `App/app/backend/domain/family/engine.py`,
+with `Scripts/build_family.py` as a thin CLI wrapper) is **not**
 reimplemented. The new backend imports the same functions the legacy export
 uses:
 
@@ -587,7 +584,7 @@ uses:
   audits)
 - `build_mermaid`, `audit_render_mapping` (family diagram generation)
 
-`Codebase/App/app/backend/kinship/` is a thin facade over the builder plus a
+`App/app/backend/kinship/` is a thin facade over the builder plus a
 display-language layer that attaches stable semantic type keys (for example
 `maternal_cousin_degree_1`) and English/Urdu labels without changing kinship
 logic. The UI never computes family relationships itself.
@@ -688,10 +685,10 @@ uploaded or included in release artifacts.
 ## Development
 
 Prerequisites: Python 3.11+, Node 20+, Rust stable + MSVC (for the desktop
-shell), and a local copy of `Codebase/Resources/Vendor/mermaid.min.js`
+shell), and a local copy of `Resources/Vendor/mermaid.min.js`
 already present.
 
-All development commands run from `Codebase/`:
+All development commands run from the repository root:
 
 ```powershell
 # Unified one-command setup (creates .venv, installs editable backend, installs npm dependencies)
@@ -720,7 +717,7 @@ npm run legacy:check  # legacy builder audit for the current compatibility datas
 The backend binds to `127.0.0.1:8765` by default
 (`PR_BACKEND_PORT` overrides; Vite proxies `/api` in development). The Tauri
 shell starts the backend automatically when launched from a source checkout
-(uses `Codebase/.venv/Scripts/python.exe` when present). For a fully standalone
+(uses `.venv/Scripts/python.exe` when present). For a fully standalone
 packaged build, bundle the backend with PyInstaller and point
 `PR_BACKEND_EXE` at it — the desktop shell treats that environment variable
 as the backend command. No cloud service is used anywhere.
@@ -740,7 +737,7 @@ as the backend command. No cloud service is used anywhere.
 
 ## Tests
 
-`Codebase/Tests/Backend/` (93 tests) cover data integrity, kinship
+`Tests/Backend/` (93 tests) cover data integrity, kinship
 regressions, perspective reversal, multiple simultaneous paths, compare,
 generic relationships and no-transitive-inference, journals (append, UTF-8,
 external-edit detection), backups, Hermes JSON tools, relationship paths
@@ -749,8 +746,8 @@ and the FastAPI endpoints.
 Tests always run against a fresh temporary copy of the current compatibility
 dataset;
 the real database is never mutated by tests. A headless Edge UI smoke test
-(`Codebase/Tests/UI/smoke.mjs`) drives the diagram-first acceptance flow
-end-to-end against the running dev stack (see `Codebase/Tests/UI/README.md`).
+(`Tests/UI/smoke.mjs`) drives the diagram-first acceptance flow
+end-to-end against the running dev stack (see `Tests/UI/README.md`).
 Verified screenshots live in `Documentation/UI-Screenshots/`.
 
 ## Supported Platforms
@@ -769,7 +766,7 @@ Mosaic is distributed as a self-contained desktop application with no requiremen
 ## Installation & Launch
 
 ### Windows Installation
-1. Download the current **Mosaic** installer from `Codebase/Packaging/release/`.
+1. Download the current **Mosaic** installer from `Packaging/release/`.
 2. Run the installer. It installs the application for the current user without requiring administrator permissions.
 3. Launch **Mosaic** from the Start Menu or desktop shortcut.
 4. *SmartScreen note*: Development builds are unsigned. If Windows SmartScreen appears, click **More info** -> **Run anyway**.
@@ -814,9 +811,9 @@ Your family relationship brain is completely decoupled from application binaries
 
 ### Bootstrap Configuration
 The pointer to the active relationship data root is stored in standard OS configuration directories:
-- **Windows**: `%APPDATA%\people-relationships\config.json`
-- **macOS**: `~/Library/Application Support/people-relationships/config.json`
-- **Linux**: `~/.config/people-relationships/config.json` (or `$XDG_CONFIG_HOME/people-relationships/config.json`)
+- **Windows**: `%APPDATA%\people-relationships\bootstrap.json`
+- **macOS**: `~/Library/Application Support/people-relationships/bootstrap.json`
+- **Linux**: `~/.config/people-relationships/bootstrap.json` (or `$XDG_CONFIG_HOME/people-relationships/bootstrap.json`)
 
 The `people-relationships` configuration path is a deliberately retained
 technical compatibility identifier. Existing Data Root folders (including one
@@ -838,7 +835,7 @@ named `Family Relationships`) remain valid and are never renamed by Mosaic.
 Packaging scripts are fully cross-platform and orchestrate frontend compilation, PyInstaller backend sidecar bundling, Tauri desktop bundling, and release manifest generation:
 
 ```bash
-# In Codebase/
+# In the repository root
 
 # Package for current host OS:
 npm run package
@@ -857,7 +854,7 @@ Automated multi-platform CI workflows are defined in `.github/workflows/build-an
 
 Prerequisites: Python 3.11+, Node 20+, Rust stable + MSVC / clang (for the desktop shell).
 
-All development commands run from `Codebase/`:
+All development commands run from the repository root:
 
 ```powershell
 # Unified one-command setup (creates .venv, installs editable backend, installs npm dependencies)

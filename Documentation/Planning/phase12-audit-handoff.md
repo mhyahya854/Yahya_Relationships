@@ -34,8 +34,8 @@ Phase 12 advances only the raw-intake foundation:
 ## Verification material
 
 - [Synthetic Raw UI evidence manifest](../UI-Screenshots/Phase12-Raw-Synthetic/MANIFEST.md)
-- `Codebase/Tests/Backend/test_phase12_raw_intake.py`
-- `Codebase/Tests/UI/raw_e2e.mjs`
+- `Tests/Backend/test_phase12_raw_intake.py`
+- `Tests/UI/raw_e2e.mjs`
 
 Private verification evidence is retained outside public source. The final whole-app adversarial audit remains part of whole-app QA and pre-release, after the implementation phases.
 

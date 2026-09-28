@@ -2,7 +2,7 @@
 
 ## Authority and payload
 
-The active Data Root is the single authoritative directory for user data. It must not overlap the public source checkout, including through a symlink or reparse alias. The portable runtime payload includes `Database/`, `People/`, `Raw/`, `Media/`, and `Backups/` where present; source folders such as `Codebase/` and `Documentation/` are never part of a move or restore payload. A fresh clone is `UNCONFIGURED` until the user selects, creates, or restores a private root.
+The active Data Root is the single authoritative directory for user data. It must not overlap the public source checkout, including through a symlink or reparse alias. A sibling local Data Root is allowed. The portable runtime payload includes `Database/`, `People/`, `Raw/`, `Media/`, and `Backups/` where present; public source and `Documentation/` are never part of a move or restore payload. A fresh clone is `UNCONFIGURED` until the user selects, creates, or restores a private root.
 
 ```text
 <DataRoot>/
@@ -36,7 +36,7 @@ The small OS-local bootstrap file selects the active root. It lives at `%APPDATA
 
 Writes use a same-directory temporary file, UTF-8 serialization, flush plus `fsync`, and atomic `os.replace`. A failed write removes only its temporary file and leaves the previous pointer byte-identical. Status reads never rewrite it. Malformed JSON, a non-object value, a missing `active_root`, a wrong type, or an empty path produces `BOOTSTRAP_INVALID`; it is not treated as first run and cannot silently fall back.
 
-`PEOPLE_RELATIONSHIPS_ROOT` is an explicit root override. `PEOPLE_RELATIONSHIPS_BOOTSTRAP` is an authoritative pointer-file override: if that file is absent, the state is `UNCONFIGURED`. Only source development without either explicit override may use the repository fallback.
+`PEOPLE_RELATIONSHIPS_ROOT` is an explicit root override. `PEOPLE_RELATIONSHIPS_BOOTSTRAP` is an authoritative pointer-file override: if that file is absent, the state is `UNCONFIGURED`. There is no repository fallback.
 
 ## State and readiness
 
