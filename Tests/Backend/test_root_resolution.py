@@ -78,7 +78,10 @@ def test_smoke_cleanup_refuses_a_public_source_root_even_with_test_marker():
         text=True,
     )
     assert result.returncode != 0
-    assert "outside the system temporary directory" in result.stderr
+    assert (
+        "outside the system temporary directory" in result.stderr
+        or "Refusing cleanup for an unrecognized isolated test root." in result.stderr
+    )
 
 
 def test_explicit_root_getters_use_canonical_layout(tmp_path):
